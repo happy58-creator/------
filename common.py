@@ -1,0 +1,96 @@
+"""全ページ共通の見た目・ヘルパー。"""
+import copy
+import os
+
+import streamlit as st
+
+GEMINI_MODEL = "gemini-3.6-flash"
+HOME_PAGE = "教材.py"
+
+_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700;900&display=swap');
+html, body, [class*="st-"], .stApp { font-family: 'Zen Maru Gothic', sans-serif; }
+.block-container { max-width: 900px; padding-top: 2rem; padding-bottom: 4rem; }
+
+.hero {
+    padding: 1.6rem 1.25rem; border-radius: 1.4rem; text-align: center;
+    margin-bottom: 1.2rem; box-shadow: 0 6px 18px rgba(120, 80, 60, .10);
+    background: linear-gradient(135deg, #fff1dc, #ffe2e7 55%, #e9e8ff);
+}
+.hero h1 { margin: 0; color: #542b69; font-weight: 900; font-size: 2rem; line-height: 1.3; }
+.hero p { margin: .5rem 0 0; color: #584b62; }
+
+.topic-card {
+    border-radius: 1.2rem; padding: 1.1rem 1.1rem .4rem; margin-bottom: .25rem;
+    border: 1px solid rgba(120, 80, 60, .12); background: #ffffff;
+    box-shadow: 0 4px 12px rgba(120, 80, 60, .08);
+}
+.topic-card .emoji { font-size: 2.4rem; line-height: 1; }
+.topic-card h3 { margin: .4rem 0 .2rem; font-size: 1.15rem; color: #3a2e39; }
+.topic-card p { margin: 0 0 .5rem; font-size: .9rem; color: #6b5d68; min-height: 2.7em; }
+.tag { display:inline-block; font-size:.72rem; font-weight:700; padding:.1rem .6rem;
+       border-radius:99px; background:#ffe9d6; color:#b4531f; margin-bottom:.2rem; }
+.tag.ai { background:#e6e3ff; color:#4a3fb0; }
+
+div.stButton > button, div.stDownloadButton > button,
+div[data-testid="stFormSubmitButton"] > button {
+    min-height: 2.9rem; border-radius: .9rem; font-weight: 700;
+    transition: transform .08s ease, box-shadow .15s ease;
+}
+div.stButton > button:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.12); }
+div[data-testid="stMetric"] {
+    padding: .8rem 1rem; border: 1px solid rgba(120, 80, 60, .15);
+    border-radius: 1rem; background: #ffffff;
+}
+[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 1.1rem; }
+.big-center { text-align:center; font-weight:900; line-height:1.2; }
+</style>
+"""
+
+
+def setup_page(title, icon, layout="centered", home_link=True):
+    """set_page_config + 共通CSS + サイドバーのトップへ戻るリンク。各ページの最初に呼ぶ。"""
+    st.set_page_config(page_title=title, page_icon=icon, layout=layout)
+    st.markdown(_CSS, unsafe_allow_html=True)
+    with st.sidebar:
+        if home_link:
+            st.page_link(HOME_PAGE, label="トップにもどる", icon="🏠")
+
+
+def hero(title, subtitle=""):
+    sub = f"<p>{subtitle}</p>" if subtitle else ""
+    st.markdown(f"<div class='hero'><h1>{title}</h1>{sub}</div>", unsafe_allow_html=True)
+
+
+def init_state(defaults):
+    """未設定のキーだけ初期化する。"""
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = copy.deepcopy(value)
+
+
+def reset_state(prefix, defaults):
+    """prefix で始まるキーだけ消して初期値に戻す（他ページの状態は触らない）。"""
+    for key in [k for k in st.session_state.keys() if k.startswith(prefix)]:
+        del st.session_state[key]
+    init_state(defaults)
+
+
+def get_gemini_client():
+    """APIキーは .streamlit/secrets.toml の GEMINI_API_KEY か環境変数から読む。"""
+    from google import genai
+
+    key = None
+    try:
+        key = st.secrets.get("GEMINI_API_KEY")
+    except Exception:
+        pass
+    key = key or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        st.error(
+            "AIのカギ（GEMINI_API_KEY）が見つからないよ。"
+            " `.streamlit/secrets.toml` に `GEMINI_API_KEY = \"...\"` を書いてね。"
+        )
+        st.stop()
+    return genai.Client(api_key=key)
