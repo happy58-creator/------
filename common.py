@@ -56,7 +56,9 @@ html, body, [class*="st-"]:not([data-testid="stIconMaterial"]), .stApp { font-fa
 [class*="st-key-appcard-"] { position: relative; cursor: pointer; transition: transform .1s ease; }
 [class*="st-key-appcard-"]:hover { transform: translateY(-3px); }
 [class*="st-key-appcard-"]:hover .topic-card { box-shadow: 0 8px 20px rgba(120, 80, 60, .18); }
-[class*="st-key-appcard-"] a[data-testid="stPageLink-NavLink"]::after { content: ""; position: absolute; inset: 0; z-index: 2; }
+[class*="st-key-appcard-"] [data-testid="stElementContainer"],
+[class*="st-key-appcard-"] [data-testid="stPageLink"] { position: static !important; }
+[class*="st-key-appcard-"] [data-testid="stPageLink-NavLink"]::after { content: ""; position: absolute; inset: 0; z-index: 2; }
 
 .hero {
     padding: 1.6rem 1.25rem; border-radius: 1.4rem; text-align: center;
@@ -67,7 +69,7 @@ html, body, [class*="st-"]:not([data-testid="stIconMaterial"]), .stApp { font-fa
 .hero p { margin: .5rem 0 0; color: #584b62; }
 
 .topic-card {
-    border-radius: 1.2rem; padding: 1.1rem 1.1rem .4rem; margin-bottom: .25rem;
+    border-radius: 1.2rem; padding: 1.1rem 1.1rem .4rem; margin-bottom: .25rem; min-height: 13rem;
     border: 1px solid rgba(120, 80, 60, .12); background: #ffffff;
     box-shadow: 0 4px 12px rgba(120, 80, 60, .08);
 }
