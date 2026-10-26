@@ -16,6 +16,8 @@
     p: "まえに1マス（さいしょは2マスもOK）。駒をとるときは ななめまえ。",
   };
   const LEVELS = { easy: "かんたん", normal: "ふつう", hard: "つよい", expert: "さいきょう" };
+  // 1ゲームで使えるヒントの回数（2人対戦は「ふつう」と同じ）
+  const HINT_LIMIT = { easy: 5, normal: 5, hard: 3, expert: 3 };
   const COLOR = { w: "白", b: "黒" };
   const DRAW_TEXT = {
     stalemate: "ステイルメイト（動ける手がない）で 引き分け！",
@@ -31,7 +33,7 @@
     game: new E.Game(), sans: [], ucis: [],
     mode: "cpu", color: "w", level: "normal", // いまのゲームの設定
     next: { mode: "cpu", color: "w" }, // 「新しいゲーム」で使う設定
-    flipped: false, selected: -1, targets: [], hint: null,
+    flipped: false, selected: -1, targets: [], hint: null, hintsUsed: 0, hintBusy: false,
     thinking: false, token: 0, over: null,
     gameId: "", reported: false, sound: true,
   };
@@ -47,7 +49,7 @@
     try {
       localStorage.setItem(STORE, JSON.stringify({
         ucis: S.ucis, mode: S.mode, color: S.color, level: S.level, flipped: S.flipped,
-        gameId: S.gameId, reported: S.reported, sound: S.sound,
+        gameId: S.gameId, reported: S.reported, sound: S.sound, hintsUsed: S.hintsUsed,
       }));
     } catch (e) { /* 保存できなくても遊べる */ }
   }
@@ -240,7 +242,9 @@
     // ボタン
     const playerMoves = S.mode === "cpu" ? S.ucis.length - (S.color === "w" ? 0 : 1) : S.ucis.length;
     $("undoBtn").disabled = playerMoves <= 0;
-    $("hintBtn").disabled = !canTouch();
+    const left = hintsLeft();
+    $("hintBtn").disabled = !canTouch() || S.hintBusy || left <= 0;
+    $("hintBtn").textContent = S.hintBusy ? "🤔 考え中…" : `💡 ヒント（のこり${left}回）`;
     $("soundBtn").textContent = S.sound ? "🔊 音あり" : "🔇 音なし";
 
     // 説明
@@ -415,6 +419,8 @@
     S.flipped = S.mode === "cpu" && S.color === "b";
     S.gameId = newId();
     S.reported = false;
+    S.hintsUsed = 0;
+    S.hintBusy = false;
     $("result").hidden = true;
     $("promo").hidden = true;
     save();
@@ -422,16 +428,25 @@
     maybeThink();
   }
 
+  function hintsLeft() {
+    const limit = S.mode === "cpu" ? HINT_LIMIT[S.level] : HINT_LIMIT.normal;
+    return Math.max(0, limit - S.hintsUsed);
+  }
+
   function hint() {
-    if (!canTouch()) return;
-    const btn = $("hintBtn"), at = S.ucis.length;
-    btn.disabled = true;
-    btn.textContent = "🤔 考え中…";
+    if (!canTouch() || S.hintBusy || hintsLeft() <= 0) return;
+    const at = S.ucis.length, gameId = S.gameId;
+    S.hintBusy = true;
+    render();
     ask({ moves: S.ucis.slice(), level: "hard" }).then((u) => {
-      btn.textContent = "💡 ヒント";
+      if (S.gameId !== gameId) return;
+      S.hintBusy = false;
       if (S.ucis.length !== at || S.over) return render();
       const m = u && S.game.findMove(u);
       if (!m) return render();
+      // 実際にヒントを見せたときだけ1回数える（もどしても回数はもどらない）
+      S.hintsUsed++;
+      save();
       clearSelection();
       S.hint = { from: m.from, to: m.to };
       render();
@@ -520,6 +535,7 @@
     S.sound = saved.sound !== false;
     S.gameId = saved.gameId || newId();
     S.reported = !!saved.reported;
+    S.hintsUsed = Number(saved.hintsUsed) || 0;
     for (const u of saved.ucis || []) {
       const m = S.game.findMove(u);
       if (!m) break;

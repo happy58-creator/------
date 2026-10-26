@@ -96,6 +96,7 @@ button:disabled { opacity: .45; cursor: default; }
 .thinking-dots::after { content: ""; animation: dots 1.2s steps(4) infinite; }
 .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0; }
 .tools button { padding: 8px 6px; font-size: .9rem; white-space: nowrap; }
+#hintBtn { grid-column: 1 / -1; order: -1; background: #fff8e1; }
 .explain .pc { font-size: 1.5em; vertical-align: middle; cursor: default; }
 .explain { font-size: .92rem; color: var(--sub); min-height: 2.8em; padding: 6px 2px; }
 .explain b { color: var(--text); }

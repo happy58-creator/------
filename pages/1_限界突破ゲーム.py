@@ -1,10 +1,10 @@
-import math
 import time
 
 import streamlit as st
 
 import common
 import history
+import web_games
 
 common.setup_page("限界突破！超高速連打ゲーム", "⚡")
 
@@ -33,13 +33,6 @@ st.markdown(
         border-radius: .9rem;
         font-weight: 700;
     }
-    .st-key-hit-button-area button {
-        height: min(42vh, 380px) !important;
-        min-height: 220px !important;
-        font-size: 2rem !important;
-        border-radius: 1.5rem !important;
-        box-shadow: 0 8px 18px rgba(190, 45, 68, .24);
-    }
     div[data-testid="stMetric"] {
         padding: .8rem;
         border: 1px solid rgba(128, 128, 128, .2);
@@ -57,6 +50,8 @@ common.init_state({
     "rapid_best_scores": {},
     "rapid_game_history": [],
 })
+# 1回のチャレンジごとに増やす番号（前のチャレンジの結果をまちがえて拾わないため）
+st.session_state.setdefault("rapid_round", 0)
 
 
 def get_rank(clicks_per_second):
@@ -74,8 +69,8 @@ def get_rank(clicks_per_second):
 def start_game(duration):
     st.session_state.rapid_selected_time = duration
     st.session_state.rapid_click_count = 0
-    st.session_state.rapid_countdown_end_time = time.monotonic() + 3
-    st.session_state.rapid_game_state = "countdown"
+    st.session_state.rapid_round += 1
+    st.session_state.rapid_game_state = "playing"
 
 
 def finish_game():
@@ -141,55 +136,19 @@ if st.session_state.rapid_game_state == "menu":
                 f"{attempt['clicks']:,}回（{attempt['cps']:.2f}回/秒）"
             )
 
-elif st.session_state.rapid_game_state in ("countdown", "playing"):
-
-    @st.fragment(run_every="100ms")
-    def render_live_game():
-        if st.session_state.rapid_game_state == "countdown":
-            remaining = st.session_state.rapid_countdown_end_time - time.monotonic()
-            if remaining <= 0:
-                st.session_state.rapid_game_state = "playing"
-                st.session_state.rapid_start_time = time.monotonic()
-                st.rerun()
-            else:
-                number = math.ceil(remaining)
-                st.markdown(
-                    f"<h2 style='text-align:center'>準備はいい？</h2>"
-                    f"<div style='text-align:center;font-size:7rem;font-weight:800;"
-                    f"color:#ff4b4b;line-height:1.2'>{number}</div>",
-                    unsafe_allow_html=True,
-                )
-                st.caption(f"{st.session_state.rapid_selected_time}秒コースに挑戦！")
-
-        elif st.session_state.rapid_game_state == "playing":
-            duration = st.session_state.rapid_selected_time
-            elapsed = time.monotonic() - st.session_state.rapid_start_time
-            remaining = max(0.0, duration - elapsed)
-            if remaining <= 0:
-                finish_game()
-                st.rerun()
-
-            progress = min(1.0, elapsed / duration)
-            st.progress(progress, text=f"残り {remaining:.1f} 秒")
-            st.markdown(
-                f"<div style='text-align:center;font-size:1.25rem'>"
-                f"いまのスコア</div><div style='text-align:center;font-size:3.5rem;"
-                f"font-weight:800;color:#ff4b4b;line-height:1.2'>"
-                f"{st.session_state.rapid_click_count:,}<span style='font-size:1.3rem'> 回</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-            with st.container(key="hit-button-area"):
-                if st.button(
-                    "🔴 ここを連打！",
-                    key="hit_button",
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    st.session_state.rapid_click_count += 1
-            st.caption("ボタンを押した回数を数えるよ。時間切れまでがんばろう！")
-
-    render_live_game()
+elif st.session_state.rapid_game_state == "playing":
+    # カウントダウンと連打はブラウザの中で数える（押すたびにサーバーと通信すると、数えもれや数字の飛びが出るため）
+    result = web_games.tap_game(
+        st.session_state.rapid_selected_time, st.session_state.rapid_round,
+        key=f"tap_{st.session_state.rapid_round}",
+    )
+    if result and result.get("round") == st.session_state.rapid_round:
+        st.session_state.rapid_click_count = int(result["clicks"])
+        finish_game()
+        st.rerun()
+    if st.button("↩️ やめて コースを選びなおす"):
+        st.session_state.rapid_game_state = "menu"
+        st.rerun()
 
 elif st.session_state.rapid_game_state == "result":
     clicks = st.session_state.rapid_click_count
