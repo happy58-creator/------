@@ -8,11 +8,49 @@ import streamlit as st
 GEMINI_MODEL = "gemini-3.6-flash"
 HOME_PAGE = "教材.py"
 
+# Streamlit Cloud がアプリの外側の画面に出す「王冠マーク」と「作った人のアカウント表示」を消す。
+# アプリと外側の画面は同じドメイン（〜.streamlit.app）なので、JavaScript から触れる。
+_HIDE_CLOUD_BADGES_JS = """
+<script>
+(() => {
+  const SELECTORS = [
+    '[class*="viewerBadge"]', '[class*="profileContainer"]', '[class*="profilePreview"]',
+    '[data-testid="stToolbarActions"]', '[data-testid="stMainMenu"]', '.stAppDeployButton',
+  ];
+  const hide = (doc) => {
+    for (const sel of SELECTORS) {
+      doc.querySelectorAll(sel).forEach((el) => el.style.setProperty("display", "none", "important"));
+    }
+  };
+  const docs = [document];
+  try { if (window.parent !== window) docs.push(window.parent.document); } catch (e) {}
+  for (const doc of docs) {
+    hide(doc);
+    if (doc.defaultView.__kyouzaiBadgeObserver) continue;  // 監視は1画面に1つだけ
+    let queued = false;
+    const observer = new MutationObserver(() => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; hide(doc); });
+    });
+    observer.observe(doc.body, { childList: true, subtree: true });
+    doc.defaultView.__kyouzaiBadgeObserver = observer;
+  }
+})();
+</script>
+"""
+
 _CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700;900&display=swap');
-html, body, [class*="st-"], .stApp { font-family: 'Zen Maru Gothic', sans-serif; }
+/* アイコン（stIconMaterial）はアイコン用フォントのままにする。上書きすると「arrow_right」などの文字が出てしまう */
+html, body, [class*="st-"]:not([data-testid="stIconMaterial"]), .stApp { font-family: 'Zen Maru Gothic', sans-serif; }
 .block-container { max-width: 900px; padding-top: 2rem; padding-bottom: 4rem; }
+/* 右上のツールバーのボタン（Fork・GitHub・メニュー）をかくす。
+   サイドバーを開くボタンも stToolbar の中にあるので、stToolbar ごと消さない */
+[data-testid="stToolbarActions"], [data-testid="stToolbarActionButton"], [data-testid="stMainMenu"],
+.stAppDeployButton, [data-testid="stDecoration"] { display: none !important; }
+[data-testid="stHeader"] { background: transparent; }
 
 .hero {
     padding: 1.6rem 1.25rem; border-radius: 1.4rem; text-align: center;
@@ -68,6 +106,7 @@ def setup_page(title, icon, layout="centered", home_link=True):
             placeholder="ななしさん",
         )
         st.session_state["player_name"] = name.strip()
+        st.html(_HIDE_CLOUD_BADGES_JS, unsafe_allow_javascript=True)
 
 
 def page_file(path):
