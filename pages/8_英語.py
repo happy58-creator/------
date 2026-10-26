@@ -155,10 +155,7 @@ if state == "menu":
         st.subheader("① 年れいを えらんでね")
         level_names = list(LEVELS)
         age = st.session_state.get("auth_age")
-        default_level = 0 if age is None else next(
-            (i for i, limit in enumerate((8, 10, 12, 15, 18)) if age <= limit), len(level_names) - 1
-        )
-        level = st.radio("年れい", level_names, index=default_level, label_visibility="collapsed")
+        level = st.radio("年れい", level_names, index=common.age_level_index(len(level_names)), label_visibility="collapsed")
         if age is not None:
             st.caption(f"{age}さいなので、このどれかを えらんでおいたよ。かえてもOK！")
     with st.container(border=True):

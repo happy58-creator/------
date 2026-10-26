@@ -123,6 +123,15 @@ def page_file(path):
     return path
 
 
+def age_level_index(count):
+    """ログイン中の年齢から、年齢層ラジオ（小1〜2 … 大人）の初期位置を返す。"""
+    age = st.session_state.get("auth_age")
+    if age is None:
+        return 0
+    limits = (8, 10, 12, 15, 18)
+    return next((i for i, limit in enumerate(limits) if age <= limit), count - 1)
+
+
 def hero(title, subtitle=""):
     sub = f"<p>{subtitle}</p>" if subtitle else ""
     st.markdown(f"<div class='hero'><h1>{title}</h1>{sub}</div>", unsafe_allow_html=True)
