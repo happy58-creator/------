@@ -55,7 +55,11 @@ def setup_page(title, icon, layout="centered", home_link=True):
     st.markdown(_CSS, unsafe_allow_html=True)
     with st.sidebar:
         if home_link:
-            st.page_link(HOME_PAGE, label="トップにもどる", icon="🏠")
+            try:
+                st.page_link(HOME_PAGE, label="トップにもどる", icon="🏠")
+            except st.errors.StreamlitAPIException:
+                # Streamlit Cloud の Main file path が 教材.py 以外だとトップが見つからない
+                pass
         name = st.text_input(
             "👤 なまえ（せいせきの記録に使うよ）",
             value=st.session_state.get("player_name", ""),
