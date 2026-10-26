@@ -92,6 +92,9 @@ def setup_page(title, icon, layout="centered", home_link=True):
     """set_page_config + 共通CSS + サイドバーのトップへ戻るリンク。各ページの最初に呼ぶ。"""
     st.set_page_config(page_title=title, page_icon=icon, layout=layout)
     st.markdown(_CSS, unsafe_allow_html=True)
+    import auth  # 循環importを避けるため関数内で読み込む
+
+    auth.gate(is_home=not home_link)
     with st.sidebar:
         if home_link:
             try:
@@ -99,13 +102,7 @@ def setup_page(title, icon, layout="centered", home_link=True):
             except st.errors.StreamlitAPIException:
                 # Streamlit Cloud の Main file path が 教材.py 以外だとトップが見つからない
                 pass
-        name = st.text_input(
-            "👤 なまえ（せいせきの記録に使うよ）",
-            value=st.session_state.get("player_name", ""),
-            key=f"name_input_{title}",
-            placeholder="ななしさん",
-        )
-        st.session_state["player_name"] = name.strip()
+        auth.sidebar_user()
         st.html(_HIDE_CLOUD_BADGES_JS, unsafe_allow_javascript=True)
 
 

@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 
+import auth
 import common
 import history
 
@@ -16,11 +17,18 @@ if not rows:
     st.stop()
 
 df = pd.DataFrame(rows)
-names = ["みんな"] + sorted(df["名前"].astype(str).unique())
-default = st.session_state.get("player_name")
-who = st.selectbox("だれの記録？", names, index=names.index(default) if default in names else 0)
-if who != "みんな":
-    df = df[df["名前"].astype(str) == who]
+me = st.session_state.get("player_name")
+if auth.is_admin():
+    names = ["みんな"] + sorted(df["名前"].astype(str).unique())
+    who = st.selectbox("だれの記録？（管理者はぜんいん見られます）", names)
+    if who != "みんな":
+        df = df[df["名前"].astype(str) == who]
+else:
+    st.caption(f"{me} さんの記録だけ表示しています。")
+    df = df[df["名前"].astype(str) == me]
+    if df.empty:
+        st.info("まだ記録がないよ。ゲームをあそぶと、ここに残るよ！")
+        st.stop()
 
 c1, c2 = st.columns(2)
 c1.metric("あそんだ回数", f"{len(df)} 回")
