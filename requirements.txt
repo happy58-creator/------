@@ -1,6 +1,5 @@
 streamlit>=1.40
 pandas
 reportlab
-chess
 google-genai
 gspread

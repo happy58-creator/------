@@ -10,7 +10,7 @@ APPS = [
          "pages/0_計算マスター.py", ""),
         ("🧙‍♂️", "AI国語アドベンチャー", "好きな言葉からAIがお話とクイズを作ってくれる！",
          "pages/5_国語.py", "AI"),
-        ("⌨️", "AIタイピング", "テーマに合わせたタイピング問題。5分以内なら裏メニューも！",
+        ("⌨️", "AIタイピング", "1キーずつ判定する本格タイピング。5分以内なら ロボットを動かすプログラミングも！",
          "pages/6_タイピング.py", "AI"),
     ]),
     ("ゲーム", [
@@ -20,7 +20,7 @@ APPS = [
          "pages/2_じゃんけんゲーム.py", ""),
         ("🎉", "くじ引き・じゅんばん決め", "あみだ風のドキドキ演出で決めよう。",
          "pages/3_くじ引き・じゅんばん決めゲーム.py", ""),
-        ("♟️", "チェス", "CPU戦も2人プレイもOK。むずかしさも選べるよ。",
+        ("♟️", "チェス", "駒をクリック・ドラッグで動かせる本格チェス。CPUは4段階、ヒントつき！",
          "pages/4_チェスVS.py", ""),
     ]),
     ("きろく", [
@@ -43,7 +43,7 @@ for section, items in APPS:
                     f"<h3>{title}</h3><p>{desc}</p></div>",
                     unsafe_allow_html=True,
                 )
-                st.page_link(page, label="あそぶ", icon="▶️", use_container_width=True)
+                st.page_link(common.page_file(page), label="あそぶ", icon="▶️", use_container_width=True)
 
 st.divider()
 st.caption("左のメニューからも好きなページに移動できるよ。AIつきのページを使うには GEMINI_API_KEY の設定が必要です。")

@@ -1,6 +1,7 @@
 """全ページ共通の見た目・ヘルパー。"""
 import copy
 import os
+import unicodedata
 
 import streamlit as st
 
@@ -67,6 +68,23 @@ def setup_page(title, icon, layout="centered", home_link=True):
             placeholder="ななしさん",
         )
         st.session_state["player_name"] = name.strip()
+
+
+def page_file(path):
+    """ページのファイル名を、ディスク上の実際の書き方にそろえる。
+
+    Mac では「ゲ」が「ケ＋゛」のように分かれて保存されることがあり、
+    そのままの名前だと st.page_link がページを見つけられない。
+    """
+    folder, name = os.path.split(path)
+    target = unicodedata.normalize("NFC", name)
+    try:
+        for found in os.listdir(os.path.join(os.path.dirname(__file__), folder)):
+            if unicodedata.normalize("NFC", found) == target:
+                return os.path.join(folder, found)
+    except OSError:
+        pass
+    return path
 
 
 def hero(title, subtitle=""):
