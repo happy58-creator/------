@@ -52,6 +52,12 @@ html, body, [class*="st-"]:not([data-testid="stIconMaterial"]), .stApp { font-fa
 .stAppDeployButton, [data-testid="stDecoration"] { display: none !important; }
 [data-testid="stHeader"] { background: transparent; }
 
+/* トップのカード全体をクリックで開く：リンクの当たり判定をカード全体に広げる */
+[class*="st-key-appcard-"] { position: relative; cursor: pointer; transition: transform .1s ease; }
+[class*="st-key-appcard-"]:hover { transform: translateY(-3px); }
+[class*="st-key-appcard-"]:hover .topic-card { box-shadow: 0 8px 20px rgba(120, 80, 60, .18); }
+[class*="st-key-appcard-"] a[data-testid="stPageLink-NavLink"]::after { content: ""; position: absolute; inset: 0; z-index: 2; }
+
 .hero {
     padding: 1.6rem 1.25rem; border-radius: 1.4rem; text-align: center;
     margin-bottom: 1.2rem; box-shadow: 0 6px 18px rgba(120, 80, 60, .10);

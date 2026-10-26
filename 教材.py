@@ -35,12 +35,14 @@ APPS = [
 
 common.hero("🏠 きょうざい・ゲームひろば", "あそびたいものを えらんでね！")
 
+card_no = 0
 for section, items in APPS:
     st.subheader(section)
     for row_start in range(0, len(items), 2):
         cols = st.columns(2)
         for col, (emoji, title, desc, page, tag) in zip(cols, items[row_start:row_start + 2]):
-            with col:
+            with col, st.container(key=f"appcard-{card_no}"):
+                card_no += 1
                 tag_html = "<span class='tag ai'>🤖 AIつき</span>" if tag == "AI" else ""
                 st.markdown(
                     f"<div class='topic-card'>{tag_html}<div class='emoji'>{emoji}</div>"
