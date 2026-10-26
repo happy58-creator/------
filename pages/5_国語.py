@@ -4,6 +4,7 @@ import streamlit as st
 from google.genai import types
 
 import common
+import history
 
 common.setup_page("AI国語アドベンチャー", "🧙‍♂️")
 common.hero("🧙‍♂️ AI国語わくわくアドベンチャー 🌟", "入力したテーマに合わせて、AIがその場で『世界にひとつだけの国語教材』を作ります！")
@@ -119,6 +120,7 @@ def go_next(is_correct):
     st.session_state.jp_step += 1
     if st.session_state.jp_step > 5:
         st.session_state.jp_state = "ending"
+        history.log_result("国語", テーマ=st.session_state.jp_theme, 点数=st.session_state.jp_score)
 
 
 # --- メニュー ---

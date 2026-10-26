@@ -1,5 +1,6 @@
 import io
 import random
+import time
 
 import pandas as pd
 import streamlit as st
@@ -11,6 +12,7 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 import common
+import history
 
 common.setup_page("計算マスター", "🧮")
 
@@ -23,6 +25,7 @@ DEFAULTS = {
     "calc_user_answers": {},
     "calc_mode": "ノーマル",
     "calc_best": {},
+    "calc_game_id": 0,
 }
 common.init_state(DEFAULTS)
 
@@ -229,6 +232,7 @@ if st.session_state.calc_step == "setup":
         st.session_state.calc_mode = mode
         st.session_state.calc_op = selected_op
         st.session_state.calc_questions = generate_questions(mode, [selected_op])
+        st.session_state.calc_game_id = time.time()
         st.session_state.calc_user_answers = {}
         for i in range(TOTAL_Q):
             st.session_state.pop(f"calc_q_{i}", None)
@@ -288,6 +292,12 @@ elif st.session_state.calc_step == "result":
     is_new_best = previous_best is None or total_score > previous_best
     st.session_state.calc_best[best_key] = max(total_score, previous_best or 0)
 
+    history.log_once(
+        "計算", f"calc-{st.session_state.calc_game_id}",
+        コース=st.session_state.calc_mode, 計算=st.session_state.calc_op,
+        点数=total_score, 正解数=correct_count,
+    )
+
     if total_score == 100:
         comment = "完璧です！文句なしの100点満点、天才計算マスターだね！この調子でどんどん挑戦しよう！"
         st.balloons()
@@ -331,6 +341,7 @@ elif st.session_state.calc_step == "result":
             st.session_state.calc_questions = generate_questions(
                 st.session_state.calc_mode, [st.session_state.calc_op]
             )
+            st.session_state.calc_game_id = time.time()
             st.session_state.calc_user_answers = {}
             for i in range(TOTAL_Q):
                 st.session_state.pop(f"calc_q_{i}", None)

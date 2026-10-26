@@ -56,6 +56,13 @@ def setup_page(title, icon, layout="centered", home_link=True):
     with st.sidebar:
         if home_link:
             st.page_link(HOME_PAGE, label="トップにもどる", icon="🏠")
+        name = st.text_input(
+            "👤 なまえ（せいせきの記録に使うよ）",
+            value=st.session_state.get("player_name", ""),
+            key=f"name_input_{title}",
+            placeholder="ななしさん",
+        )
+        st.session_state["player_name"] = name.strip()
 
 
 def hero(title, subtitle=""):

@@ -6,6 +6,7 @@ import streamlit as st
 from google.genai import types
 
 import common
+import history
 
 common.setup_page("AIタイピングマスター", "⌨️")
 common.hero("⌨️ AIワクワクたいぴんぐアドベンチャー 🌟", "入力したテーマに合わせて、AIがキミ専用のタイピングもんだいを作ってくれるよ！")
@@ -23,6 +24,7 @@ DEFAULTS = {
     "ty_correct": 0,  # ノーミスで正解した数
     "ty_data": None,
     "ty_mode": "みながらモード",
+    "ty_theme": "",
     "ty_start": 0.0,
     "ty_q_start": 0.0,
     "ty_total_time": 0.0,
@@ -243,6 +245,12 @@ def advance(total, finish_state):
     else:
         if st.button("結果発表（けっかはっぴょう）へ！ 🏆", key="ty_finish", type="primary", use_container_width=True):
             st.session_state.ty_total_time = round(time.time() - st.session_state.ty_start, 1)
+            history.log_result(
+                "タイピング", 種類="裏メニュー" if finish_state == "secret_ending" else "通常",
+                テーマ=st.session_state.ty_theme, モード=st.session_state.ty_mode,
+                ノーミス正解=st.session_state.ty_correct, ミスした問題=st.session_state.ty_miss,
+                タイム秒=st.session_state.ty_total_time,
+            )
             st.session_state.ty_state = finish_state
             st.rerun()
 
@@ -275,6 +283,7 @@ if state == "menu":
                 data = generate_typing_issues(theme_input.strip())
             if valid_issues(data, NORMAL_Q, ("japanese", "romaji")):
                 start_round("playing", data["issues"][:NORMAL_Q])
+                st.session_state.ty_theme = theme_input.strip()
                 st.rerun()
             elif data:
                 st.error("もんだいの形がうまく作れなかったよ。もう一回ためしてね！")

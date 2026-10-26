@@ -5,6 +5,7 @@ import chess.svg
 import streamlit as st
 
 import common
+import history
 
 common.setup_page("チェス", "♟️")
 common.hero("♟️ デジタルチェス", "駒と行き先を えらんで ゲームしよう！ 白があなたです。")
@@ -205,6 +206,10 @@ else:
     else:
         st.info("🤝 引き分けです（ステイルメイトなど）。")
     st.caption(f"結果：{board.result()}")
+    history.log_once(
+        "チェス", "chess-" + " ".join(m.uci() for m in board.move_stack),
+        あそびかた=mode, 難易度=difficulty or "-", 結果=board.result(), 手数=len(board.move_stack),
+    )
     if st.button("🔄 もう一度あそぶ", type="primary", use_container_width=True):
         st.session_state.chess_board = chess.Board()
         st.rerun()

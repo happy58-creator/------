@@ -4,6 +4,7 @@ import time
 import streamlit as st
 
 import common
+import history
 
 common.setup_page("限界突破！超高速連打ゲーム", "⚡")
 
@@ -96,6 +97,9 @@ def finish_game():
         },
     )
     del st.session_state.rapid_game_history[5:]
+    history.log_result(
+        "連打", コース秒数=duration, 回数=clicks, **{"回/秒": round(cps, 2)}, ランク=get_rank(cps)[1]
+    )
     st.session_state.rapid_game_state = "result"
 
 
