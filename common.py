@@ -234,13 +234,14 @@ def setup_page(title, icon, layout="centered", home_link=True):
     st.markdown(_CSS, unsafe_allow_html=True)
     import auth  # 循環importを避けるため関数内で読み込む
 
+    # ログイン画面でも王冠マークなどを消すので、ログインの確認より先に出す（サイドバーに出すとログイン前もサイドバーが出てしまう）
+    st.html(_HIDE_CLOUD_BADGES_JS, unsafe_allow_javascript=True)
     auth.gate(is_home=not home_link)
     with st.sidebar:
         if home_link:
             if "home" in PAGES:
                 st.page_link(PAGES["home"], label="トップにもどる", icon="🏠")
         auth.sidebar_user()
-        st.html(_HIDE_CLOUD_BADGES_JS, unsafe_allow_javascript=True)
         st.html(_PDF_OPEN_JS, unsafe_allow_javascript=True)
 
 
@@ -260,7 +261,11 @@ def build_navigation():
     """サイドバーのメニューとページを登録して返す（教材.py から呼ぶ）。"""
     for key, path, title, icon, url_path in PAGE_DEFS:
         PAGES[key] = st.Page(page_file(path), title=title, icon=icon, url_path=url_path, default=(key == "home"))
-    return st.navigation({section: [PAGES[k] for k in keys] for section, keys in SECTIONS.items()})
+    import auth
+
+    # ログイン前はサイドバーのメニューを出さない
+    position = "sidebar" if auth.session_alive() else "hidden"
+    return st.navigation({section: [PAGES[k] for k in keys] for section, keys in SECTIONS.items()}, position=position)
 
 
 def page_file(path):

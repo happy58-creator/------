@@ -125,6 +125,18 @@ def is_logged_in():
     return bool(st.session_state.get("auth_name"))
 
 
+def session_alive():
+    """このあとのページ表示でログイン中になるか（メニューを出すかどうかの判定用。画面には何も出さない）。"""
+    if is_logged_in():
+        return time.time() <= st.session_state.get("auth_expires", 0)
+    try:
+        token = st.context.cookies.get(COOKIE_NAME)
+    except Exception:
+        return False
+    entry = _token_store().get(token) if token else None
+    return bool(entry) and entry["expires"] > time.time()
+
+
 @st.cache_resource
 def _token_store():
     """ブラウザーに持たせた合言葉(トークン) -> ログイン情報。サーバーのメモリ上だけに置く。"""
