@@ -64,23 +64,92 @@ _HIDE_CLOUD_BADGES_JS = """
 </script>
 """
 
-# PDFを「新しいタブのプレビュー」で開くためのスクリプト（ファイルを保存しない）。
-# ボタンの data-pdf に PDF の中身(base64)が入っていて、クリックされたらブラウザー内でPDFにして新しいタブで開く。
+# PDFを、アプリの画面の上に「ビューア」として表示するスクリプト（ファイルを保存しない）。
+# ボタンの data-pdf に PDF の中身(base64)が入っていて、クリックされたら pdf.js で1ページずつ描いて見せる。
+# 別タブ(blob URL)は、スマホのブラウザーでは開けないことが多いので、同じ画面の中で表示する。
 _PDF_OPEN_JS = """
 <script>
 (() => {
   const w = window;
   if (w.__kyouzaiPdfOpen) return;  // 登録は1回だけ
   w.__kyouzaiPdfOpen = true;
-  document.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-pdf]");
-    if (!btn) return;
-    const bin = atob(btn.dataset.pdf);
+  const CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+
+  const loadPdfJs = () => w.pdfjsLib ? Promise.resolve(w.pdfjsLib) : new Promise((ok, ng) => {
+    const s = document.createElement("script");
+    s.src = CDN + "pdf.min.js";
+    s.onload = () => { w.pdfjsLib.GlobalWorkerOptions.workerSrc = CDN + "pdf.worker.min.js"; ok(w.pdfjsLib); };
+    s.onerror = () => ng(new Error("pdf.js を よみこめなかったよ"));
+    document.head.appendChild(s);
+  });
+  const toBytes = (b64) => {
+    const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-    w.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 600000);
+    return bytes;
+  };
+
+  async function openViewer(b64) {
+    const bytes = toBytes(b64);
+    // 注意：st.html は、スクリプトの中に HTML の文字列があると、そのスクリプトを捨ててしまう。部品は createElement で作る。
+    const el = (tag, cls, text) => {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text) e.textContent = text;
+      return e;
+    };
+    const ov = el("div", "kz-pdf-overlay");
+    const bar = el("div", "kz-pdf-bar");
+    const saveBtn = el("button", "", "💾 ほぞん・いんさつ");
+    const closeBtn = el("button", "kz-close", "✕ とじる");
+    saveBtn.type = closeBtn.type = "button";
+    const buttons = el("span");
+    buttons.append(saveBtn, closeBtn);
+    bar.append(el("b", "", "📄 表彰状"), buttons);
+    const body = el("div", "kz-pdf-body");
+    body.append(el("div", "kz-pdf-msg", "よみこみ中…"));
+    ov.append(bar, body);
+    document.body.appendChild(ov);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const close = () => { ov.remove(); document.body.style.overflow = prevOverflow; document.removeEventListener("keydown", onKey); };
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    document.addEventListener("keydown", onKey);
+    closeBtn.onclick = close;
+    saveBtn.onclick = () => {
+      // 保存・印刷：ブラウザーの機能にまかせる（保存は、ここを押したときだけ）
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "ひょうしょうじょう.pdf"; a.target = "_blank"; a.rel = "noopener";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 600000);
+    };
+    try {
+      const lib = await loadPdfJs();
+      const doc = await lib.getDocument({ data: bytes.slice() }).promise;
+      body.replaceChildren();
+      const dpr = Math.min(w.devicePixelRatio || 1, 3);
+      const width = Math.min(body.clientWidth - 16, 820);
+      for (let n = 1; n <= doc.numPages; n++) {
+        const page = await doc.getPage(n);
+        const base = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: (width / base.width) * dpr });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = width + "px";
+        canvas.style.height = Math.floor(viewport.height / dpr) + "px";
+        body.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      }
+    } catch (err) {
+      body.replaceChildren(el("div", "kz-pdf-msg", "ここでは うまく ひらけなかったよ。「ほぞん・いんさつ」ボタンを おしてね。"));
+    }
+  }
+
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-pdf]");
+    if (btn) openViewer(btn.dataset.pdf);
   });
 })();
 </script>
@@ -147,6 +216,14 @@ div[data-testid="stMetric"] {
 .pdf-open:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.18); }
 .pdf-open:active { transform: translateY(0); }
 .pdf-note { margin: .25rem 0 .75rem; font-size: .8rem; color: #6b5d68; text-align: center; }
+/* PDFビューア（画面いっぱいに重ねて表示） */
+.kz-pdf-overlay { position: fixed; inset: 0; z-index: 2147483647; background: rgba(25, 22, 34, .92); display: flex; flex-direction: column; }
+.kz-pdf-bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; color: #fff; background: #1f2a44; font-family: 'Zen Maru Gothic', sans-serif; }
+.kz-pdf-bar button { margin-left: 6px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; font: 700 14px 'Zen Maru Gothic', sans-serif; cursor: pointer; background: #f3e3a3; color: #1f2a44; }
+.kz-pdf-bar button.kz-close { background: #ff7a59; color: #fff; }
+.kz-pdf-body { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding: 10px 8px 30px; text-align: center; }
+.kz-pdf-body canvas { display: block; margin: 0 auto 12px; background: #fff; box-shadow: 0 4px 18px rgba(0,0,0,.4); max-width: 100%; }
+.kz-pdf-msg { color: #fff; padding: 40px 10px; font: 700 16px 'Zen Maru Gothic', sans-serif; }
 </style>
 """
 
@@ -167,14 +244,14 @@ def setup_page(title, icon, layout="centered", home_link=True):
         st.html(_PDF_OPEN_JS, unsafe_allow_javascript=True)
 
 
-def pdf_preview_button(pdf_bytes, label="📄 表彰状を ひらく（新しいタブ）"):
-    """PDFを、保存せずに新しいタブのプレビューで開くボタン。保存・印刷は、開いたタブから。"""
+def pdf_preview_button(pdf_bytes, label="📄 表彰状を 見る"):
+    """PDFを、保存せずに、画面の上のビューアで見せるボタン。保存・印刷は、ビューアの中のボタンから。"""
     import base64
 
     data = base64.b64encode(pdf_bytes).decode("ascii")
     st.html(
         f'<button type="button" class="pdf-open" data-pdf="{data}">{label}</button>'
-        '<div class="pdf-note">新しいタブでプレビューするよ。保存や印刷は、そのタブから できるよ。</div>',
+        '<div class="pdf-note">画面の上に ひらくよ。保存や印刷は、ひらいた画面の ボタンから できるよ。</div>',
         unsafe_allow_javascript=True,
     )
 

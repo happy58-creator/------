@@ -7,6 +7,7 @@ import json
 import math
 import re
 from datetime import datetime
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -14,12 +15,27 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Flowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-GOTHIC = "HeiseiKakuGo-W5"
-MINCHO = "HeiseiMin-W3"
-pdfmetrics.registerFont(UnicodeCIDFont(GOTHIC))
-pdfmetrics.registerFont(UnicodeCIDFont(MINCHO))
+_FONT_DIR = Path(__file__).parent / "fonts"
+
+
+def _register_fonts():
+    """日本語フォントを PDF に埋め込む（IPAex フォント）。どの端末・ビューアでも同じ見た目で、文字化けしない。
+    フォントファイルが無いときだけ、埋め込まない標準の日本語フォントに切りかえる。"""
+    try:
+        for name, file in (("IPAexGothic", "ipaexg.ttf"), ("IPAexMincho", "ipaexm.ttf")):
+            pdfmetrics.registerFont(TTFont(name, str(_FONT_DIR / file)))
+            pdfmetrics.registerFontFamily(name, normal=name, bold=name, italic=name, boldItalic=name)
+        return "IPAexGothic", "IPAexMincho"
+    except Exception:
+        pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
+        pdfmetrics.registerFont(UnicodeCIDFont("HeiseiMin-W3"))
+        return "HeiseiKakuGo-W5", "HeiseiMin-W3"
+
+
+GOTHIC, MINCHO = _register_fonts()
 
 NAVY = colors.HexColor("#1F2A44")
 GOLD = colors.HexColor("#C9A227")
