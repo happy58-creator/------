@@ -233,7 +233,7 @@ def login_screen():
             st.info("ログイン名簿（スプレッドシート）がまだつながっていないよ。いまは「ゲストで入る」を使ってね。")
         with st.form("auth_login_form"):
             name = st.text_input("なまえ")
-            password = st.text_input("パスワード（誕生日 4けた　例：5月8日 → 0508）", type="password", max_chars=8)
+            password = st.text_input("パスワード（誕生日 4けた　例：1月19日 → 0119）", type="password", max_chars=8)
             go = st.form_submit_button("ログイン", type="primary", use_container_width=True)
         if go:
             row, message = _check_login(name, password)
