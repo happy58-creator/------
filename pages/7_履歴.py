@@ -4,6 +4,7 @@ import streamlit as st
 import auth
 import common
 import history
+import pdfgen
 
 common.setup_page("せいせきの履歴", "📒")
 common.hero("📒 せいせきの履歴", "これまでの記録を見よう！")
@@ -40,8 +41,32 @@ if score_col:
     if scores.notna().sum() >= 2:
         st.line_chart(pd.DataFrame({score_col: scores.values}, index=df["日時"].values))
 
-st.dataframe(df.iloc[::-1], use_container_width=True, hide_index=True)
+shown = df.drop(columns=["詳細"], errors="ignore")
+st.dataframe(shown.iloc[::-1], use_container_width=True, hide_index=True)
+
+# --- そのときの問題・答え・点数を、結果PDFと同じ形で出す ---
+if "詳細" in df.columns:
+    st.subheader("📄 そのときの結果をPDFで見る")
+    records = [r for r in df.iloc[::-1].to_dict("records") if str(r.get("詳細") or "").strip()]
+    if not records:
+        st.caption("PDFにできる記録は、まだありません（詳細つきで記録されたものだけ出せます）。")
+    else:
+        def label(r):
+            extra = r.get("言語") or r.get("コース") or r.get("種類") or ""
+            return f"{r['日時']}　{r['名前']}　{r.get('点数', '')}点　{extra}"
+
+        picked = st.selectbox("どの回の結果？（新しい順）", range(len(records)), format_func=lambda i: label(records[i]))
+        pdf = pdfgen.pdf_from_history(records[picked])
+        if pdf is None:
+            st.warning("この記録は詳細が読みこめませんでした。")
+        else:
+            st.download_button(
+                "📥 この回の結果PDFをダウンロード", pdf,
+                file_name=f"{sheet}けっか_{records[picked]['日時'].replace(':', '-').replace(' ', '_')}.pdf",
+                mime="application/pdf", type="primary",
+            )
+
 st.download_button(
-    "📥 CSVでダウンロード", df.to_csv(index=False).encode("utf-8-sig"),
+    "📥 CSVでダウンロード", shown.to_csv(index=False).encode("utf-8-sig"),
     file_name=f"履歴_{sheet}.csv", mime="text/csv",
 )

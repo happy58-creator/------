@@ -5,6 +5,7 @@ import streamlit as st
 
 import common
 import history
+import pdfgen
 import web_games
 
 common.setup_page("AIタイピングマスター", "⌨️")
@@ -16,7 +17,18 @@ SECRET_TIME_LIMIT = 300.0  # 5分以内にクリアで裏メニュー解放
 UNLOCK_KEY = "typing_unlocked"
 ROUND_KEY = "typing_round"  # ゲームごとに増やして、前のゲームの結果をまちがえて拾わないようにする
 
+# スピード点（40点）の目標。1秒に何打鍵できたら満点か（年れいで変える）
+LEVEL_TARGET = {
+    "小1〜2年（6〜8さい）": 0.3,
+    "小3〜4年（8〜10さい）": 0.5,
+    "小5〜6年（10〜12さい）": 0.8,
+    "中学生": 1.2,
+    "高校生": 1.6,
+    "大人（社会人・学び直し）": 2.0,
+}
+
 DEFAULTS = {
+    "ty_level": "小3〜4年（8〜10さい）",
     "ty_state": "menu",  # menu, playing, ending, code_playing, code_ending, sandbox
     "ty_data": None,
     "ty_mode": "みながらモード",
@@ -89,6 +101,37 @@ def valid_issues(data, count):
     )
 
 
+def typing_points(r, level):
+    """100点満点 = 正確さ60点（ノーミスの問題は満点、ミスのあった問題は半分）+ スピード40点（年れいの目標に届けば満点）。"""
+    total = r["total"] or 1
+    accuracy = 60 * (r["perfect"] + 0.5 * r["missedQuestions"]) / total
+    speed = 40 * min(1.0, (r["kpm"] / 60) / LEVEL_TARGET[level])
+    score = round(accuracy + speed)
+    accuracy_pt = round(accuracy)
+    return score, accuracy_pt, score - accuracy_pt
+
+
+def code_points(r):
+    """裏メニューは正確さ中心：ノーミスのステージは満点、ミスのあったステージは半分。"""
+    stages = r["stages"] or 1
+    return round(100 * (r["perfect"] + 0.5 * (stages - r["perfect"])) / stages)
+
+
+def miss_text(n):
+    return "ノーミス" if not n else f"ミス {n}回"
+
+
+def pdf_button(r):
+    st.download_button(
+        "📥 けっかをPDFで保存する（印刷もできるよ！）",
+        data=pdfgen.build_pdf(
+            r["subject"], r["pdf_info"], st.session_state.get("player_name", ""),
+            r["played_at"], r["score"], r["pdf_rows"],
+        ),
+        file_name="タイピングけっか.pdf", mime="application/pdf", type="primary", use_container_width=True,
+    )
+
+
 def start(state):
     st.session_state[ROUND_KEY] += 1
     st.session_state.ty_result = None
@@ -113,6 +156,10 @@ if state == "menu":
             horizontal=True,
         )
         st.session_state.ty_mode = "みながらモード" if "みながら" in mode_choice else "あんもくモード"
+        levels = list(LEVEL_TARGET)
+        st.session_state.ty_level = st.selectbox(
+            "年れい（点数の「スピード」の目標に使うよ）", levels, index=common.age_level_index(len(levels)),
+        )
 
     with st.container(border=True):
         st.subheader("✍️ どんなテーマでもんだいを作る？")
@@ -150,10 +197,26 @@ elif state == "playing":
         issues=st.session_state.ty_data, mode=st.session_state.ty_mode, round=st.session_state[ROUND_KEY],
     )
     if result and result.get("type") == "typing_done" and result.get("round") == st.session_state[ROUND_KEY]:
+        score, accuracy_pt, speed_pt = typing_points(result, st.session_state.ty_level)
+        romaji_of = {i["japanese"]: i["romaji"] for i in st.session_state.ty_data}
+        pdf_rows = [
+            (f"{d['text']}（{romaji_of.get(d['text'], '')}）", miss_text(d["miss"]), "ノーミス", d["miss"] == 0)
+            for d in result.get("details", [])
+        ]
+        pdf_info = (
+            f"{st.session_state.ty_mode} ／ {st.session_state.ty_level} ／ テーマ：{st.session_state.ty_theme}　"
+            f"正確さ {accuracy_pt}/60 ＋ スピード {speed_pt}/40 ／ タイム {format_time(result['time'])}"
+        )
+        result.update(
+            score=score, accuracy_pt=accuracy_pt, speed_pt=speed_pt, pdf_rows=pdf_rows, pdf_info=pdf_info,
+            played_at=time.strftime("%Y-%m-%d %H:%M:%S"), subject="AIタイピングマスター",
+        )
         st.session_state.ty_result = result
         history.log_result(
             "タイピング", 種類="通常", テーマ=st.session_state.ty_theme, モード=st.session_state.ty_mode,
             ノーミス正解=result["perfect"], ミスした問題=result["missedQuestions"], タイム秒=result["time"],
+            点数=score, 年齢層=st.session_state.ty_level,
+            詳細=pdfgen.make_record(result["subject"], pdf_info, pdf_rows),
         )
         if result["time"] <= SECRET_TIME_LIMIT:
             st.session_state[UNLOCK_KEY] = True
@@ -169,6 +232,8 @@ elif state == "ending":
     st.balloons()
     st.subheader(RANK_TEXT.get(r["rank"], ""))
 
+    st.metric("🎯 点数", f"{r['score']} / 100 点", help="正確さ60点 ＋ スピード40点（スピードの目標は年れいで変わるよ）")
+    st.caption(f"✅ 正確さ {r['accuracy_pt']} / 60 点　＋　⚡ スピード {r['speed_pt']} / 40 点　（{st.session_state.ty_level}）")
     c1, c2, c3 = st.columns(3)
     c1.metric("🎯 ノーミス正解", f"{r['perfect']} / {r['total']} 問")
     c2.metric("⏱️ ごうけいタイム", format_time(r["time"]))
@@ -182,6 +247,7 @@ elif state == "ending":
     elif r["weakKeys"]:
         keys = "、".join(f"「{k.upper()}」（{n}回）" for k, n in r["weakKeys"])
         st.info(f"🔍 まちがえやすかったキー：{keys}　つぎは ここを 意識してみよう！")
+    pdf_button(r)
     st.divider()
 
     if r["time"] <= SECRET_TIME_LIMIT:
@@ -204,10 +270,25 @@ elif state == "code_playing":
     st.markdown("<h2 style='color:#FF9800'>💻 裏メニュー：プログラミング・ミッション</h2>", unsafe_allow_html=True)
     result = web_games.typing_game("code", key=f"ty_code_{st.session_state[ROUND_KEY]}", round=st.session_state[ROUND_KEY])
     if result and result.get("type") == "code_done" and result.get("round") == st.session_state[ROUND_KEY]:
+        score = code_points(result)
+        pdf_rows = [
+            (f"ステージ {i + 1}", miss_text(n), "ノーミス", n == 0)
+            for i, n in enumerate(result.get("stageMisses", []))
+        ]
+        pdf_info = (
+            f"プログラミング・ミッション（{result['stages']}ステージ） ／ {st.session_state.ty_level}　"
+            f"ミス {result['misses']}回 ／ タイム {format_time(result['time'])}"
+        )
+        result.update(
+            score=score, pdf_rows=pdf_rows, pdf_info=pdf_info,
+            played_at=time.strftime("%Y-%m-%d %H:%M:%S"), subject="プログラミング・ミッション",
+        )
         st.session_state.ty_result = result
         history.log_result(
             "タイピング", 種類="プログラミング", テーマ=f"ロボット{result['stages']}ステージ", モード="-",
             ノーミス正解=result["perfect"], ミスした問題=result["stages"] - result["perfect"], タイム秒=result["time"],
+            点数=score, 年齢層=st.session_state.ty_level,
+            詳細=pdfgen.make_record(result["subject"], pdf_info, pdf_rows),
         )
         st.session_state.ty_state = "code_ending"
         st.rerun()
@@ -219,6 +300,7 @@ elif state == "code_ending":
     r = st.session_state.ty_result
     st.header("👑 プログラミング・マスター達成！ 👑")
     st.balloons()
+    st.metric("🎯 点数", f"{r['score']} / 100 点", help="ノーミスのステージは満点、ミスのあったステージは半分で計算するよ")
     c1, c2, c3 = st.columns(3)
     c1.metric("🌟 ノーミス ステージ", f"{r['perfect']} / {r['stages']}")
     c2.metric("❌ バグ（ミス）", f"{r['misses']} 回")
@@ -228,6 +310,7 @@ elif state == "code_ending":
         "move・for・変数・if は、本物のプログラマーも 毎日つかっている命令だよ。"
         "つぎは「じゆうモード」で、自分だけの プログラムを 書いてみよう！"
     )
+    pdf_button(r)
     st.divider()
     c1, c2 = st.columns(2)
     if c1.button("🎨 じゆうに プログラミングする", type="primary", use_container_width=True):

@@ -4,8 +4,11 @@ import random
 import streamlit as st
 from google.genai import types
 
+import time
+
 import common
 import history
+import pdfgen
 
 common.setup_page("AI英語チャレンジ", "🔤")
 common.hero("🔤 AI英語チャレンジ", "年れいに合わせて、AIが英語の問題を10問つくるよ！")
@@ -21,6 +24,8 @@ DEFAULTS = {
     "en_choice": None,  # 今の問題で「決定」した選択肢
     "en_hint": False,
     "en_log": [],  # 各問題の結果 (正解したか)
+    "en_rows": [],  # PDF・履歴用 (問題, あなたの答え, 正しい答え, 正解か)
+    "en_played_at": "",
     "en_course": "単語",
     "en_level": "",
     "en_topic": "",
@@ -127,7 +132,15 @@ def submit_choice(choice):
     st.session_state.en_choice = choice
 
 
+def pdf_info():
+    ss = st.session_state
+    return f"{ss.en_course}コース ／ {ss.en_level} ／ テーマ：{ss.en_topic or 'おまかせ'}"
+
+
 def go_next(is_correct):
+    q = st.session_state.en_questions[st.session_state.en_q]
+    question = q["prompt"] + (f"\n（{q['translation']}）" if q.get("translation") else "")
+    st.session_state.en_rows.append((question, st.session_state.en_choice, q["answer"], is_correct))
     st.session_state.en_log.append(is_correct)
     if is_correct:
         st.session_state.en_score += 1
@@ -137,9 +150,11 @@ def go_next(is_correct):
     if st.session_state.en_q >= TOTAL_Q:
         st.session_state.en_state = "ending"
         score = st.session_state.en_score
+        st.session_state.en_played_at = time.strftime("%Y-%m-%d %H:%M:%S")
         history.log_result(
             "英語", コース=st.session_state.en_course, 年齢層=st.session_state.en_level,
             テーマ=st.session_state.en_topic or "おまかせ", 点数=score * 10, 正解数=score,
+            詳細=pdfgen.make_record("AI英語チャレンジ", pdf_info(), st.session_state.en_rows),
         )
 
 
@@ -255,6 +270,18 @@ elif state == "ending":
                     st.caption(f"日本語訳：{q['translation']}")
                 if q.get("explanation"):
                     st.caption(q["explanation"])
+
+    st.download_button(
+        "📥 けっかをPDFで保存する（印刷もできるよ！）",
+        data=pdfgen.build_pdf(
+            "AI英語チャレンジ", pdf_info(), st.session_state.get("player_name", ""),
+            st.session_state.en_played_at, score * 10, st.session_state.en_rows,
+        ),
+        file_name="英語けっか.pdf",
+        mime="application/pdf",
+        type="primary",
+        use_container_width=True,
+    )
 
     st.divider()
     col_same, col_new = st.columns(2)

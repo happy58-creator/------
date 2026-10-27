@@ -3,8 +3,11 @@ import json
 import streamlit as st
 from google.genai import types
 
+import time
+
 import common
 import history
+import pdfgen
 
 common.setup_page("AI国語アドベンチャー", "🧙‍♂️")
 common.hero("🧙‍♂️ AI国語わくわくアドベンチャー 🌟", "入力したテーマに合わせて、AIがその場で『世界にひとつだけの国語教材』を作ります！")
@@ -19,6 +22,8 @@ DEFAULTS = {
     "jp_theme": "",
     "jp_choice": None,  # 今のステージで「決定」した選択肢
     "jp_log": [],  # 各ステージの結果 (正解したか)
+    "jp_rows": [],  # PDF・履歴用 (問題, あなたの答え, 正しい答え, 正解か)
+    "jp_played_at": "",
 }
 common.init_state(DEFAULTS)
 
@@ -112,7 +117,18 @@ def submit_choice(choice):
     st.session_state.jp_choice = choice
 
 
+def pdf_info():
+    return f"テーマ：{st.session_state.jp_theme}"
+
+
 def go_next(is_correct):
+    step = st.session_state.jp_step
+    data = st.session_state.jp_quiz
+    _, kind, fixed_text = STAGES[step - 1]
+    question = f"{kind} {fixed_text or data[f'q{step}_text']}\n（{'／'.join(data[f'q{step}_opts'])}）"
+    st.session_state.jp_rows.append(
+        (question, st.session_state.jp_choice, data[f"q{step}_ans"], is_correct)
+    )
     st.session_state.jp_log.append(is_correct)
     if is_correct:
         st.session_state.jp_score += 20
@@ -120,7 +136,11 @@ def go_next(is_correct):
     st.session_state.jp_step += 1
     if st.session_state.jp_step > 5:
         st.session_state.jp_state = "ending"
-        history.log_result("国語", テーマ=st.session_state.jp_theme, 点数=st.session_state.jp_score)
+        st.session_state.jp_played_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        history.log_result(
+            "国語", テーマ=st.session_state.jp_theme, 点数=st.session_state.jp_score,
+            詳細=pdfgen.make_record("AI国語アドベンチャー", pdf_info(), st.session_state.jp_rows),
+        )
 
 
 # --- メニュー ---
@@ -190,6 +210,18 @@ elif st.session_state.jp_state == "ending":
     else:
         st.info("🏃 【ランク：みならい冒険家】")
         st.write("お疲れさま！AI先生のお話は楽しかったかな？次はキミの大好きな別のテーマを入力してリベンジだ！")
+
+    st.download_button(
+        "📥 けっかをPDFで保存する（印刷もできるよ！）",
+        data=pdfgen.build_pdf(
+            "AI国語アドベンチャー", pdf_info(), st.session_state.get("player_name", ""),
+            st.session_state.jp_played_at, score, st.session_state.jp_rows,
+        ),
+        file_name="国語けっか.pdf",
+        mime="application/pdf",
+        type="primary",
+        use_container_width=True,
+    )
 
     st.divider()
     col_same, col_new = st.columns(2)

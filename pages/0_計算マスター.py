@@ -1,22 +1,14 @@
-import io
 import random
 import time
 
 import pandas as pd
 import streamlit as st
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 import common
 import history
+import pdfgen
 
 common.setup_page("計算マスター", "🧮")
-
-pdfmetrics.registerFont(UnicodeCIDFont("HeiseiKakuGo-W5"))
 
 TOTAL_Q = 25
 DEFAULTS = {
@@ -102,103 +94,6 @@ def generate_questions(mode, selected_ops):
                 count += 1
                 
     return all_op_questions[:TOTAL_Q]
-
-
-# --- PDF生成用ロジック（1ページに収めつつ下の余白を拡張したデザイン版） ---
-def create_pdf(score, total, results_df, comment):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, 
-        pagesize=A4, 
-        rightMargin=20, 
-        leftMargin=20, 
-        topMargin=25, 
-        bottomMargin=25, 
-        title="けいさんチャレンジ合格証書"
-    )
-    
-    title_style = ParagraphStyle(
-        'Award_Title', fontName='HeiseiKakuGo-W5', fontSize=24, leading=28, alignment=1, textColor=colors.HexColor("#1A252F")
-    )
-    subtitle_style = ParagraphStyle(
-        'Award_Subtitle', fontName='HeiseiKakuGo-W5', fontSize=11, leading=14, alignment=1, textColor=colors.HexColor("#7F8C8D")
-    )
-    score_style = ParagraphStyle(
-        'Award_Score', fontName='HeiseiKakuGo-W5', fontSize=34, leading=38, alignment=1, textColor=colors.HexColor("#D35400")
-    )
-    msg_title_style = ParagraphStyle(
-        'Award_MsgTitle', fontName='HeiseiKakuGo-W5', fontSize=10, leading=14, textColor=colors.HexColor("#2C3E50")
-    )
-    msg_style = ParagraphStyle(
-        'Award_Msg', fontName='HeiseiKakuGo-W5', fontSize=11, leading=15, textColor=colors.HexColor("#2C3E50")
-    )
-    table_hdr_style = ParagraphStyle(
-        'Table_Hdr', fontName='HeiseiKakuGo-W5', fontSize=10, leading=12, alignment=1, textColor=colors.white
-    )
-    table_cell_style = ParagraphStyle(
-        'Table_Cell', fontName='HeiseiKakuGo-W5', fontSize=10, leading=12, alignment=1, textColor=colors.HexColor("#34495E")
-    )
-    
-    story = []
-    
-    story.append(Paragraph("<b>表 彰 状</b>", title_style))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph("ーーー 計算チャレンジマスターの証 ーーー", subtitle_style))
-    story.append(Spacer(1, 10))
-    
-    story.append(Paragraph(f"チャレンジコース：{st.session_state['calc_mode']}", subtitle_style))
-    story.append(Spacer(1, 6))
-    story.append(Paragraph(f"<b>得点：{score} / 100 点</b>", score_style))
-    story.append(Spacer(1, 10))
-    
-    story.append(Paragraph("<b>【 お祝いのことば 】</b>", msg_title_style))
-    story.append(Spacer(1, 2))
-    story.append(Paragraph(f"{comment}", msg_style))
-    story.append(Spacer(1, 12))
-    
-    table_data = [[
-        Paragraph("<b>問題</b>", table_hdr_style), 
-        Paragraph("<b>きみのこたえ</b>", table_hdr_style), 
-        Paragraph("<b>正しいこたえ</b>", table_hdr_style), 
-        Paragraph("<b>はんてい</b>", table_hdr_style)
-    ]]
-    
-    for idx, row in results_df.iterrows():
-        if row["判定"] == "⭕":
-            status_text = '<font color="#27AE60"><b>せいかい</b></font>'
-        else:
-            status_text = '<font color="#E91E63"><b>おしい！</b></font>'
-            
-        table_data.append([
-            Paragraph(f"{row['問題']}", table_cell_style),
-            Paragraph(f"{row['あなたの解答']}", table_cell_style),
-            Paragraph(f"{row['正しい答え']}", table_cell_style),
-            Paragraph(status_text, table_cell_style)
-        ])
-        
-    # 💡 4つの列幅を綺麗に指定
-    result_table = Table(table_data, colWidths=[150, 110, 110, 110])
-    result_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#BDC3C7")),
-        ('TOPPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-    ]))
-    story.append(result_table)
-    
-    def draw_award_border(canvas, doc):
-        canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor("#2C3E50"))
-        canvas.setLineWidth(1)
-        canvas.rect(10, 10, doc.pagesize[0]-20, doc.pagesize[1]-20)
-        canvas.setLineWidth(2.5)
-        canvas.rect(14, 14, doc.pagesize[0]-28, doc.pagesize[1]-28)
-        canvas.restoreState()
-        
-    doc.build(story, onFirstPage=draw_award_border)
-    return buffer.getvalue()
 
 
 # --- 画面描画ロジック ---
@@ -292,10 +187,17 @@ elif st.session_state.calc_step == "result":
     is_new_best = previous_best is None or total_score > previous_best
     st.session_state.calc_best[best_key] = max(total_score, previous_best or 0)
 
+    game_id = st.session_state.calc_game_id
+    if st.session_state.get("calc_played_id") != game_id:  # 同じ結果画面の再描画で日時が変わらないようにする
+        st.session_state.calc_played_id = game_id
+        st.session_state.calc_played_at = time.strftime("%Y-%m-%d %H:%M:%S")
+    pdf_info = f"チャレンジコース：{st.session_state.calc_mode}（{st.session_state.calc_op}）"
+    pdf_rows = [(r["問題"], r["あなたの解答"], r["正しい答え"], r["判定"] == "⭕") for r in records]
     history.log_once(
-        "計算", f"calc-{st.session_state.calc_game_id}",
+        "計算", f"calc-{game_id}",
         コース=st.session_state.calc_mode, 計算=st.session_state.calc_op,
         点数=total_score, 正解数=correct_count,
+        詳細=pdfgen.make_record("計算チャレンジマスター", pdf_info, pdf_rows),
     )
 
     if total_score == 100:
@@ -327,7 +229,10 @@ elif st.session_state.calc_step == "result":
 
     st.download_button(
         label="📥 がんばり結果をPDFで保存する（印刷もできるよ！）",
-        data=create_pdf(total_score, TOTAL_Q, df_results, comment),
+        data=pdfgen.build_pdf(
+            "計算チャレンジマスター", pdf_info, st.session_state.get("player_name", ""),
+            st.session_state.calc_played_at, total_score, pdf_rows, comment,
+        ),
         file_name=f"けいさん結果_{st.session_state.calc_mode}.pdf",
         mime="application/pdf",
         use_container_width=True,

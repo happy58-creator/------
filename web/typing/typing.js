@@ -15,6 +15,8 @@ class TypingGame {
     this.maxCombo = 0;
     this.perfect = 0;
     this.missedQuestions = 0;
+    this.details = []; // 問題ごとの {text, miss}（PDF・履歴用）
+    this.qMissCount = 0;
     this.weak = {};
     this.elapsed = 0;
     this.runningSince = 0;
@@ -126,6 +128,7 @@ class TypingGame {
     const q = this.questions[this.q];
     this.matcher = new Kana.Matcher(q.units);
     this.qMissed = false;
+    this.qMissCount = 0;
     this.$("qno").textContent = this.q + 1;
     this.$("bar").style.width = (this.q / this.questions.length) * 100 + "%";
     const nx = this.questions[this.q + 1];
@@ -186,6 +189,7 @@ class TypingGame {
       this.justMissed = true;
       this.combo = 0;
       this.qMissed = true;
+      this.qMissCount++;
       if (expected) this.weak[expected] = (this.weak[expected] || 0) + 1;
       UI.sfx.miss();
       this.kb.flash(k, false);
@@ -200,6 +204,7 @@ class TypingGame {
   clearQuestion() {
     if (this.qMissed) this.missedQuestions++;
     else this.perfect++;
+    this.details.push({ text: this.questions[this.q].text, miss: this.qMissCount });
     UI.sfx.clear();
     this.draw();
     const words = this.qMissed ? ["クリア！", "いいね！", "その調子！"] : ["パーフェクト！✨", "ノーミス！🌟", "すごい！💯"];
@@ -232,7 +237,7 @@ class TypingGame {
     setTimeout(() => this.onDone({
       type: "typing_done", round: this.round, time, keys: this.keys, misses: this.misses, kpm, accuracy, rank,
       perfect: this.perfect, missedQuestions: this.missedQuestions, maxCombo: this.maxCombo, weakKeys,
-      total: this.questions.length,
+      total: this.questions.length, details: this.details,
     }), 1300);
   }
 }

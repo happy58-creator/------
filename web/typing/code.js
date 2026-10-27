@@ -207,6 +207,7 @@ class CodeGame {
     this.keys = 0;
     this.misses = 0;
     this.perfectStages = 0;
+    this.stageMisses = []; // ステージごとのミス回数（PDF・履歴用）
     this.elapsed = 0;
     this.runningSince = 0;
     this.state = "ready";
@@ -425,6 +426,7 @@ class CodeGame {
     this.state = "clear";
     this.runLine = 0;
     if (!this.stageMiss) this.perfectStages++;
+    this.stageMisses.push(this.stageMiss);
     UI.sfx.finish();
     this.draw();
     const last = this.stage + 1 >= STAGES.length;
@@ -451,7 +453,7 @@ class CodeGame {
     const time = Math.round(this.elapsed / 100) / 10;
     setTimeout(() => this.onDone({
       type: "code_done", round: this.round, time, keys: this.keys, misses: this.misses,
-      stages: STAGES.length, perfect: this.perfectStages,
+      stages: STAGES.length, perfect: this.perfectStages, stageMisses: this.stageMisses,
     }), 1000);
   }
 }

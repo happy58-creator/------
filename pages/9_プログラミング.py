@@ -5,8 +5,11 @@ import random
 import streamlit as st
 from google.genai import types
 
+import time
+
 import common
 import history
+import pdfgen
 
 common.setup_page("AIプログラミング教室", "💻")
 common.hero("💻 AIプログラミング教室", "言語と年れいを えらぶと、AI先生が ぴったりの レッスンを つくるよ！")
@@ -29,6 +32,8 @@ DEFAULTS = {
     "pg_choice": None,
     "pg_score": 0,
     "pg_log": [],
+    "pg_rows": [],  # PDF・履歴用 (問題, あなたの答え, 正しい答え, 正解か)
+    "pg_played_at": "",
 }
 common.init_state(DEFAULTS)
 
@@ -150,7 +155,15 @@ def submit_choice(choice):
     st.session_state.pg_choice = choice
 
 
+def pdf_info():
+    ss = st.session_state
+    return f"言語：{ss.pg_lang} ／ テーマ：{ss.pg_topic} ／ {ss.pg_level}"
+
+
 def go_next_quiz(is_correct):
+    q = st.session_state.pg_lesson["quiz"][st.session_state.pg_q]
+    question = f"{q['question']}\n（{'／'.join(q['choices'])}）"
+    st.session_state.pg_rows.append((question, st.session_state.pg_choice, q["answer"], is_correct))
     st.session_state.pg_log.append(is_correct)
     if is_correct:
         st.session_state.pg_score += 1
@@ -159,9 +172,11 @@ def go_next_quiz(is_correct):
     if st.session_state.pg_q >= QUIZ_Q:
         st.session_state.pg_state = "ending"
         score = st.session_state.pg_score
+        st.session_state.pg_played_at = time.strftime("%Y-%m-%d %H:%M:%S")
         history.log_result(
             "プログラミング", 言語=st.session_state.pg_lang, テーマ=st.session_state.pg_topic,
             年齢層=st.session_state.pg_level, 点数=score * 20, 正解数=score,
+            詳細=pdfgen.make_record("AIプログラミング教室", pdf_info(), st.session_state.pg_rows),
         )
 
 
@@ -311,6 +326,18 @@ elif state == "ending":
         st.success("🥈 いいね！ 単語と文法をもう一度見ると、さらに身につくよ。")
     else:
         st.info("🌱 よくがんばったね！ レッスンをもう一度やってみよう。")
+
+    st.download_button(
+        "📥 けっかをPDFで保存する（印刷もできるよ！）",
+        data=pdfgen.build_pdf(
+            "AIプログラミング教室", pdf_info(), st.session_state.get("player_name", ""),
+            st.session_state.pg_played_at, score * 20, st.session_state.pg_rows,
+        ),
+        file_name="プログラミングけっか.pdf",
+        mime="application/pdf",
+        type="primary",
+        use_container_width=True,
+    )
 
     st.divider()
     col_again, col_new = st.columns(2)

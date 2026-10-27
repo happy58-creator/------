@@ -9,13 +9,13 @@ LOCAL_DIR = Path(__file__).parent / "history"
 
 # シート名 -> 列見出し（日時と名前は自動で先頭に付く）
 SHEETS = {
-    "計算": ["コース", "計算", "点数", "正解数"],
+    "計算": ["コース", "計算", "点数", "正解数", "詳細"],
     "連打": ["コース秒数", "回数", "回/秒", "ランク"],
-    "国語": ["テーマ", "点数"],
-    "タイピング": ["種類", "テーマ", "モード", "ノーミス正解", "ミスした問題", "タイム秒"],
+    "国語": ["テーマ", "点数", "詳細"],
+    "タイピング": ["種類", "テーマ", "モード", "ノーミス正解", "ミスした問題", "タイム秒", "点数", "年齢層", "詳細"],
     "ログイン": ["操作", "種類"],
-    "プログラミング": ["言語", "テーマ", "年齢層", "点数", "正解数"],
-    "英語": ["コース", "年齢層", "テーマ", "点数", "正解数"],
+    "プログラミング": ["言語", "テーマ", "年齢層", "点数", "正解数", "詳細"],
+    "英語": ["コース", "年齢層", "テーマ", "点数", "正解数", "詳細"],
     "チェス": ["あそびかた", "難易度", "結果", "手数"],
 }
 BASE_COLUMNS = ["日時", "名前"]
@@ -38,16 +38,29 @@ def _open_spreadsheet(info_items, sheet_id):
     return gspread.service_account_from_dict(dict(info_items)).open_by_key(sheet_id)
 
 
+_checked_headers = set()
+
+
 def _worksheet(book, name):
     import gspread
 
     header = BASE_COLUMNS + SHEETS[name]
     try:
-        return book.worksheet(name)
+        ws = book.worksheet(name)
     except gspread.WorksheetNotFound:
         ws = book.add_worksheet(title=name, rows=1000, cols=len(header))
         ws.append_row(header)
+        _checked_headers.add(name)
         return ws
+    if name not in _checked_headers:
+        # 前のバージョンで作ったタブに、あとから増えた列（詳細など）の見出しを足す
+        current = ws.row_values(1)
+        if current != header and current == header[: len(current)]:
+            if ws.col_count < len(header):
+                ws.add_cols(len(header) - ws.col_count)
+            ws.update(range_name="A1", values=[header])
+        _checked_headers.add(name)
+    return ws
 
 
 def _csv_path(name):
