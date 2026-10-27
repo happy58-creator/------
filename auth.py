@@ -15,9 +15,10 @@ USERS_HEADER = ["名前", "パスワード", "誕生日", "管理者"]
 ADMIN_MARKS = {"○", "◯", "〇", "1", "true", "yes", "y", "はい", "管理者", "admin"}
 MAX_FAILS = 5
 LOCK_SECONDS = 300
-SESSION_SECONDS = int(os.environ.get("SESSION_SECONDS", 3600))  # ログイン状態を保つ時間（ログイン後1時間）
+SESSION_SECONDS = int(os.environ.get("SESSION_SECONDS", 3600))  # 最後にアクセスしてから、ログイン状態を保つ時間（1時間）
+COOKIE_REFRESH_SECONDS = 1800  # クッキーを延ばし直す間隔
 COOKIE_NAME = "kyouzai_token"
-COOKIE_MAX_AGE = 86400  # クッキー自体は1日残す。1時間の期限はサーバー側で判定する（期限切れも記録できる）
+COOKIE_MAX_AGE = 86400  # クッキー自体は1日残す（使うたびに延ばし直す）。1時間の期限はサーバー側で判定する（期限切れも記録できる）
 
 
 def _norm(text):
@@ -183,6 +184,20 @@ def _flush_cookie():
     )
 
 
+def _touch():
+    """アクセスがあるたびに期限を「いまから1時間後」に延ばす（最後にアクセスしてから1時間）。"""
+    now = time.time()
+    expires = now + SESSION_SECONDS
+    st.session_state["auth_expires"] = expires
+    entry = _token_store().get(st.session_state.get("auth_token"))
+    if entry:
+        entry["expires"] = expires
+    if now - st.session_state.get("auth_cookie_at", 0) > COOKIE_REFRESH_SECONDS and st.session_state.get("auth_token"):
+        st.session_state["auth_cookie_at"] = now
+        st.session_state["auth_cookie_cmd"] = ("set", st.session_state["auth_token"])
+        _flush_cookie()
+
+
 def _try_restore():
     """再読み込みしたあとでも、1時間以内なら、クッキーのトークンでログイン状態に戻す。"""
     try:
@@ -200,7 +215,7 @@ def _try_restore():
         who = f"{entry['name']}（ゲスト）" if entry["guest"] else entry["name"]
         _log("期限切れ", who=who, kind=_kind(entry["guest"], entry["admin"]))
         st.session_state["auth_cookie_cmd"] = ("clear", "")
-        st.session_state["auth_notice"] = "ログインしてから1時間たったので、もういちどログインしてね。"
+        st.session_state["auth_notice"] = "さいごに使ってから1時間たったので、もういちどログインしてね。"
         _flush_cookie()
 
 
@@ -263,11 +278,12 @@ def gate(is_home):
     """ログインしていなければログイン画面（トップ）か案内（他ページ）を出して止める。"""
     _flush_cookie()
     if is_logged_in() and time.time() > st.session_state.get("auth_expires", 0):
-        logout("期限切れ", notice="ログインしてから1時間たったので、もういちどログインしてね。")
+        logout("期限切れ", notice="さいごに使ってから1時間たったので、もういちどログインしてね。")
         _flush_cookie()
     if not is_logged_in():
         _try_restore()
     if is_logged_in():
+        _touch()
         return
     if is_home:
         login_screen()
