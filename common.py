@@ -6,7 +6,30 @@ import unicodedata
 import streamlit as st
 
 GEMINI_MODEL = "gemini-3.6-flash"
-HOME_PAGE = "教材.py"
+HOME_PAGE = "home.py"
+
+# (名前, ファイル, サイドバーの表示名, アイコン, URLの末尾)。URLは半角英数字にして、
+# ファイル名の文字の形（Mac の濁点の分かれ方）に左右されないようにする。
+PAGE_DEFS = [
+    ("home", "home.py", "トップ", "🏠", ""),
+    ("calc", "pages/0_計算マスター.py", "計算マスター", "🧮", "calc"),
+    ("kokugo", "pages/5_国語.py", "AI国語", "🧙‍♂️", "kokugo"),
+    ("typing", "pages/6_タイピング.py", "AIタイピング", "⌨️", "typing"),
+    ("english", "pages/8_英語.py", "AI英語", "🔤", "english"),
+    ("programming", "pages/9_プログラミング.py", "AIプログラミング", "💻", "programming"),
+    ("rapid", "pages/1_限界突破ゲーム.py", "連打ゲーム", "⚡", "rapid"),
+    ("janken", "pages/2_じゃんけんゲーム.py", "じゃんけん", "✊", "janken"),
+    ("lottery", "pages/3_くじ引き・じゅんばん決めゲーム.py", "くじ引き", "🎉", "lottery"),
+    ("chess", "pages/4_チェスVS.py", "チェス", "♟️", "chess"),
+    ("history", "pages/7_履歴.py", "せいせきの履歴", "📒", "history"),
+]
+SECTIONS = {
+    "": ["home"],
+    "べんきょう": ["calc", "kokugo", "typing", "english", "programming"],
+    "ゲーム": ["rapid", "janken", "lottery", "chess"],
+    "きろく": ["history"],
+}
+PAGES = {}  # 名前 -> st.Page（教材.py が毎回つくる）
 
 # Streamlit Cloud がアプリの外側の画面に出す「王冠マーク」と「作った人のアカウント表示」を消す。
 # アプリと外側の画面は同じドメイン（〜.streamlit.app）なので、JavaScript から触れる。
@@ -105,13 +128,17 @@ def setup_page(title, icon, layout="centered", home_link=True):
     auth.gate(is_home=not home_link)
     with st.sidebar:
         if home_link:
-            try:
-                st.page_link(HOME_PAGE, label="トップにもどる", icon="🏠")
-            except st.errors.StreamlitAPIException:
-                # Streamlit Cloud の Main file path が 教材.py 以外だとトップが見つからない
-                pass
+            if "home" in PAGES:
+                st.page_link(PAGES["home"], label="トップにもどる", icon="🏠")
         auth.sidebar_user()
         st.html(_HIDE_CLOUD_BADGES_JS, unsafe_allow_javascript=True)
+
+
+def build_navigation():
+    """サイドバーのメニューとページを登録して返す（教材.py から呼ぶ）。"""
+    for key, path, title, icon, url_path in PAGE_DEFS:
+        PAGES[key] = st.Page(page_file(path), title=title, icon=icon, url_path=url_path, default=(key == "home"))
+    return st.navigation({section: [PAGES[k] for k in keys] for section, keys in SECTIONS.items()})
 
 
 def page_file(path):

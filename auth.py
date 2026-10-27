@@ -275,10 +275,8 @@ def gate(is_home):
         import common
 
         common.hero("🔒 ログインしてね", "はじめに トップ画面で なまえを入れてね。")
-        try:
-            st.page_link(common.HOME_PAGE, label="トップ画面へ", icon="🏠", use_container_width=True)
-        except st.errors.StreamlitAPIException:
-            st.info("トップ画面（教材.py）から入りなおしてね。")
+        if "home" in common.PAGES:
+            st.page_link(common.PAGES["home"], label="トップ画面へ", icon="🏠", use_container_width=True)
     st.stop()
 
 
