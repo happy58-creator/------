@@ -22,12 +22,13 @@ PAGE_DEFS = [
     ("janken", "pages/6_じゃんけんゲーム.py", "じゃんけん", "✊", "janken"),
     ("chess", "pages/7_チェスVS.py", "チェス", "♟️", "chess"),
     ("rapid", "pages/8_限界突破ゲーム.py", "連打ゲーム", "⚡", "rapid"),
+    ("story", "pages/11_ストーリーモード.py", "ストーリーモード", "⚔️", "story"),
     ("history", "pages/9_履歴.py", "せいせきの履歴", "📒", "history"),
 ]
 SECTIONS = {
     "": ["home"],
     "べんきょう": ["calc", "kokugo", "english", "kanji", "typing", "programming"],
-    "ゲーム": ["lottery", "janken", "chess", "rapid"],
+    "ゲーム": ["lottery", "janken", "chess", "rapid", "story"],
     "きろく": ["history"],
 }
 PAGES = {}  # 名前 -> st.Page（教材.py が毎回つくる）
