@@ -1,4 +1,4 @@
-"""ログイン（スプレッドシートの「ユーザー」タブ）とゲスト入場。"""
+"""ログイン（スプレッドシートの「ユーザー」タブ）。ゲスト用アカウントで入ったときだけ、なまえと年齢を聞く。"""
 import os
 import re
 import secrets
@@ -19,6 +19,7 @@ SESSION_SECONDS = int(os.environ.get("SESSION_SECONDS", 3600))  # 最後にア�
 COOKIE_REFRESH_SECONDS = 1800  # クッキーを延ばし直す間隔
 COOKIE_NAME = "kyouzai_token"
 COOKIE_MAX_AGE = 86400  # クッキー自体は1日残す（使うたびに延ばし直す）。1時間の期限はサーバー側で判定する（期限切れも記録できる）
+GUEST_ACCOUNT_NAMES = {"ゲスト", "げすと", "guest"}  # 名簿でこの名前のアカウントはゲスト用
 
 
 def _norm(text):
@@ -32,6 +33,11 @@ def _norm_name(text):
 def _norm_password(text):
     t = _norm(text)
     return t.zfill(4) if t.isdigit() else t  # シートで 0508 が 508 になっても合わせる
+
+
+def is_guest_row(row):
+    """名簿の「名前」がゲスト用の名前（ゲスト / guest）なら、ゲスト用アカウント。"""
+    return _norm_name(row.get("名前")) in GUEST_ACCOUNT_NAMES
 
 
 def is_admin_row(row):
@@ -226,40 +232,54 @@ def login_screen():
     notice = st.session_state.pop("auth_notice", None)
     if notice:
         st.warning(notice)
-    tab_login, tab_guest = st.tabs(["🔑 ログイン", "🙋 ゲストで入る"])
+    if st.session_state.get("auth_guest_pending"):
+        _guest_profile_form()
+        return
 
-    with tab_login:
-        if not users_available():
-            st.info("ログイン名簿（スプレッドシート）がまだつながっていないよ。いまは「ゲストで入る」を使ってね。")
-        with st.form("auth_login_form"):
-            name = st.text_input("なまえ")
-            password = st.text_input("パスワード（誕生日 4けた　例：1月19日 → 0119）", type="password", max_chars=8)
-            go = st.form_submit_button("ログイン", type="primary", use_container_width=True)
-        if go:
-            row, message = _check_login(name, password)
-            if row is None and users_available() and "待って" not in message:
-                _load_users.clear()  # 名簿に追加したばかりでも通るよう、1回だけ読み直す
-                row, message = _check_login_no_count(name, password) or (None, message)
-            if row is None:
-                _log("ログインロック中" if "待って" in message else "ログイン失敗", who=_norm(name) or "（なまえなし）")
-                st.error(message)
-            else:
-                birthday = parse_birthday(row.get("誕生日"))
-                _enter(_norm(row["名前"]), age_on(birthday) if birthday else None, guest=False, admin=is_admin_row(row))
-                st.rerun()
+    if not users_available():
+        st.info("ログイン名簿（スプレッドシート）がまだつながっていないよ。先生に きいてね。")
+    with st.form("auth_login_form"):
+        name = st.text_input("なまえ")
+        password = st.text_input("パスワード（誕生日 4けた　例：1月19日 → 0119）", type="password", max_chars=8)
+        go = st.form_submit_button("ログイン", type="primary", use_container_width=True)
+    if go:
+        row, message = _check_login(name, password)
+        if row is None and users_available() and "待って" not in message:
+            _load_users.clear()  # 名簿に追加したばかりでも通るよう、1回だけ読み直す
+            row, message = _check_login_no_count(name, password) or (None, message)
+        if row is None:
+            _log("ログインロック中" if "待って" in message else "ログイン失敗", who=_norm(name) or "（なまえなし）")
+            st.error(message)
+        elif is_guest_row(row):
+            # ゲスト用アカウント：つぎの画面で なまえと年齢を聞いてから入る
+            st.session_state["auth_guest_pending"] = True
+            st.rerun()
+        else:
+            birthday = parse_birthday(row.get("誕生日"))
+            _enter(_norm(row["名前"]), age_on(birthday) if birthday else None, guest=False, admin=is_admin_row(row))
+            st.rerun()
 
-    with tab_guest:
-        with st.form("auth_guest_form"):
-            name = st.text_input("なまえ", key="auth_guest_name")
-            age = st.number_input("ねんれい", min_value=3, max_value=120, value=8, step=1)
-            go = st.form_submit_button("ゲストで入る", use_container_width=True)
-        st.caption("ゲストの成績は「なまえ（ゲスト）」として記録されるよ。")
-        if go:
-            if not _norm(name):
-                st.warning("なまえを入れてね！")
-            else:
-                _enter(_norm(name), int(age), guest=True)
-                st.rerun()
+
+def _guest_profile_form():
+    """ゲスト用アカウントでログインしたあと、その人の なまえと年齢を入れてもらう。"""
+    st.success("🙋 ゲストで ログインしたよ！ あなたの なまえと ねんれいを おしえてね。")
+    with st.form("auth_guest_form"):
+        name = st.text_input("なまえ", key="auth_guest_name")
+        age = st.number_input("ねんれい", min_value=3, max_value=120, value=8, step=1)
+        go = st.form_submit_button("はじめる", type="primary", use_container_width=True)
+    st.caption("ゲストの成績は「なまえ（ゲスト）」として記録されるよ。")
+    if go:
+        if not _norm(name):
+            st.warning("なまえを入れてね！")
+        elif _norm_name(name) in GUEST_ACCOUNT_NAMES:
+            st.warning("「ゲスト」ではなく、あなたの なまえを入れてね！")
+        else:
+            st.session_state.pop("auth_guest_pending", None)
+            _enter(_norm(name), int(age), guest=True)
+            st.rerun()
+    if st.button("↩️ ログイン画面に もどる"):
+        st.session_state.pop("auth_guest_pending", None)
+        st.rerun()
 
 
 def _check_login_no_count(name, password):
