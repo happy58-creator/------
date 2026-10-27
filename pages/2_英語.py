@@ -46,7 +46,10 @@ LEVELS = {
 COURSES = {
     "単語": "英単語を見て、意味を答えよう（絵文字つき）",
     "文": "短い英語の文の ＿＿ に入ることばを選ぼう",
+    "和英": "日本語を見て、正しい英語を選ぼう（日本語 → 英語）",
 }
+COURSE_ICONS = {"単語": "🔤", "文": "📝", "和英": "🇯🇵"}
+COURSE_QUESTIONS = {"単語": "この単語の意味は？", "文": "＿＿ に入ることばは？", "和英": "これを 英語にすると？"}
 
 
 def build_prompt(course, level, topic, kana_only):
@@ -64,6 +67,13 @@ def build_prompt(course, level, topic, kana_only):
 - readingには、カタカナの読みを入れます。
 - translationは使わず空文字にします。
 - choicesは日本語の意味の選択肢。紛らわしい誤答を混ぜてください。"""
+    elif course == "和英":
+        form = """- 「和英コース（日本語→英語）」です。1問ごとに日本語を出し、それを表す正しい英語を3〜4択で答えさせます。
+- promptには日本語を書きます。年齢が低いときは、ひらがなだけで書きます。レベルが上がるほど、短い文（例：わたしは毎日学校に行きます。）も混ぜてください。
+- emojiには、場面や意味を表す絵文字を1〜2個入れます（なければ空文字）。
+- readingとtranslationは使わず空文字にします。
+- choicesは英語の選択肢（単語・熟語・短い文）。つづりや文法がまぎらわしい誤答を混ぜてください。
+- answerは正しい英語で、choicesの中の1つと完全に一致させてください。"""
     else:
         form = """- 「文コース」です。1問ごとに英語の文の一部を ＿＿ にして、入る英語を3〜4択で答えさせます。
 - promptには ＿＿ を1か所含む英語の文を書きます。
@@ -177,7 +187,7 @@ if state == "menu":
         st.subheader("② コースを えらんでね")
         course = st.radio(
             "コース", list(COURSES), horizontal=True, label_visibility="collapsed",
-            format_func=lambda c: f"{'🔤' if c == '単語' else '📝'} {c}コース",
+            format_func=lambda c: f"{COURSE_ICONS[c]} {c}コース",
         )
         st.caption(COURSES[course])
     with st.container(border=True):
@@ -203,7 +213,8 @@ elif state == "playing":
     idx = st.session_state.en_q
     q = st.session_state.en_questions[idx]
     assist = st.session_state.en_assist
-    is_word = st.session_state.en_course == "単語"
+    course_now = st.session_state.en_course
+    is_word = course_now == "単語"
 
     st.caption(f"{st.session_state.en_level} ／ {st.session_state.en_course}コース　　いまの正解：{st.session_state.en_score}問")
     st.progress(idx / TOTAL_Q, text=f"{idx + 1} / {TOTAL_Q} 問目")
@@ -217,7 +228,7 @@ elif state == "playing":
         )
         if assist and is_word and q.get("reading"):
             st.markdown(f"<div class='big-center' style='font-size:1.1rem;color:#6b5d68'>（{q['reading']}）</div>", unsafe_allow_html=True)
-    st.markdown("**{}**".format("この単語の意味は？" if is_word else "＿＿ に入ることばは？"))
+    st.markdown(f"**{COURSE_QUESTIONS.get(course_now, '')}**")
 
     chosen = st.session_state.en_choice
     if chosen is None:
