@@ -51,7 +51,8 @@ for section, items in APPS:
                     f"<h3>{title}</h3><p>{desc}</p></div>",
                     unsafe_allow_html=True,
                 )
-                st.page_link(common.PAGES[page], label="あそぶ", icon="▶️", use_container_width=True)
+                if page in common.PAGES:
+                    st.page_link(common.PAGES[page], label="あそぶ", icon="▶️", use_container_width=True)
 
 # カードのどこをクリックしても、中の「あそぶ」リンクを押したことにする（CSSだけだと環境によって効かないため）
 st.html(
