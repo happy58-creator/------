@@ -13,6 +13,7 @@ SHEETS = {
     "連打": ["コース秒数", "回数", "回/秒", "ランク"],
     "国語": ["テーマ", "点数"],
     "タイピング": ["種類", "テーマ", "モード", "ノーミス正解", "ミスした問題", "タイム秒"],
+    "ログイン": ["操作", "種類"],
     "プログラミング": ["言語", "テーマ", "年齢層", "点数", "正解数"],
     "英語": ["コース", "年齢層", "テーマ", "点数", "正解数"],
     "チェス": ["あそびかた", "難易度", "結果", "手数"],
@@ -64,9 +65,12 @@ def _append_csv(name, row):
         writer.writerow(row)
 
 
-def log_result(sheet, **fields):
-    """1回ぶんの結果を保存。保存先 "sheets" / "csv" を返す。ゲームは止めない。"""
-    row = [time.strftime("%Y-%m-%d %H:%M:%S"), st.session_state.get("player_name") or "ななしさん"]
+def log_result(sheet, who=None, **fields):
+    """1回ぶんの結果を保存。保存先 "sheets" / "csv" を返す。ゲームは止めない。
+
+    who を渡すと、その名前で記録する（ログイン失敗など、まだ名前が決まっていないとき用）。
+    """
+    row = [time.strftime("%Y-%m-%d %H:%M:%S"), who or st.session_state.get("player_name") or "ななしさん"]
     row += [fields.get(col, "") for col in SHEETS[sheet]]
     book = _spreadsheet()
     if book is not None:

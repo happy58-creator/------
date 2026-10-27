@@ -1,5 +1,7 @@
 """ログイン（スプレッドシートの「ユーザー」タブ）とゲスト入場。"""
+import os
 import re
+import secrets
 import time
 import unicodedata
 from datetime import date
@@ -13,6 +15,9 @@ USERS_HEADER = ["名前", "パスワード", "誕生日", "管理者"]
 ADMIN_MARKS = {"○", "◯", "〇", "1", "true", "yes", "y", "はい", "管理者", "admin"}
 MAX_FAILS = 5
 LOCK_SECONDS = 300
+SESSION_SECONDS = int(os.environ.get("SESSION_SECONDS", 3600))  # ログイン状態を保つ時間（ログイン後1時間）
+COOKIE_NAME = "kyouzai_token"
+COOKIE_MAX_AGE = 86400  # クッキー自体は1日残す。1時間の期限はサーバー側で判定する（期限切れも記録できる）
 
 
 def _norm(text):
@@ -113,23 +118,99 @@ def is_logged_in():
     return bool(st.session_state.get("auth_name"))
 
 
-def _enter(name, age, guest, admin=False):
+@st.cache_resource
+def _token_store():
+    """ブラウザーに持たせた合言葉(トークン) -> ログイン情報。サーバーのメモリ上だけに置く。"""
+    return {}
+
+
+def _kind(guest, admin):
+    return "ゲスト" if guest else ("管理者" if admin else "登録ユーザー")
+
+
+def _log(action, who=None, kind="-"):
+    history.log_result("ログイン", who=who, 操作=action, 種類=kind)
+
+
+def _set_session(name, age, guest, admin, expires):
     st.session_state["auth_name"] = name
     st.session_state["auth_admin"] = admin
     st.session_state["auth_guest"] = guest
     st.session_state["auth_age"] = age
+    st.session_state["auth_expires"] = expires
     st.session_state["player_name"] = f"{name}（ゲスト）" if guest else name
 
 
-def logout():
-    for key in ("auth_name", "auth_guest", "auth_admin", "auth_age", "player_name"):
+def _enter(name, age, guest, admin=False):
+    """ログイン成功。1時間は再読み込みしてもログインしたままにする。"""
+    expires = time.time() + SESSION_SECONDS
+    store = _token_store()
+    for old in [t for t, v in store.items() if v["expires"] < time.time()]:
+        del store[old]
+    token = secrets.token_urlsafe(32)
+    store[token] = {"name": name, "age": age, "guest": guest, "admin": admin, "expires": expires}
+    _set_session(name, age, guest, admin, expires)
+    st.session_state["auth_token"] = token
+    st.session_state["auth_cookie_cmd"] = ("set", token)
+    _log("ログイン", kind=_kind(guest, admin))
+
+
+def logout(action="ログアウト", notice=None):
+    if st.session_state.get("auth_name"):
+        _log(action, kind=_kind(st.session_state.get("auth_guest"), st.session_state.get("auth_admin")))
+    _token_store().pop(st.session_state.get("auth_token"), None)
+    for key in ("auth_name", "auth_guest", "auth_admin", "auth_age", "auth_expires", "auth_token", "player_name"):
         st.session_state.pop(key, None)
+    st.session_state["auth_cookie_cmd"] = ("clear", "")
+    if notice:
+        st.session_state["auth_notice"] = notice
+
+
+def _flush_cookie():
+    """ブラウザーのクッキーを、保存・削除する（JavaScript を1回だけ出す）。"""
+    cmd = st.session_state.pop("auth_cookie_cmd", None)
+    if not cmd:
+        return
+    action, token = cmd
+    max_age = COOKIE_MAX_AGE if action == "set" else 0
+    value = token if action == "set" else ""
+    st.html(
+        f"""<script>
+        document.cookie = "{COOKIE_NAME}={value}; max-age={max_age}; path=/; SameSite=Lax" +
+          (location.protocol === "https:" ? "; Secure" : "");
+        </script>""",
+        unsafe_allow_javascript=True,
+    )
+
+
+def _try_restore():
+    """再読み込みしたあとでも、1時間以内なら、クッキーのトークンでログイン状態に戻す。"""
+    try:
+        token = st.context.cookies.get(COOKIE_NAME)
+    except Exception:
+        return
+    entry = _token_store().get(token) if token else None
+    if not entry:
+        return
+    if entry["expires"] > time.time():
+        _set_session(entry["name"], entry["age"], entry["guest"], entry["admin"], entry["expires"])
+        st.session_state["auth_token"] = token
+    else:  # 1時間をすぎたトークン：記録を残して、クッキーも消す
+        _token_store().pop(token, None)
+        who = f"{entry['name']}（ゲスト）" if entry["guest"] else entry["name"]
+        _log("期限切れ", who=who, kind=_kind(entry["guest"], entry["admin"]))
+        st.session_state["auth_cookie_cmd"] = ("clear", "")
+        st.session_state["auth_notice"] = "ログインしてから1時間たったので、もういちどログインしてね。"
+        _flush_cookie()
 
 
 def login_screen():
     import common
 
     common.hero("🏠 きょうざい・ゲームひろば", "はじめに、なまえを おしえてね！")
+    notice = st.session_state.pop("auth_notice", None)
+    if notice:
+        st.warning(notice)
     tab_login, tab_guest = st.tabs(["🔑 ログイン", "🙋 ゲストで入る"])
 
     with tab_login:
@@ -145,6 +226,7 @@ def login_screen():
                 _load_users.clear()  # 名簿に追加したばかりでも通るよう、1回だけ読み直す
                 row, message = _check_login_no_count(name, password) or (None, message)
             if row is None:
+                _log("ログインロック中" if "待って" in message else "ログイン失敗", who=_norm(name) or "（なまえなし）")
                 st.error(message)
             else:
                 birthday = parse_birthday(row.get("誕生日"))
@@ -179,6 +261,12 @@ def _check_login_no_count(name, password):
 
 def gate(is_home):
     """ログインしていなければログイン画面（トップ）か案内（他ページ）を出して止める。"""
+    _flush_cookie()
+    if is_logged_in() and time.time() > st.session_state.get("auth_expires", 0):
+        logout("期限切れ", notice="ログインしてから1時間たったので、もういちどログインしてね。")
+        _flush_cookie()
+    if not is_logged_in():
+        _try_restore()
     if is_logged_in():
         return
     if is_home:

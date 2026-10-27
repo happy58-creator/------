@@ -10,7 +10,8 @@ common.hero("📒 せいせきの履歴", "これまでの記録を見よう！"
 
 st.caption(f"保存先：{history.storage_label()}")
 
-sheet = st.radio("ゲームを選んでね", list(history.SHEETS), horizontal=True)
+sheet_names = [s for s in history.SHEETS if s != "ログイン" or auth.is_admin()]  # ログインの記録は管理者だけ
+sheet = st.radio("ゲームを選んでね", sheet_names, horizontal=True)
 rows = history.read_history(sheet)
 if not rows:
     st.info("まだ記録がないよ。ゲームをあそぶと、ここに残るよ！")
