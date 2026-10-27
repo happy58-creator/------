@@ -51,5 +51,23 @@ for section, items in APPS:
                 )
                 st.page_link(common.page_file(page), label="あそぶ", icon="▶️", use_container_width=True)
 
+# カードのどこをクリックしても、中の「あそぶ」リンクを押したことにする（CSSだけだと環境によって効かないため）
+st.html(
+    """<script>
+    (() => {
+      const w = window;
+      if (w.__kyouzaiCardClick) return;  // 登録は1回だけ
+      w.__kyouzaiCardClick = true;
+      document.addEventListener("click", (e) => {
+        const card = e.target.closest('[class*="st-key-appcard-"]');
+        if (!card || e.target.closest("a")) return;
+        const link = card.querySelector('a[data-testid="stPageLink-NavLink"]') || card.querySelector("a");
+        if (link) link.click();
+      });
+    })();
+    </script>""",
+    unsafe_allow_javascript=True,
+)
+
 st.divider()
 st.caption("左のメニューからも好きなページに移動できるよ。AIつきのページを使うには GEMINI_API_KEY の設定が必要です。")
