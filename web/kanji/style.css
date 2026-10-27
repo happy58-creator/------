@@ -1,0 +1,26 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; background: transparent; font-family: "Zen Maru Gothic", sans-serif; color: #3a2e39; -webkit-user-select: none; user-select: none; }
+.kj { max-width: 520px; margin: 0 auto; padding: 4px 4px 12px; }
+.kj-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-weight: 700; }
+.kj-pill { background: #fff0dc; border-radius: 99px; padding: 3px 12px; font-size: 14px; }
+.kj-bar { height: 8px; background: #f1e6d6; border-radius: 99px; overflow: hidden; margin-bottom: 10px; }
+.kj-bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ff9a6b, #ff6b81); transition: width .3s; }
+.kj-info { background: #fff; border: 1px solid rgba(120,80,60,.15); border-radius: 16px; padding: 10px 14px; margin-bottom: 10px; text-align: center; box-shadow: 0 3px 10px rgba(120,80,60,.08); }
+.kj-info .big { font-size: 46px; line-height: 1.1; font-weight: 900; }
+.kj-info .read { font-size: 20px; font-weight: 900; margin: 2px 0; }
+.kj-info .sub { font-size: 14px; color: #6b5d68; }
+.kj-stage { position: relative; width: 100%; display: flex; justify-content: center; }
+canvas { background: #fffdf7; border: 3px solid #c9a27a; border-radius: 14px; touch-action: none; cursor: crosshair; box-shadow: 0 4px 14px rgba(120,80,60,.12); }
+canvas.shake { animation: shake .3s; border-color: #e74c3c; }
+canvas.good { border-color: #2ecc71; }
+@keyframes shake { 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+.kj-msg { min-height: 44px; margin: 8px 0 4px; padding: 6px 10px; border-radius: 12px; font-weight: 700; font-size: 15px; text-align: center; }
+.kj-msg.ok { background: #e8f8ee; color: #1e8449; }
+.kj-msg.ng { background: #fdecea; color: #c0392b; }
+.kj-msg.info { background: #eef3ff; color: #34495e; }
+.kj-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+.kj-btns button { flex: 1 1 120px; min-height: 48px; border: 0; border-radius: 14px; font: 700 16px "Zen Maru Gothic", sans-serif; background: #f3ece2; color: #3a2e39; cursor: pointer; }
+.kj-btns button.primary { background: #ff7a59; color: #fff; }
+.kj-btns button:disabled { opacity: .45; cursor: default; }
+.kj-final { text-align: center; padding: 30px 10px; }
+.kj-final .big { font-size: 56px; }

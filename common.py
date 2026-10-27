@@ -15,6 +15,7 @@ PAGE_DEFS = [
     ("calc", "pages/0_計算マスター.py", "計算マスター", "🧮", "calc"),
     ("kokugo", "pages/1_国語.py", "AI国語", "🧙‍♂️", "kokugo"),
     ("english", "pages/2_英語.py", "AI英語", "🔤", "english"),
+    ("kanji", "pages/10_漢字.py", "漢字", "✍️", "kanji"),
     ("typing", "pages/3_タイピング.py", "AIタイピング", "⌨️", "typing"),
     ("programming", "pages/4_プログラミング.py", "AIプログラミング", "💻", "programming"),
     ("lottery", "pages/5_くじ引き・じゅんばん決めゲーム.py", "くじ引き", "🎉", "lottery"),
@@ -25,7 +26,7 @@ PAGE_DEFS = [
 ]
 SECTIONS = {
     "": ["home"],
-    "べんきょう": ["calc", "kokugo", "english", "typing", "programming"],
+    "べんきょう": ["calc", "kokugo", "english", "kanji", "typing", "programming"],
     "ゲーム": ["lottery", "janken", "chess", "rapid"],
     "きろく": ["history"],
 }
