@@ -327,16 +327,11 @@ elif state == "ending":
     else:
         st.info("🌱 よくがんばったね！ レッスンをもう一度やってみよう。")
 
-    st.download_button(
-        "📥 けっかをPDFで保存する（印刷もできるよ！）",
-        data=pdfgen.build_pdf(
+    common.pdf_preview_button(
+        pdfgen.build_pdf(
             "AIプログラミング教室", pdf_info(), st.session_state.get("player_name", ""),
             st.session_state.pg_played_at, score * 20, st.session_state.pg_rows,
         ),
-        file_name="プログラミングけっか.pdf",
-        mime="application/pdf",
-        type="primary",
-        use_container_width=True,
     )
 
     st.divider()

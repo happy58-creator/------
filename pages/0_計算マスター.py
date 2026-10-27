@@ -227,16 +227,11 @@ elif st.session_state.calc_step == "result":
     with st.expander("📊 全部の結果を見る"):
         st.dataframe(df_results, use_container_width=True, hide_index=True)
 
-    st.download_button(
-        label="📥 がんばり結果をPDFで保存する（印刷もできるよ！）",
-        data=pdfgen.build_pdf(
+    common.pdf_preview_button(
+        pdfgen.build_pdf(
             "計算チャレンジマスター", pdf_info, st.session_state.get("player_name", ""),
             st.session_state.calc_played_at, total_score, pdf_rows, comment,
         ),
-        file_name=f"けいさん結果_{st.session_state.calc_mode}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
-        type="primary",
     )
 
     st.divider()

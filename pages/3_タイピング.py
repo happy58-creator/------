@@ -123,13 +123,11 @@ def miss_text(n):
 
 
 def pdf_button(r):
-    st.download_button(
-        "📥 けっかをPDFで保存する（印刷もできるよ！）",
-        data=pdfgen.build_pdf(
+    common.pdf_preview_button(
+        pdfgen.build_pdf(
             r["subject"], r["pdf_info"], st.session_state.get("player_name", ""),
             r["played_at"], r["score"], r["pdf_rows"],
         ),
-        file_name="タイピングけっか.pdf", mime="application/pdf", type="primary", use_container_width=True,
     )
 
 

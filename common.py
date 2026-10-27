@@ -13,20 +13,20 @@ HOME_PAGE = "home.py"
 PAGE_DEFS = [
     ("home", "home.py", "トップ", "🏠", ""),
     ("calc", "pages/0_計算マスター.py", "計算マスター", "🧮", "calc"),
-    ("kokugo", "pages/5_国語.py", "AI国語", "🧙‍♂️", "kokugo"),
-    ("typing", "pages/6_タイピング.py", "AIタイピング", "⌨️", "typing"),
-    ("english", "pages/8_英語.py", "AI英語", "🔤", "english"),
-    ("programming", "pages/9_プログラミング.py", "AIプログラミング", "💻", "programming"),
-    ("rapid", "pages/1_限界突破ゲーム.py", "連打ゲーム", "⚡", "rapid"),
-    ("janken", "pages/2_じゃんけんゲーム.py", "じゃんけん", "✊", "janken"),
-    ("lottery", "pages/3_くじ引き・じゅんばん決めゲーム.py", "くじ引き", "🎉", "lottery"),
-    ("chess", "pages/4_チェスVS.py", "チェス", "♟️", "chess"),
-    ("history", "pages/7_履歴.py", "せいせきの履歴", "📒", "history"),
+    ("kokugo", "pages/1_国語.py", "AI国語", "🧙‍♂️", "kokugo"),
+    ("english", "pages/2_英語.py", "AI英語", "🔤", "english"),
+    ("typing", "pages/3_タイピング.py", "AIタイピング", "⌨️", "typing"),
+    ("programming", "pages/4_プログラミング.py", "AIプログラミング", "💻", "programming"),
+    ("lottery", "pages/5_くじ引き・じゅんばん決めゲーム.py", "くじ引き", "🎉", "lottery"),
+    ("janken", "pages/6_じゃんけんゲーム.py", "じゃんけん", "✊", "janken"),
+    ("chess", "pages/7_チェスVS.py", "チェス", "♟️", "chess"),
+    ("rapid", "pages/8_限界突破ゲーム.py", "連打ゲーム", "⚡", "rapid"),
+    ("history", "pages/9_履歴.py", "せいせきの履歴", "📒", "history"),
 ]
 SECTIONS = {
     "": ["home"],
-    "べんきょう": ["calc", "kokugo", "typing", "english", "programming"],
-    "ゲーム": ["rapid", "janken", "lottery", "chess"],
+    "べんきょう": ["calc", "kokugo", "english", "typing", "programming"],
+    "ゲーム": ["lottery", "janken", "chess", "rapid"],
     "きろく": ["history"],
 }
 PAGES = {}  # 名前 -> st.Page（教材.py が毎回つくる）
@@ -59,6 +59,28 @@ _HIDE_CLOUD_BADGES_JS = """
     observer.observe(doc.body, { childList: true, subtree: true });
     doc.defaultView.__kyouzaiBadgeObserver = observer;
   }
+})();
+</script>
+"""
+
+# PDFを「新しいタブのプレビュー」で開くためのスクリプト（ファイルを保存しない）。
+# ボタンの data-pdf に PDF の中身(base64)が入っていて、クリックされたらブラウザー内でPDFにして新しいタブで開く。
+_PDF_OPEN_JS = """
+<script>
+(() => {
+  const w = window;
+  if (w.__kyouzaiPdfOpen) return;  // 登録は1回だけ
+  w.__kyouzaiPdfOpen = true;
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-pdf]");
+    if (!btn) return;
+    const bin = atob(btn.dataset.pdf);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+    w.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 600000);
+  });
 })();
 </script>
 """
@@ -115,6 +137,15 @@ div[data-testid="stMetric"] {
 }
 [data-testid="stVerticalBlockBorderWrapper"] { border-radius: 1.1rem; }
 .big-center { text-align:center; font-weight:900; line-height:1.2; }
+/* PDFを新しいタブで開くボタン（Streamlitの主ボタンに合わせた見た目） */
+.pdf-open {
+    display: block; width: 100%; min-height: 2.9rem; padding: .6rem 1rem; border: 0; border-radius: .9rem;
+    background: #ff7a59; color: #fff; font: 700 1rem 'Zen Maru Gothic', sans-serif; cursor: pointer;
+    transition: transform .08s ease, box-shadow .15s ease;
+}
+.pdf-open:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.18); }
+.pdf-open:active { transform: translateY(0); }
+.pdf-note { margin: .25rem 0 .75rem; font-size: .8rem; color: #6b5d68; text-align: center; }
 </style>
 """
 
@@ -132,6 +163,19 @@ def setup_page(title, icon, layout="centered", home_link=True):
                 st.page_link(PAGES["home"], label="トップにもどる", icon="🏠")
         auth.sidebar_user()
         st.html(_HIDE_CLOUD_BADGES_JS, unsafe_allow_javascript=True)
+        st.html(_PDF_OPEN_JS, unsafe_allow_javascript=True)
+
+
+def pdf_preview_button(pdf_bytes, label="📄 表彰状を ひらく（新しいタブ）"):
+    """PDFを、保存せずに新しいタブのプレビューで開くボタン。保存・印刷は、開いたタブから。"""
+    import base64
+
+    data = base64.b64encode(pdf_bytes).decode("ascii")
+    st.html(
+        f'<button type="button" class="pdf-open" data-pdf="{data}">{label}</button>'
+        '<div class="pdf-note">新しいタブでプレビューするよ。保存や印刷は、そのタブから できるよ。</div>',
+        unsafe_allow_javascript=True,
+    )
 
 
 def build_navigation():

@@ -211,16 +211,11 @@ elif st.session_state.jp_state == "ending":
         st.info("🏃 【ランク：みならい冒険家】")
         st.write("お疲れさま！AI先生のお話は楽しかったかな？次はキミの大好きな別のテーマを入力してリベンジだ！")
 
-    st.download_button(
-        "📥 けっかをPDFで保存する（印刷もできるよ！）",
-        data=pdfgen.build_pdf(
+    common.pdf_preview_button(
+        pdfgen.build_pdf(
             "AI国語アドベンチャー", pdf_info(), st.session_state.get("player_name", ""),
             st.session_state.jp_played_at, score, st.session_state.jp_rows,
         ),
-        file_name="国語けっか.pdf",
-        mime="application/pdf",
-        type="primary",
-        use_container_width=True,
     )
 
     st.divider()

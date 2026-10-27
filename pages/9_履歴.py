@@ -60,10 +60,8 @@ if "詳細" in df.columns:
         if pdf is None:
             st.warning("この記録は詳細が読みこめませんでした。")
         else:
-            st.download_button(
-                "📥 この回の結果PDFをダウンロード", pdf,
-                file_name=f"{sheet}けっか_{records[picked]['日時'].replace(':', '-').replace(' ', '_')}.pdf",
-                mime="application/pdf", type="primary",
+            common.pdf_preview_button(
+                pdf,
             )
 
 st.download_button(
