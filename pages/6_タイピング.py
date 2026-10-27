@@ -3,6 +3,7 @@ import time
 
 import streamlit as st
 
+import auth
 import common
 import history
 import pdfgen
@@ -181,9 +182,11 @@ if state == "menu":
             elif data:
                 st.error("もんだいの形がうまく作れなかったよ。もう一回ためしてね！")
 
-    if st.session_state.get(UNLOCK_KEY):
+    # 管理者だけ、URL の末尾に ?ura=1 をつけると、解放しなくても裏メニューに入れる
+    admin_ura = auth.is_admin() and st.query_params.get("ura") == "1"
+    if st.session_state.get(UNLOCK_KEY) or admin_ura:
         with st.container(border=True):
-            st.subheader("🔓 ひらいた 裏メニュー")
+            st.subheader("🔓 ひらいた 裏メニュー" if not admin_ura else "🛡️ 裏メニュー（管理者の直接入口）")
             c1, c2 = st.columns(2)
             if c1.button("🤖 プログラミング・ミッション", use_container_width=True):
                 start("code_playing")
