@@ -21,13 +21,14 @@ STAGE_HEAL_RATE = 0.5       # ステージをクリアしたときに回復す�
 #   ability      : アビリティポイントにかける倍率
 #   rank         : 「◯◯以上」の判定に使う順位（大きいほど難しい）
 #   敵の倍率は、ベリーハードを HP・攻撃力 3.6倍・防御力 2.4倍とし、イージー（1倍）とのあいだを
-#   同じ比率で上がるように決めた（ノーマル・ハードは小数第2位で丸め）
+#   同じ比率で上がるように決めた（ノーマル・ハードは小数第2位で丸め）。
+#   そのあと味方にレベルと必殺技が付いたので、イージーは1.1倍、ノーマル以上は1.2倍に上げた（下の表はその値）
 # ---------------------------------------------------------------------------
 DIFFICULTIES = [
-    {"id": "easy",      "name": "イージー",     "rank": 0, "enemy_hp_atk": 1.0, "enemy_def": 1.0, "ability": 1.0},
-    {"id": "normal",    "name": "ノーマル",     "rank": 1, "enemy_hp_atk": 1.55, "enemy_def": 1.35, "ability": 1.5},
-    {"id": "hard",      "name": "ハード",       "rank": 2, "enemy_hp_atk": 2.35, "enemy_def": 1.8,  "ability": 2.0},
-    {"id": "very_hard", "name": "ベリーハード", "rank": 3, "enemy_hp_atk": 3.6,  "enemy_def": 2.4,  "ability": 3.0},
+    {"id": "easy",      "name": "イージー",     "rank": 0, "enemy_hp_atk": 1.1,  "enemy_def": 1.1,  "ability": 1.0},
+    {"id": "normal",    "name": "ノーマル",     "rank": 1, "enemy_hp_atk": 1.86, "enemy_def": 1.62, "ability": 1.5},
+    {"id": "hard",      "name": "ハード",       "rank": 2, "enemy_hp_atk": 2.82, "enemy_def": 2.16, "ability": 2.0},
+    {"id": "very_hard", "name": "ベリーハード", "rank": 3, "enemy_hp_atk": 4.32, "enemy_def": 2.88, "ability": 3.0},
 ]
 
 # ---------------------------------------------------------------------------
@@ -116,12 +117,12 @@ ENEMIES = [
 # エクストラステージ：極点の宇宙龍（混沌の初源・永遠の沈黙の使い。各ステージを見回っている）
 #   ステージをクリアするたびに EXTRA_CHANCE の確率で、次のステージの前に現れる（1回の挑戦で1度まで）
 #   「にげる」で戦わずに先へ進める（負けにならない）。倒すと超激レア装備（ULTRA_REWARDS）
-#   強さは難易度に関係なく固定（ベリーハードのステージ6と同じ：Lv.6 の HP517・攻撃4.1 × 3.6、防御8.4 × 2.4）
+#   強さは難易度に関係なく固定（ベリーハードのステージ6と同じ：Lv.6 の HP517・攻撃4.1 × 4.32、防御8.4 × 2.88）
 #   fit / focus : 横長の絵なので、画面を埋めるように拡大し（cover）、focus の位置を中心に見せる
 # ---------------------------------------------------------------------------
 EXTRA_CHANCE = 0.01
 EXTRA_ENEMY = {
-    "lv": "???", "name": "極点の宇宙龍", "title": "災厄と創造の統合者", "hp": 1861, "atk": 14.8, "def": 20.2, "fixed_stats": True,
+    "lv": "???", "name": "極点の宇宙龍", "title": "災厄と創造の統合者", "hp": 2233, "atk": 17.8, "def": 24.2, "fixed_stats": True,
     "image": "enemy_extra.webp", "cutout": False, "scene": "image", "floating": False, "fit": "cover", "focus": "64% 50%",
     "immune": ["thunder"], "gimmicks": ["black_flame", "shadow", "darkness"], "difficulties": None,
     "lines": ["……見つけたぞ、小さき者", "我が主の領域を荒らすか", "星ごと呑み込んでくれよう"],
@@ -134,32 +135,57 @@ EXTRA_ENEMY = {
 #               min_difficulty 以上の難易度で stage をクリアしたとき、chance の確率で仲間になる
 #   abilities : アビリティポイントの合計が ABILITY_THRESHOLDS に達するたびに順に解放
 #   image     : assets/story/allies/（全身）と assets/story/ally_icons/（顔）の中のファイル名
-#   skill     : 今回は作らない（後から足せるように項目だけ用意）
+#   hp/atk/def: Lv.1 のステータス。max は Lv.10 のステータス（あいだは STAT_CURVE の曲線で上がる）
+#   skill     : 必殺技（下の「必殺技」を参照）
+#
+# レベル（全員 Lv.1 から Lv.10 まで）
+#   アビリティポイントと同じポイントで上がる（挑戦が終わるたびに、クリアしたステージ数 × 0.1 × 難易度の倍率）。
+#   Lv.10 になるのに要るポイントは、Lv.1 のキャラ（コウ）が LEVEL_POINTS[0]（ベリーハード全クリア約30回分）、
+#   Lv.10 のキャラ（ルナ）が LEVEL_POINTS[1]（約50回分）。あいだのキャラは順番に合わせて決める。
+#   レベル n に要る合計 = Lv.10 に要る合計 × ((n−1) ÷ 9) ^ LEVEL_CURVE（後のレベルほど多く要る）
+#   レベル n のステータス = Lv.1 + (Lv.10 − Lv.1) × ((n−1) ÷ 9) ^ STAT_CURVE（後のレベルほど大きく上がる）
+#
+# 必殺技（skill）
+#   攻撃で敵に当たった回数（コンボ）が charge に達すると、戦闘画面の味方のアイコンを押して使える。
+#   自分のターンに1回。アイテムとは別で、使ったあともそのターンに攻撃できる。
+#   チャージはステージをまたいで残る（負けてやり直すときは、そのステージを始めたときの値に戻る）。
+#   charge は「1ターン25回当てる」として、コウの5ターン分（125）を基準に決めた。最短でも4ターン分。
+#   type:
+#     strike : 攻撃力 × power のダメージ。pierce なら敵の防御で減らない。guard ターン防御2倍、stun ターン敵が動けない
+#     guard  : 最大HPの heal_rate を回復して、guard ターン防御力2倍
+#     boost  : 次の攻撃（連打）のダメージが mult 倍
+#     barrier: 敵の攻撃 blocks 回を無効にして、状態異常（毒・雷・火・黒炎）を治す
+#     break  : turns ターン（敵のターンの回数）のあいだ、敵の防御を0にする
+#   anim : 戦闘画面の演出（web/story/index.html の SKILL_FX）
 # ---------------------------------------------------------------------------
 ABILITY_THRESHOLDS = (5, 10, 25)
 ABILITY_POINT_PER_STAGE = 0.1     # クリアしたステージ1つにつき 0.1（全クリアで 1.0）
+LEVEL_MAX = 10
+LEVEL_POINTS = (108, 180)         # Lv.10 に要るポイント（コウ ＝ 3.6 × 30回、ルナ ＝ 3.6 × 50回）
+LEVEL_CURVE = 2.0
+STAT_CURVE = 1.3
 
 ALLIES = [
-    {"lv": 1,  "name": "平凡な農民、コウ",         "hp": 10, "atk": 1, "def": 1,  "image": "ally_01.webp", "unlock": None,
-     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "def", "value": 3}], "skill": None},
-    {"lv": 2,  "name": "新米自警団員、マリ",       "hp": 11, "atk": 2, "def": 1,  "image": "ally_02.webp", "unlock": {"min_difficulty": "normal", "stage": 2, "chance": 0.30},
-     "abilities": [{"stat": "def", "value": 1}, {"stat": "def", "value": 1}, {"stat": "atk", "value": 4}], "skill": None},
-    {"lv": 3,  "name": "新兵中隊長、アレックス",   "hp": 13, "atk": 2, "def": 3,  "image": "ally_03.webp", "unlock": {"min_difficulty": "easy", "stage": 4, "chance": 0.50},
-     "abilities": [{"stat": "hp", "value": 3}, {"stat": "hp", "value": 3}, {"stat": "atk", "value": 3}], "skill": None},
-    {"lv": 4,  "name": "魔導戦術家、セリス",       "hp": 16, "atk": 2, "def": 5,  "image": "ally_04.webp", "unlock": {"min_difficulty": "normal", "stage": 3, "chance": 0.30},
-     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "hp", "value": 10}], "skill": None},
-    {"lv": 5,  "name": "先鋭近衛騎士、アーサー",   "hp": 22, "atk": 4, "def": 4,  "image": "ally_05.webp", "unlock": {"min_difficulty": "hard", "stage": 1, "chance": 0.30},
-     "abilities": [{"stat": "def", "value": 2}, {"stat": "def", "value": 2}, {"stat": "hp", "value": 15}], "skill": None},
-    {"lv": 6,  "name": "古代魔導研究者、エリナ",   "hp": 30, "atk": 6, "def": 3,  "image": "ally_06.webp", "unlock": {"min_difficulty": "normal", "stage": 6, "chance": 0.40},
-     "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 8}], "skill": None},
-    {"lv": 7,  "name": "王宮近衛隊長、ガイウス",   "hp": 45, "atk": 10, "def": 6,  "image": "ally_07.webp", "unlock": {"min_difficulty": "normal", "stage": 7, "chance": 0.20},
-     "abilities": [{"stat": "atk", "value": 2}, {"stat": "atk", "value": 2}, {"stat": "atk", "value": 6}], "skill": None},
-    {"lv": 8,  "name": "魔導工学の至高者、レイノ", "hp": 63, "atk": 13, "def": 15, "image": "ally_08.webp", "unlock": {"min_difficulty": "hard", "stage": 5, "chance": 0.60},
-     "abilities": [{"stat": "def", "value": 3}, {"stat": "def", "value": 3}, {"stat": "atk", "value": 8}], "skill": None},
-    {"lv": 9,  "name": "概念の卵、ガレン",         "hp": 73, "atk": 20, "def": 19, "image": "ally_09.webp", "unlock": {"min_difficulty": "hard", "stage": 5, "chance": 0.30},
-     "abilities": [{"stat": "hp", "value": 10}, {"stat": "hp", "value": 10}, {"stat": "def", "value": 15}], "skill": None},
-    {"lv": 10, "name": "至高の光帝、ルナ",         "hp": 100, "atk": 33, "def": 35, "image": "ally_10.webp", "unlock": {"min_difficulty": "very_hard", "stage": 7, "chance": 0.20},
-     "abilities": [{"stat": "atk", "value": 3}, {"stat": "atk", "value": 3}, {"stat": "hp", "value": 40}], "skill": None},
+    {"lv": 1,  "name": "平凡な農民、コウ",         "hp": 10, "atk": 1, "def": 1, "max": {"hp": 34, "atk": 7, "def": 8},  "image": "ally_01.webp", "unlock": None,
+     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "def", "value": 3}], "skill": {"name": "渾身のひと振り", "type": "strike", "charge": 125, "power": 20, "anim": "kou", "text": "大きく振りかぶって一撃。攻撃力×20 のダメージ"}},
+    {"lv": 2,  "name": "新米自警団員、マリ",       "hp": 11, "atk": 2, "def": 1, "max": {"hp": 35, "atk": 7, "def": 9},  "image": "ally_02.webp", "unlock": {"min_difficulty": "normal", "stage": 2, "chance": 0.30},
+     "abilities": [{"stat": "def", "value": 1}, {"stat": "def", "value": 1}, {"stat": "atk", "value": 4}], "skill": {"name": "守りの誓い", "type": "guard", "charge": 100, "heal_rate": 0.2, "guard": 3, "anim": "mari", "text": "光の盾でHPを最大の20%回復し、3ターン防御力2倍"}},
+    {"lv": 3,  "name": "新兵中隊長、アレックス",   "hp": 13, "atk": 2, "def": 3, "max": {"hp": 40, "atk": 8, "def": 10},  "image": "ally_03.webp", "unlock": {"min_difficulty": "easy", "stage": 4, "chance": 0.50},
+     "abilities": [{"stat": "hp", "value": 3}, {"stat": "hp", "value": 3}, {"stat": "atk", "value": 3}], "skill": {"name": "突撃号令", "type": "boost", "charge": 100, "mult": 2, "anim": "alex", "text": "号令で奮い立ち、次の攻撃のダメージが2倍"}},
+    {"lv": 4,  "name": "魔導戦術家、セリス",       "hp": 16, "atk": 2, "def": 5, "max": {"hp": 45, "atk": 6, "def": 18},  "image": "ally_04.webp", "unlock": {"min_difficulty": "normal", "stage": 3, "chance": 0.30},
+     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "hp", "value": 10}], "skill": {"name": "魔法障壁", "type": "barrier", "charge": 125, "blocks": 2, "anim": "celis", "text": "魔法陣の障壁で敵の攻撃2回を無効にし、状態異常も治す"}},
+    {"lv": 5,  "name": "先鋭近衛騎士、アーサー",   "hp": 22, "atk": 4, "def": 4, "max": {"hp": 60, "atk": 11, "def": 13},  "image": "ally_05.webp", "unlock": {"min_difficulty": "hard", "stage": 1, "chance": 0.30},
+     "abilities": [{"stat": "def", "value": 2}, {"stat": "def", "value": 2}, {"stat": "hp", "value": 15}], "skill": {"name": "聖盾撃", "type": "strike", "charge": 150, "power": 25, "guard": 2, "anim": "arthur", "text": "聖なる盾ごと突撃。攻撃力×25 のダメージと、2ターン防御力2倍"}},
+    {"lv": 6,  "name": "古代魔導研究者、エリナ",   "hp": 30, "atk": 6, "def": 3, "max": {"hp": 70, "atk": 17, "def": 8},  "image": "ally_06.webp", "unlock": {"min_difficulty": "normal", "stage": 6, "chance": 0.40},
+     "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 8}], "skill": {"name": "古代魔法・崩壊", "type": "strike", "charge": 175, "power": 30, "pierce": True, "anim": "erina", "text": "古代文字が崩れ落ちる。攻撃力×30 の防御無視ダメージ"}},
+    {"lv": 7,  "name": "王宮近衛隊長、ガイウス",   "hp": 45, "atk": 10, "def": 6, "max": {"hp": 95, "atk": 26, "def": 14},  "image": "ally_07.webp", "unlock": {"min_difficulty": "normal", "stage": 7, "chance": 0.20},
+     "abilities": [{"stat": "atk", "value": 2}, {"stat": "atk", "value": 2}, {"stat": "atk", "value": 6}], "skill": {"name": "百裂剣", "type": "strike", "charge": 175, "power": 40, "anim": "gaius", "text": "目にも止まらぬ百の斬撃。攻撃力×40 のダメージ"}},
+    {"lv": 8,  "name": "魔導工学の至高者、レイノ", "hp": 63, "atk": 13, "def": 15, "max": {"hp": 125, "atk": 28, "def": 32}, "image": "ally_08.webp", "unlock": {"min_difficulty": "hard", "stage": 5, "chance": 0.60},
+     "abilities": [{"stat": "def", "value": 3}, {"stat": "def", "value": 3}, {"stat": "atk", "value": 8}], "skill": {"name": "魔導砲", "type": "strike", "charge": 200, "power": 35, "pierce": True, "stun": 1, "anim": "reino", "text": "魔導砲の光線。攻撃力×35 の防御無視ダメージと、敵を1ターン動けなくする（雷が効かない敵にも効く）"}},
+    {"lv": 9,  "name": "概念の卵、ガレン",         "hp": 73, "atk": 20, "def": 19, "max": {"hp": 150, "atk": 36, "def": 40}, "image": "ally_09.webp", "unlock": {"min_difficulty": "hard", "stage": 5, "chance": 0.30},
+     "abilities": [{"stat": "hp", "value": 10}, {"stat": "hp", "value": 10}, {"stat": "def", "value": 15}], "skill": {"name": "概念崩し", "type": "break", "charge": 125, "turns": 3, "anim": "garen", "text": "敵の「守る」という概念を壊し、3ターン敵の防御を0にする"}},
+    {"lv": 10, "name": "至高の光帝、ルナ",         "hp": 100, "atk": 33, "def": 35, "max": {"hp": 160, "atk": 50, "def": 52}, "image": "ally_10.webp", "unlock": {"min_difficulty": "very_hard", "stage": 7, "chance": 0.20},
+     "abilities": [{"stat": "atk", "value": 3}, {"stat": "atk", "value": 3}, {"stat": "hp", "value": 40}], "skill": {"name": "光帝の裁き", "type": "strike", "charge": 250, "power": 60, "pierce": True, "anim": "luna", "text": "天から光の柱が降りる。攻撃力×60 の防御無視ダメージ"}},
 ]
 
 # ---------------------------------------------------------------------------

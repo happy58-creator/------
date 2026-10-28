@@ -270,11 +270,20 @@ def new_rewards(rewards):
 # ---------------------------------------------------------------------------
 def ally_panel_html(lv):
     ally = L.get_ally(lv)
-    base, now = L.ally_stats(lv), L.ally_stats(lv, profile)
+    points = L.ability_points(profile, lv)
+    level, progress = L.level_progress(lv, points)
+    base, now = L.base_stats(lv, level), L.ally_stats(lv, profile)      # （+）はアビリティと装備のぶん
     stats = []
     for stat in ("hp", "atk", "def"):
         extra = now[stat] - base[stat]
         stats.append(f"{STAT_NAMES[stat]} <b>{now[stat]:g}</b>" + (f"<span style='color:#7fd8a0'>（+{extra:g}）</span>" if extra else ""))
+    exp = ("<div style='font-size:12px;margin-top:4px'>"
+           + ("レベル最大！" if level >= story_data.LEVEL_MAX else f"次のレベルまで")
+           + "<div style='height:7px;border-radius:4px;background:#2a2228;overflow:hidden'>"
+           f"<div style='height:100%;width:{progress * 100:.0f}%;background:linear-gradient(90deg,#4aa3c9,#8fe0ff)'></div></div></div>")
+    skill = ally["skill"]
+    skill_html = (f"<div style='font-size:12px;margin-top:6px;color:#ffe28a'>✨ 必殺技：<b>{skill['name']}</b>"
+                  f"（コンボ{skill['charge']}でチャージ）<div style='color:#d8ccb0'>{skill['text']}</div></div>")
     gauges = []
     for i, (ability, gauge) in enumerate(zip(ally["abilities"], L.ability_gauges(L.ability_points(profile, lv))), start=1):
         mark = "✅" if gauge >= 1 else "🔒"
@@ -301,8 +310,9 @@ def ally_panel_html(lv):
         f"<div style='width:30%;flex:none'><div style='position:relative'>"
         f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:12px;display:block'>{overlay_html}</div>"
         f"<div style='margin-top:4px;line-height:0'>{icons or ''}</div></div>"
-        f"<div style='flex:1;min-width:0'><div style='font-weight:700;font-size:17px'>Lv.{lv} {ally['name']}</div>"
-        f"<div style='font-size:14px;margin-top:4px'>{'　'.join(stats)}</div>{resist_html}{''.join(gauges)}</div></div>"
+        f"<div style='flex:1;min-width:0'><div style='font-weight:700;font-size:17px'>{ally['name']}"
+        f"<span style='margin-left:8px;color:#8fe0ff'>Lv.{level}</span></div>"
+        f"<div style='font-size:14px;margin-top:4px'>{'　'.join(stats)}</div>{resist_html}{exp}{skill_html}{''.join(gauges)}</div></div>"
     )
 
 
@@ -327,7 +337,8 @@ def view_ally_picker():
                 name = short_name(lv) if have else "？？？"
                 col.markdown(f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:8px;{style}'>"
                              f"<div style='text-align:center;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;"
-                             f"text-overflow:ellipsis'>Lv.{lv}<br>{name}</div>", unsafe_allow_html=True)
+                             f"text-overflow:ellipsis'>{name}<br>"
+                             f"{'Lv.' + str(L.ally_level(profile, lv)) if have else '&nbsp;'}</div>", unsafe_allow_html=True)
                 if have and col.button("えらぶ", key=f"_story_pick_{lv}", width="stretch",
                                        type="primary" if lv == st.session_state.story_ally else "secondary"):
                     st.session_state.story_ally = lv
@@ -481,7 +492,8 @@ def view_battle():
     round_id = st.session_state.story_round
     stage_no = L.EXTRA if run.get("extra") else run["stage"]
     st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)
-    config = L.battle_config(round_id, stage_no, run["difficulty"], run["ally"], run["hp"], profile, run["bag"])
+    config = L.battle_config(round_id, stage_no, run["difficulty"], run["ally"], run["hp"], profile, run["bag"],
+                             charge=run.get("charge", 0))
     result = story_battle.battle(config, key=f"story_battle_{round_id}")
     if not result or result.get("round") != round_id:
         return
@@ -650,6 +662,10 @@ def view_end():
     st.subheader("✨ アビリティ")
     if summary["ability_after"] > summary["ability_before"]:
         st.caption(f"{name} の アビリティが たまったよ！")
+    level_before = L.level_of(summary["ally"], summary["ability_before"])
+    level_after = L.level_of(summary["ally"], summary["ability_after"])
+    if level_after > level_before:
+        st.success(f"⬆️ {name} の レベルが {level_before} → {level_after} に上がった！")
     if summary["new_abilities"]:
         st.success(f"🎊 新しいアビリティを {summary['new_abilities']}つ 解放した！")
     ability_gauges(summary["ally"], summary["ability_after"])

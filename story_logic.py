@@ -167,9 +167,10 @@ def normalize_run(run):
     run.setdefault("extra", False)
     run.setdefault("extra_seen", False)
     run.setdefault("extra_won", False)
+    run.setdefault("charge", 0)
     run.setdefault("cleared", 0)
     if not run.get("checkpoint"):
-        run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"])}
+        run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
     return run
 
 
@@ -359,9 +360,52 @@ def weapon_attr_config(entry):
 # ---------------------------------------------------------------------------
 # 味方のステータス（基本 + アビリティ + 装備）
 # ---------------------------------------------------------------------------
+def level_points_max(ally_lv):
+    """そのキャラが Lv.10 になるのに要るポイント（コウからルナへ、順番に増える）"""
+    low, high = story_data.LEVEL_POINTS
+    return low + (high - low) * (ally_lv - 1) / 9
+
+
+def level_threshold(ally_lv, level):
+    """レベル level になるのに要るポイントの合計（曲線で増える）"""
+    t = (level - 1) / (story_data.LEVEL_MAX - 1)
+    return round(level_points_max(ally_lv) * t ** story_data.LEVEL_CURVE, 2)
+
+
+def level_of(ally_lv, points):
+    level = 1
+    while level < story_data.LEVEL_MAX and points + 1e-9 >= level_threshold(ally_lv, level + 1):
+        level += 1
+    return level
+
+
+def ally_level(profile, ally_lv):
+    return level_of(ally_lv, ability_points(profile, ally_lv)) if profile is not None else 1
+
+
+def level_progress(ally_lv, points):
+    """(レベル, 次のレベルまでの進み具合 0.0〜1.0)。Lv.10 なら 1.0"""
+    level = level_of(ally_lv, points)
+    if level >= story_data.LEVEL_MAX:
+        return level, 1.0
+    low, high = level_threshold(ally_lv, level), level_threshold(ally_lv, level + 1)
+    return level, max(0.0, min(1.0, (points - low) / (high - low)))
+
+
+def base_stats(ally_lv, level=1):
+    """レベル level のときのステータス（Lv.1 から Lv.10 へ、曲線で上がる）。HPは整数、攻撃・防御は小数第1位"""
+    ally = get_ally(ally_lv)
+    t = ((level - 1) / (story_data.LEVEL_MAX - 1)) ** story_data.STAT_CURVE
+    stats = {}
+    for stat in ("hp", "atk", "def"):
+        value = ally[stat] + (ally["max"][stat] - ally[stat]) * t
+        stats[stat] = float(round(value)) if stat == "hp" else round(value, 1)
+    return stats
+
+
 def ally_stats(lv, profile=None):
-    ally = get_ally(lv)
-    stats = {"hp": float(ally["hp"]), "atk": float(ally["atk"]), "def": float(ally["def"]), "resist": []}
+    """味方のステータス（レベル + アビリティ + 装備）。profile がなければ Lv.1 の素のステータス"""
+    stats = {**base_stats(lv, ally_level(profile, lv)), "resist": []}
     if profile is None:
         return stats
     for ability in unlocked_abilities(lv, ability_points(profile, lv)):
@@ -455,6 +499,7 @@ def start_run(profile, ally_lv, difficulty_id, carried=None):
         "bag": new_bag(carried),
         "extra_seen": False,
         "extra_won": False,
+        "charge": 0,
     }
     profile["run"] = run
     begin_stage(profile)
@@ -464,7 +509,7 @@ def start_run(profile, ally_lv, difficulty_id, carried=None):
 def begin_stage(profile):
     """ステージを始めるときのチェックポイント（いまのHPとかばん）を残す"""
     run = profile["run"]
-    run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"])}
+    run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
 
 
 def restore_checkpoint(profile):
@@ -472,6 +517,7 @@ def restore_checkpoint(profile):
     run = profile["run"]
     run["hp"] = run["checkpoint"]["hp"]
     run["bag"] = copy.deepcopy(run["checkpoint"]["bag"])
+    run["charge"] = run["checkpoint"].get("charge", 0)
 
 
 def apply_battle(profile, result):
@@ -483,6 +529,9 @@ def apply_battle(profile, result):
         except (ValueError, KeyError, TypeError):
             pass
     run["hp"] = max(0.0, float(result.get("ally_hp", run["hp"])))
+    if "charge" in result:                         # 必殺技のチャージはステージをまたいで残す
+        cap = get_ally(run["ally"])["skill"]["charge"]
+        run["charge"] = max(0, min(cap, int(result.get("charge") or 0)))
 
 
 def skip_extra(profile):
@@ -622,10 +671,23 @@ def _status_label(status_id):
     return {"name": effect["name"], "icon": effect["icon"]}
 
 
-def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None):
+def skill_config(ally_lv, ally, enemy, max_hp, charge=0):
+    """戦闘画面に渡す必殺技。ダメージや回復量はここで計算しておく"""
+    skill = dict(get_ally(ally_lv)["skill"])
+    if skill["type"] == "strike":
+        raw = ally["atk"] * skill["power"]
+        skill["damage"] = raw if skill.get("pierce") else damage(raw, enemy["def"])
+        skill["damage_break"] = raw                       # 敵の防御が0のとき
+    if skill["type"] == "guard":
+        skill["heal"] = max_hp * skill["heal_rate"]
+    skill["start"] = max(0, min(skill["charge"], int(charge or 0)))
+    return skill
+
+
+def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None, charge=0):
     """戦闘コンポーネントに渡す設定（JSON にそのまま変換できる dict）
 
-    stage_no はステージ番号（1から）か EXTRA。
+    stage_no はステージ番号（1から）か EXTRA。charge は必殺技のチャージ（挑戦の run["charge"]）。
     ally_hp を渡すと、そのHPから戦闘を始める（ステージをまたいだHPの引き継ぎ用）。
     profile を渡すと、アビリティと装備の補正を入れる。bag を渡すと、戦闘中に使えるアイテムを入れる。
     """
@@ -719,7 +781,11 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "def": ally["def"],
             "tap_damage": damage(ally["atk"], enemy["def"]),             # 1タップで敵に与えるダメージ
             "tap_damage_up": damage(ally["atk"] + atk_up, enemy["def"]), # 攻撃力アップ中
+            # 概念崩し（敵の防御0）のあいだ
+            "tap_damage_break": damage(ally["atk"], 0),
+            "tap_damage_up_break": damage(ally["atk"] + atk_up, 0),
         },
+        "skill": skill_config(ally_lv, ally, enemy, max_hp, charge),
         "status": status,
         "status_chance": story_data.STATUS_CHANCE,
         "weapons": weapons,                  # 付けている剣の属性（攻撃が当たったときに発動の抽選）

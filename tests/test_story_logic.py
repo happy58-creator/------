@@ -18,11 +18,11 @@ def test_damage_never_negative_and_never_zero_for_positive_attack():
 
 def test_difficulty_multipliers():
     vh = L.enemy_stats(10, "very_hard")
-    assert math.isclose(vh["hp"], 1551 * 3.6) and math.isclose(vh["atk"], 12.2 * 3.6) and math.isclose(vh["def"], 19.8 * 2.4)
+    assert math.isclose(vh["hp"], 1551 * 4.32) and math.isclose(vh["atk"], 12.2 * 4.32) and math.isclose(vh["def"], 19.8 * 2.88)
     extra = L.enemy_stats(story_data.EXTRA_ENEMY, "very_hard")          # エクストラは難易度に関係なく固定
-    assert extra == {"hp": 1861, "atk": 14.8, "def": 20.2}           # ベリーハードのステージ6と同じ
+    assert extra == {"hp": 2233, "atk": 17.8, "def": 24.2}           # ベリーハードのステージ6と同じ
     n = L.enemy_stats(1, "normal")
-    assert math.isclose(n["hp"], 155) and math.isclose(n["def"], 1.35)
+    assert math.isclose(n["hp"], 186) and math.isclose(n["def"], 1.62)
 
 
 def test_display_hp():
@@ -33,9 +33,9 @@ def test_display_hp():
 
 def test_battle_config_lv1():
     c = L.battle_config(1, 1, "easy", 1)
-    assert math.isclose(c["ally"]["tap_damage"], 1 * (1 - 1 / 51))
-    assert math.isclose(c["enemy"]["hit_damage"], 1 * (1 - 1 / 51))
-    assert math.isclose(c["ally"]["tap_damage_up"], 4 * (1 - 1 / 51))   # 攻撃力アップ（+3）中
+    assert math.isclose(c["ally"]["tap_damage"], 1 * (1 - 1.1 / 51.1))          # イージーは敵が1.1倍
+    assert math.isclose(c["enemy"]["hit_damage"], 1.1 * (1 - 1 / 51))
+    assert math.isclose(c["ally"]["tap_damage_up"], 4 * (1 - 1.1 / 51.1))   # 攻撃力アップ（+3）中
     assert c["attack_ms"] == 3000 and c["pause_ms"] == 800 and c["ally"]["hp"] == 10
     assert not c["final"] and not c["extra"] and c["stage_count"] == 10
     assert L.battle_config(1, 1, "easy", 1, ally_hp=4.5)["ally"]["hp"] == 4.5
@@ -114,7 +114,50 @@ def test_stats_with_abilities_and_equipment():
     L.add_equipment(p, "poison_charm")
     L.set_equipment(p, 1, [uid, 2])
     s = L.ally_stats(1, p)
-    assert s["atk"] == 3 and s["def"] == 3 and s["hp"] == 10 and s["resist"] == ["poison"]
+    assert L.ally_level(p, 1) == 3                 # 10ポイントで Lv.3
+    base = L.base_stats(1, 3)
+    assert math.isclose(s["atk"], base["atk"] + 2) and math.isclose(s["def"], base["def"] + 2)
+    assert s["hp"] == base["hp"] and s["resist"] == ["poison"]
+
+
+def test_levels_and_growth():
+    # Lv.10 に要るポイント：コウはベリーハード全クリア30回分、ルナは50回分
+    vh_clear = 12 * story_data.ABILITY_POINT_PER_STAGE * 3
+    assert math.isclose(L.level_threshold(1, 10), vh_clear * 30, rel_tol=1e-6)
+    assert math.isclose(L.level_threshold(10, 10), vh_clear * 50, rel_tol=1e-6)
+    steps = [L.level_threshold(1, n + 1) - L.level_threshold(1, n) for n in range(1, 10)]
+    assert steps == sorted(steps) and steps[0] < steps[-1]          # 後のレベルほど多く要る
+    assert L.level_of(1, 0) == 1 and L.level_of(1, 108) == 10 and L.level_of(1, 107.9) == 9
+    for lv in range(1, 11):
+        ally = story_data.ALLIES[lv - 1]
+        assert L.base_stats(lv, 1) == {"hp": ally["hp"], "atk": ally["atk"], "def": ally["def"]}
+        assert L.base_stats(lv, 10) == ally["max"]
+        atk = [L.base_stats(lv, n)["atk"] for n in range(1, 11)]
+        assert atk == sorted(atk)
+    # コウの Lv.10 は、マリの Lv.10 よりほんの少し弱い
+    kou, mari = L.base_stats(1, 10), L.base_stats(2, 10)
+    assert kou["atk"] == mari["atk"] and kou["hp"] < mari["hp"] and kou["def"] < mari["def"]
+    # 必殺技のチャージは、コウ（125）を基準に4ターン分以上
+    assert story_data.ALLIES[0]["skill"]["charge"] == 125
+    assert all(a["skill"]["charge"] >= 100 for a in story_data.ALLIES)
+
+
+def test_skill_config_and_charge_carry():
+    p = L.new_profile()
+    c = L.battle_config(1, 1, "easy", 1, profile=p, charge=50)
+    assert c["skill"]["type"] == "strike" and c["skill"]["start"] == 50
+    assert math.isclose(c["skill"]["damage"], L.damage(1 * 20, 1.1))
+    luna = L.battle_config(1, 12, "very_hard", 10)["skill"]
+    assert math.isclose(luna["damage"], 33 * 60)                     # 防御無視
+    assert math.isclose(L.battle_config(1, 1, "easy", 2)["skill"]["heal"], 11 * 0.2)
+    run = L.start_run(p, 1, "easy", {})
+    L.apply_battle(p, {"ally_hp": 10, "charge": 999})
+    assert run["charge"] == 125                                       # 上限で止まる
+    L.restore_checkpoint(p)
+    assert run["charge"] == 0                                         # 負けたらステージ開始時に戻る
+    L.apply_battle(p, {"ally_hp": 10, "charge": 80})
+    L.clear_stage(p, FixedRng([0.9, 0.5]))
+    assert run["charge"] == 80 and run["checkpoint"]["charge"] == 80  # ステージをまたいで残る
 
 
 def test_equipment_rules():

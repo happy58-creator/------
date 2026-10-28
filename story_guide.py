@@ -69,6 +69,8 @@ TIPS = [
     ("陰", "当たる範囲が真ん中に寄る。敵の体の中心をねらって連打しよう。"),
     ("影", "攻撃をまるごとかわされることがある。自分の攻撃の回数で消えるので、あせらず攻撃を続けよう。"),
     ("攻撃力アップ", "1タップごとに効くので、たくさん当てられる人ほど得をする。"),
+    ("必殺技", "敵に当てた回数でチャージがたまり、ステージをまたいでも残る。ボスまでためておくのも作戦。"
+             "負けてやり直すと、そのステージを始めたときのチャージに戻る。"),
     ("リュック", "負けても、そのステージを始めたときの中身に戻る。こまめにアイテムを使ってだいじょうぶ。"),
     ("剣の属性", "毒・火・黒炎は、当たった攻撃が強いほど追加ダメージも大きくなる。属性の剣は1本しか付けられないので、いちばん合う1本をえらぼう。"),
     ("ステージの番人", "勝てないと思ったら「にげる」を。負けても、もう一度戦うか先へ進むかをえらべる。"),
@@ -153,14 +155,23 @@ def ability_text(ally):
 
 def section_allies(profile):
     owned = set(L.owned_allies(profile))
-    parts = []
+    parts = [f"<p style='font-size:14px'>キャラはみんな Lv.1 から始まり、Lv.{story_data.LEVEL_MAX} まで育つ。"
+             "挑戦を終えるたびにたまるポイントでレベルが上がり、後のレベルほど上がりにくいが、ステータスも大きく伸びる。"
+             "強いキャラほど、育てるのに時間がかかる。</p>"]
     for ally in story_data.ALLIES:
         lv = ally["lv"]
-        stats = f"HP {ally['hp']}　攻撃力 {ally['atk']}　防御力 {ally['def']}"
+        low, high = L.base_stats(lv, 1), L.base_stats(lv, story_data.LEVEL_MAX)
+        stats = (f"HP {low['hp']:g}→{high['hp']:g}　攻撃力 {low['atk']:g}→{high['atk']:g}　"
+                 f"防御力 {low['def']:g}→{high['def']:g}（Lv.1→Lv.{story_data.LEVEL_MAX}）")
+        skill = ally["skill"]
         body = (f"{esc(ALLY_TEXT.get(lv, ''))}<br><b>仲間になるには：</b>{esc(join_text(ally))}"
+                f"<br><b>必殺技：</b>{esc(skill['name'])}（コンボ{skill['charge']}でチャージ）― {esc(skill['text'])}"
                 f"<br><b>アビリティ：</b>{esc(ability_text(ally))}（たくさん遊ぶと順に解放）")
-        mark = "✅ 仲間" if lv in owned else "🔒 まだ仲間ではない"
-        parts.append(card(story_assets.ally_thumb(lv), f"Lv.{lv} {esc(ally['name'])}", f"{stats}　／　{mark}", body,
+        if lv in owned:
+            mark = f"✅ 仲間（いま Lv.{L.ally_level(profile, lv)}）"
+        else:
+            mark = "🔒 まだ仲間ではない"
+        parts.append(card(story_assets.ally_thumb(lv), esc(ally["name"]), f"{stats}　／　{mark}", body,
                           gray=lv not in owned))
     st.markdown(CSS + "".join(parts), unsafe_allow_html=True)
 
