@@ -233,34 +233,114 @@ def equipped_items(profile, ally_lv):
     return [get_equipment(by_uid[u]["id"]) for u in equipped_uids(profile, ally_lv) if u in by_uid]
 
 
-def equip_choices(profile, ally_lv):
-    """このキャラが付けられる装備（ほかのキャラが付けていない物）の uid 一覧"""
+def is_accessory(equip_id):
+    return get_equipment(equip_id)["rank"] == story_data.ACCESSORY_RANK
+
+
+def equip_choices(profile, ally_lv, accessory=None):
+    """このキャラが付けられる装備（ほかのキャラが付けていない物）の uid 一覧。
+
+    accessory=True ならアクセサリだけ、False なら装備品だけ、None なら両方。
+    """
     used_by_others = {
         uid for lv, uids in profile["equipped"].items() if lv != str(ally_lv) for uid in uids
     }
-    return [e["uid"] for e in profile["equipment"] if e["uid"] not in used_by_others]
+    return [
+        e["uid"] for e in profile["equipment"]
+        if e["uid"] not in used_by_others and (accessory is None or is_accessory(e["id"]) == accessory)
+    ]
+
+
+def split_equipped(profile, ally_lv):
+    """付けている装備を (装備品の uid 一覧, アクセサリの uid 一覧) に分ける"""
+    by_uid = equipment_by_uid(profile)
+    uids = [u for u in equipped_uids(profile, ally_lv) if u in by_uid]
+    accessories = [u for u in uids if is_accessory(by_uid[u]["id"])]
+    return [u for u in uids if u not in accessories], accessories
 
 
 def set_equipment(profile, ally_lv, uids):
-    """装備を付けかえる。ルールに合わなければ ValueError（メッセージは画面に出せる文）"""
+    """装備を付けかえる（装備品とアクセサリをまとめて渡す）。ルールに合わなければ ValueError（画面に出せる文）
+
+    - 装備品は3つまで。同じ種類を重ねて付けてよい
+    - アクセサリは3つまで。同じ種類は2つ付けられない
+    - ほかのキャラが付けている装備（番号）は付けられない
+    """
     uids = list(dict.fromkeys(uids))
-    if len(uids) > story_data.MAX_EQUIP_SLOTS:
-        raise ValueError(f"装備は {story_data.MAX_EQUIP_SLOTS}つまでだよ。")
+    by_uid = equipment_by_uid(profile)
+    if any(u not in by_uid for u in uids):
+        raise ValueError("倉庫にない装備は付けられないよ。")
     allowed = set(equip_choices(profile, ally_lv))
     if any(u not in allowed for u in uids):
         raise ValueError("ほかのキャラが付けている装備は付けられないよ。")
-    by_uid = equipment_by_uid(profile)
-    kinds = [by_uid[u]["id"] for u in uids]
-    if len(kinds) != len(set(kinds)):
-        raise ValueError("同じ装備を2つ付けることはできないよ。")
+    gear = [u for u in uids if not is_accessory(by_uid[u]["id"])]
+    accessories = [by_uid[u]["id"] for u in uids if is_accessory(by_uid[u]["id"])]
+    if len(gear) > story_data.MAX_GEAR_SLOTS:
+        raise ValueError(f"装備品は {story_data.MAX_GEAR_SLOTS}つまでだよ。")
+    if len(accessories) > story_data.MAX_ACCESSORY_SLOTS:
+        raise ValueError(f"アクセサリは {story_data.MAX_ACCESSORY_SLOTS}つまでだよ。")
+    if len(accessories) != len(set(accessories)):
+        raise ValueError("同じアクセサリを2つ付けることはできないよ。")
     profile["equipped"][str(ally_lv)] = uids
 
 
-def add_equipment(profile, equip_id):
+def add_equipment(profile, equip_id, attrs=None):
+    """倉庫に装備を1つ入れて、番号（uid）を返す。attrs は剣の属性 {属性ID: 発動率}"""
     uid = profile["next_uid"]
-    profile["equipment"].append({"uid": uid, "id": equip_id})
+    entry = {"uid": uid, "id": equip_id}
+    if attrs:
+        entry["attrs"] = dict(attrs)
+    profile["equipment"].append(entry)
     profile["next_uid"] = uid + 1
     return uid
+
+
+# ---------------------------------------------------------------------------
+# 剣の属性
+#   倉庫の剣には {"attrs": {"poison": 0.23, "fire": 0.23, "black_flame": 0.12}} のように付く。
+#   毒・火・雷（ATTR_GROUP）は同じ発動率を共有し、黒炎・陰・影（ATTR_SOLO）はそれぞれの発動率を持つ。
+# ---------------------------------------------------------------------------
+def attr_pool(difficulty_id):
+    """その難易度で剣に付く可能性のある属性"""
+    return [
+        a for a in story_data.ATTR_GROUP + story_data.ATTR_SOLO
+        if a not in story_data.ATTR_MIN_DIFFICULTY or at_least(difficulty_id, story_data.ATTR_MIN_DIFFICULTY[a])
+    ]
+
+
+def roll_weapon_attrs(equip_id, difficulty_id, rng=random):
+    """宝箱から出た装備に付く属性 {属性ID: 発動率}。剣でなければ、または付かなければ None"""
+    if equip_id not in story_data.SWORDS:
+        return None
+    if rng.random() >= story_data.WEAPON_ATTR_CHANCE[difficulty_id]:
+        return None
+    count = rng.choices([1, 2, 3], story_data.WEAPON_ATTR_COUNTS[difficulty_id])[0]
+    pool = attr_pool(difficulty_id)
+    chosen = []
+    while len(chosen) < min(count, len(pool)):
+        a = rng.choice([p for p in pool if p not in chosen])
+        chosen.append(a)
+    attrs = {}
+    group = [a for a in chosen if a in story_data.ATTR_GROUP]
+    if group:
+        chance = round(rng.uniform(*story_data.ATTR_GROUP_CHANCE), 2)
+        for a in group:
+            attrs[a] = chance
+    for a in chosen:
+        if a in story_data.ATTR_SOLO:
+            attrs[a] = round(rng.uniform(*story_data.ATTR_SOLO_CHANCE), 2)
+    return {a: attrs[a] for a in story_data.ATTR_GROUP + story_data.ATTR_SOLO if a in attrs}
+
+
+def weapon_attr_config(entry):
+    """戦闘画面に渡す、剣1本ぶんの属性（なければ None）"""
+    attrs = entry.get("attrs") or {}
+    group = [a for a in story_data.ATTR_GROUP if a in attrs]
+    solo = {a: attrs[a] for a in story_data.ATTR_SOLO if a in attrs}
+    if not group and not solo:
+        return None
+    return {"name": get_equipment(entry["id"])["name"], "group": group,
+            "group_chance": attrs[group[0]] if group else 0, "solo": solo}
 
 
 # ---------------------------------------------------------------------------
@@ -404,7 +484,10 @@ def roll_treasure(stage, difficulty_id, rng=random):
                 if stage >= cond["min_stage"] and at_least(difficulty_id, cond["min_difficulty"])
             ]
             rank = rng.choices(ranks, [story_data.EQUIP_RANKS[r]["weight"] for r in ranks])[0]
-            found.append(("equip", rng.choice([e["id"] for e in story_data.EQUIPMENT if e["rank"] == rank])))
+            found.append(("equip", rng.choice([
+                e["id"] for e in story_data.EQUIPMENT
+                if e["rank"] == rank and at_least(difficulty_id, e.get("min_difficulty", "easy"))
+            ])))
     return found
 
 
@@ -431,7 +514,7 @@ def clear_stage(profile, rng=random):
     """
     run = profile["run"]
     rewards = {"stage": run["stage"], "extra": bool(run.get("extra")), "healed": 0, "items": [], "sent_home": [],
-               "equipment": [], "ultra": [], "allies": [], "chests": 0, "finished": None, "extra_next": False}
+               "equipment": [], "equipment_uids": [], "ultra": [], "allies": [], "chests": 0, "finished": None, "extra_next": False}
     enemy = run_enemy(run)
     ultra = story_data.ULTRA_REWARDS.get(enemy_key(enemy))
     if ultra:
@@ -458,8 +541,9 @@ def clear_stage(profile, rng=random):
         if kind == "item":
             (rewards["items"] if put_picked(profile, run["bag"], thing_id) else rewards["sent_home"]).append(thing_id)
         else:
-            add_equipment(profile, thing_id)
+            uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng))
             rewards["equipment"].append(thing_id)
+            rewards["equipment_uids"].append(uid)
     for lv in roll_unlocks(profile, stage, run["difficulty"], rng):
         profile["allies"].append(lv)
         rewards["allies"].append(lv)
@@ -512,6 +596,11 @@ def abandon_run(profile):
 # ---------------------------------------------------------------------------
 # 戦闘コンポーネントに渡す設定
 # ---------------------------------------------------------------------------
+def _status_label(status_id):
+    effect = story_data.STATUS_EFFECTS[status_id]
+    return {"name": effect["name"], "icon": effect["icon"]}
+
+
 def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None):
     """戦闘コンポーネントに渡す設定（JSON にそのまま変換できる dict）
 
@@ -547,9 +636,9 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
                          "turns_max": thunder["turns_max"], "halve": "thunder" in resist}
     darkness, shadow = effects["darkness"], effects["shadow"]
     status["darkness"] = {"name": darkness["name"], "icon": darkness["icon"], "turns": darkness["turns"],
-                          "hit_scale": darkness["hit_scale"]}
+                          "hit_scale": darkness["resist_hit_scale"] if "darkness" in resist else darkness["hit_scale"]}
     status["shadow"] = {"name": shadow["name"], "icon": shadow["icon"], "turns": shadow["turns"],
-                        "evade_rate": shadow["evade_rate"]}
+                        "evade_rate": shadow["evade_rate"] * rate("shadow")}
 
     counts = bag_counts(bag) if bag else {}
     items = [
@@ -559,6 +648,24 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         for i in story_data.ITEMS
     ]
     atk_up = max(i["atk_bonus"] for i in story_data.ITEMS)
+    weapons = []
+    if profile is not None:
+        by_uid = equipment_by_uid(profile)
+        for uid in equipped_uids(profile, ally_lv):
+            if uid in by_uid and (w := weapon_attr_config(by_uid[uid])):
+                weapons.append(w)
+    immune = enemy_data.get("immune", [])
+    fx = story_data.ATTR_EFFECTS
+    enemy_status = {
+        "poison": {**_status_label("poison"), "dot": fx["poison"]["dot"]},
+        "fire": {**_status_label("fire"), "dot": fx["fire"]["dot"]},
+        "black_flame": {**_status_label("black_flame"), "dot": fx["black_flame"]["dot"]},
+        "thunder": {**_status_label("thunder"), "turns_min": fx["thunder"]["turns_min"],
+                    "turns_max": fx["thunder"]["turns_max"], "immune": "thunder" in immune},
+        "darkness": {**_status_label("darkness"), "turns": fx["darkness"]["turns"],
+                     "damage_min": fx["darkness"]["damage_min"], "damage_max": fx["darkness"]["damage_max"]},
+        "shadow": {**_status_label("shadow"), "turns": fx["shadow"]["turns"], "evade_rate": fx["shadow"]["evade_rate"]},
+    }
     extra = stage_no == EXTRA
     count = stage_count(difficulty_id)
     return {
@@ -594,6 +701,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         },
         "status": status,
         "status_chance": story_data.STATUS_CHANCE,
+        "weapons": weapons,                  # 付けている剣の属性（攻撃が当たったときに発動の抽選）
+        "enemy_status": enemy_status,        # 剣の属性で敵にかかる状態異常の数字
         "meteor": {"trigger_rate": story_data.METEOR_TRIGGER_HP_RATE,
                    "current_hp_rate": effects["meteor"]["current_hp_rate"]},
         "items": items,

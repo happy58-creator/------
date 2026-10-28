@@ -106,9 +106,28 @@ def equip_text(equip):
     return "・".join(f"{STAT_NAMES[s]}+{equip[s]}" for s in ("hp", "atk", "def") if equip[s])
 
 
-def equip_label(equip):
+def attr_text(attrs):
+    """剣の属性の説明。例：「毒・火 23%／黒炎 12%」（％は攻撃が当たったときの発動率）"""
+    if not attrs:
+        return ""
+    names = story_data.STATUS_EFFECTS
+    group = [a for a in story_data.ATTR_GROUP if a in attrs]
+    parts = []
+    if group:
+        parts.append("・".join(names[a]["icon"] + names[a]["name"] for a in group) + f" {attrs[group[0]]:.0%}")
+    parts += [f"{names[a]['icon']}{names[a]['name']} {attrs[a]:.0%}" for a in story_data.ATTR_SOLO if a in attrs]
+    return "／".join(parts)
+
+
+def equip_label(equip, entry=None):
+    """装備の名前と効果。entry（倉庫の1件）を渡すと、剣の属性も書く"""
     rank = "【超激レア】" if equip["rank"] == "ultra" else ""
-    return f"{equip['icon']} {rank}{equip['name']}（{equip_text(equip)}）"
+    attrs = attr_text((entry or {}).get("attrs"))
+    return f"{equip['icon']} {rank}{equip['name']}（{equip_text(equip)}）" + (f"【属性 {attrs}】" if attrs else "")
+
+
+def entry_label(entry):
+    return equip_label(L.get_equipment(entry["id"]), entry)
 
 
 def item_label(item_id):
@@ -202,7 +221,9 @@ def show_rewards(rewards):
         return True
     found = [item_label(i) for i in rewards["items"]]
     found += [f"{item_label(i)}（かばんがいっぱいなので ホームへ）" for i in rewards["sent_home"]]
-    found += [f"{equip_label(L.get_equipment(e))} → 倉庫へ" for e in rewards["equipment"]]
+    by_uid = L.equipment_by_uid(profile)
+    found += [f"{entry_label(by_uid[u]) if u in by_uid else equip_label(L.get_equipment(e))} → 倉庫へ"
+              for e, u in zip(rewards["equipment"], rewards.get("equipment_uids") or [None] * len(rewards["equipment"]))]
     st.info("🎁 宝箱の中身：\n\n" + "\n".join(f"- {f}" for f in found))
     return True
 
@@ -302,7 +323,9 @@ def view_prepare():
         ability_gauges(lv, L.ability_points(profile, lv))
         st.caption("アビリティは、挑戦が終わる（全クリアか「新規にプレイ」）たびに少しずつたまるよ。")
 
-    with st.expander(f"🛡️ そうび（{len(L.equipped_uids(profile, lv))} / {story_data.MAX_EQUIP_SLOTS}）",
+    gear, accessories = L.split_equipped(profile, lv)
+    with st.expander(f"🛡️ そうび（装備品 {len(gear)}/{story_data.MAX_GEAR_SLOTS}・"
+                     f"アクセサリ {len(accessories)}/{story_data.MAX_ACCESSORY_SLOTS}）",
                      expanded=bool(profile["equipment"])):
         view_equipment(lv)
 
@@ -343,26 +366,36 @@ def view_prepare():
 
 
 def view_equipment(lv):
+    """装備品とアクセサリを、別々のわくで付けかえる"""
     by_uid = L.equipment_by_uid(profile)
     if not by_uid:
         st.caption("まだ装備を持っていないよ。宝箱から 手に入るよ。")
         return
-    key = f"_story_equip_{lv}"
+    keys = {False: f"_story_gear_{lv}", True: f"_story_acc_{lv}"}
+    gear, accessories = L.split_equipped(profile, lv)
+    st.session_state.setdefault(keys[False], gear)
+    st.session_state.setdefault(keys[True], accessories)
 
     def on_change():
         try:
-            L.set_equipment(profile, lv, st.session_state[key])
+            L.set_equipment(profile, lv, st.session_state[keys[False]] + st.session_state[keys[True]])
             save()
         except ValueError as e:
-            st.session_state[key] = L.equipped_uids(profile, lv)
             st.session_state.story_notice_equip = str(e)
+            st.session_state[keys[False]], st.session_state[keys[True]] = L.split_equipped(profile, lv)
 
-    st.session_state.setdefault(key, L.equipped_uids(profile, lv))
+    def label(uid):
+        return entry_label(by_uid[uid])
+
     st.multiselect(
-        f"付ける装備（{story_data.MAX_EQUIP_SLOTS}つまで。同じ装備は2つ付けられないよ）",
-        L.equip_choices(profile, lv),
-        format_func=lambda uid: equip_label(L.get_equipment(by_uid[uid]["id"])),
-        max_selections=story_data.MAX_EQUIP_SLOTS, key=key, on_change=on_change,
+        f"🗡️ 装備品（{story_data.MAX_GEAR_SLOTS}つまで。同じ装備を重ねて付けてもいいよ）",
+        L.equip_choices(profile, lv, accessory=False), format_func=label,
+        max_selections=story_data.MAX_GEAR_SLOTS, key=keys[False], on_change=on_change,
+    )
+    st.multiselect(
+        f"💍 アクセサリ（{story_data.MAX_ACCESSORY_SLOTS}つまで。同じアクセサリは1つだけ）",
+        L.equip_choices(profile, lv, accessory=True), format_func=label,
+        max_selections=story_data.MAX_ACCESSORY_SLOTS, key=keys[True], on_change=on_change,
     )
     error = st.session_state.pop("story_notice_equip", None)
     if error:
@@ -370,10 +403,16 @@ def view_equipment(lv):
     owner = {uid: int(a) for a, uids in profile["equipped"].items() for uid in uids}
     rows = []
     for equip in story_data.EQUIPMENT:
-        mine = [e["uid"] for e in profile["equipment"] if e["id"] == equip["id"]]
-        if mine:
+        # 属性の付いた剣は1本ずつ、付いていない物は種類ごとにまとめて出す
+        groups = {}
+        for e in profile["equipment"]:
+            if e["id"] == equip["id"]:
+                key = tuple(sorted((e.get("attrs") or {}).items()))
+                groups.setdefault(key, []).append(e)
+        for key, entries in groups.items():
+            mine = [e["uid"] for e in entries]
             users = sorted({short_name(owner[u]) for u in mine if u in owner})
-            rows.append(f"- {equip_label(equip)} ×{len(mine)}" + (f"　（{'・'.join(users)} が使用中）" if users else ""))
+            rows.append(f"- {entry_label(entries[0])} ×{len(mine)}" + (f"　（{'・'.join(users)} が使用中）" if users else ""))
     st.markdown("**倉庫**\n" + "\n".join(rows))
 
 

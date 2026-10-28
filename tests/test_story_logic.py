@@ -17,7 +17,7 @@ def test_damage_never_negative_and_never_zero_for_positive_attack():
 
 def test_difficulty_multipliers():
     vh = L.enemy_stats(10, "very_hard")
-    assert math.isclose(vh["hp"], 4230) and math.isclose(vh["atk"], 33.3) and vh["def"] == 36
+    assert math.isclose(vh["hp"], 4653) and math.isclose(vh["atk"], 36.6) and math.isclose(vh["def"], 39.6)
     extra = L.enemy_stats(story_data.EXTRA_ENEMY, "very_hard")          # エクストラは難易度に関係なく固定
     assert extra == {"hp": 1140, "atk": 9, "def": 12}
     n = L.enemy_stats(1, "normal")
@@ -81,6 +81,8 @@ class FixedRng:
         return [population[0]]
     def choice(self, seq):
         return seq[0]
+    def uniform(self, a, b):
+        return (a + b) / 2
 
 
 def profile_with_items(**items):
@@ -118,19 +120,36 @@ def test_equipment_rules():
     p["allies"] = [1, 2]
     a = L.add_equipment(p, "wood_sword")
     b = L.add_equipment(p, "wood_sword")
-    try:
-        L.set_equipment(p, 1, [a, b])
-        assert False, "同じ装備を2つ付けられてしまった"
-    except ValueError:
-        pass
-    L.set_equipment(p, 1, [a])
-    assert L.equip_choices(p, 2) == [b]            # コウが付けている1本目は、マリは使えない
+    L.set_equipment(p, 1, [a, b])                  # 装備品は同じ種類を重ねて付けられる
+    assert L.ally_stats(1, p)["atk"] == 3
+    assert L.equip_choices(p, 2) == []             # コウが2本とも付けているので、マリは使えない
     try:
         L.set_equipment(p, 2, [a])
         assert False
     except ValueError:
         pass
+    L.set_equipment(p, 1, [a])
     L.set_equipment(p, 2, [b])
+    # 装備品は3つまで
+    more = [L.add_equipment(p, "leather_shield") for _ in range(3)]
+    try:
+        L.set_equipment(p, 1, [a] + more)
+        assert False, "装備品を4つ付けられてしまった"
+    except ValueError:
+        pass
+    # アクセサリは装備品と別のわくで3つまで。同じ種類は1つだけ
+    c1, c2 = L.add_equipment(p, "poison_charm"), L.add_equipment(p, "poison_charm")
+    t, f = L.add_equipment(p, "thunder_ring"), L.add_equipment(p, "fire_bangle")
+    L.set_equipment(p, 1, [a] + more[:2] + [c1, t, f])
+    gear, acc = L.split_equipped(p, 1)
+    assert len(gear) == 3 and len(acc) == 3
+    try:
+        L.set_equipment(p, 1, [c1, c2])
+        assert False, "同じアクセサリを2つ付けられてしまった"
+    except ValueError:
+        pass
+    assert L.equip_choices(p, 2, accessory=True) == [c2]
+    assert set(L.equip_choices(p, 2, accessory=False)) == {b, more[2]}
 
 
 def test_bag_uses_carried_first_and_overflow_goes_home():
@@ -168,7 +187,7 @@ def test_clear_stage_heals_rolls_and_saves_rewards():
     run["stage"] = 2
     run["hp"] = 1.0
     # 宝箱が出る → 2個 → 1個目アイテム・2個目装備 → マリの抽選に当たる
-    rewards = L.clear_stage(p, FixedRng([0.0, 0.0, 0.9, 0.1, 0.5], randint=2))   # 最後はエクストラの抽選（外れ）
+    rewards = L.clear_stage(p, FixedRng([0.0, 0.0, 0.9, 0.99, 0.1, 0.5], randint=2))   # 剣の属性なし・最後はエクストラの抽選（外れ）
     assert run["hp"] == 6.0 and run["stage"] == 3 and run["cleared"] == 1
     assert rewards["items"] == ["potion"] and rewards["equipment"] == ["wood_sword"]
     assert 2 in p["allies"] and rewards["allies"] == [2]
@@ -259,6 +278,63 @@ def test_old_profile_migrates():
     assert "suspended" not in p
     p["items"]["atk_up"] = 0                      # 一度受け取ったら、もう補わない
     assert L.normalize_profile(p)["items"]["atk_up"] == 0
+
+
+def test_weapon_attrs_roll():
+    assert L.roll_weapon_attrs("leather_shield", "very_hard", FixedRng([0.0])) is None   # 剣でなければ付かない
+    assert L.roll_weapon_attrs("wood_sword", "easy", FixedRng([0.5])) is None           # イージーは40%
+    a = L.roll_weapon_attrs("wood_sword", "easy", FixedRng([0.3]))
+    assert a == {"poison": 0.23}                                                       # 毒・火・雷の発動率は5〜40%
+    assert L.attr_pool("normal") == ["poison", "fire", "thunder"]                       # 黒炎・陰・影はハード以上
+    assert L.attr_pool("hard")[-3:] == ["black_flame", "darkness", "shadow"]
+    import random
+    rng = random.Random(5)
+    counts = {1: 0, 2: 0, 3: 0}
+    for _ in range(3000):
+        a = L.roll_weapon_attrs("steel_sword", "very_hard", rng)
+        if not a:
+            continue
+        counts[len(a)] += 1
+        group = {v for k, v in a.items() if k in story_data.ATTR_GROUP}
+        assert len(group) <= 1 and all(0.05 <= v <= 0.40 for v in group)              # 毒・火・雷は同じ発動率
+        assert all(0.01 <= v <= 0.20 for k, v in a.items() if k in story_data.ATTR_SOLO)
+    total = sum(counts.values())
+    assert 0.92 < total / 3000 < 0.98                                                   # ベリーハードは95%
+    assert abs(counts[3] / total - 0.20) < 0.03
+
+
+def test_weapon_attrs_reach_battle_config():
+    p = L.new_profile()
+    uid = L.add_equipment(p, "wood_sword", {"poison": 0.2, "fire": 0.2, "shadow": 0.05})
+    L.add_equipment(p, "wood_sword")
+    L.set_equipment(p, 1, [uid, 2])
+    c = L.battle_config(1, 9, "hard", 1, profile=p)
+    assert c["weapons"] == [{"name": "木の剣", "group": ["poison", "fire"], "group_chance": 0.2, "solo": {"shadow": 0.05}}]
+    assert c["enemy_status"]["thunder"]["immune"]                                       # Lv.9 から雷は効かない
+    assert not L.battle_config(1, 8, "hard", 1)["enemy_status"]["thunder"]["immune"]
+    assert L.battle_config(1, L.EXTRA, "hard", 1)["enemy_status"]["thunder"]["immune"]
+    assert c["enemy_status"]["black_flame"]["dot"] == [(0.60, 3), (0.05, 10)]
+    import json
+    assert L.normalize_profile(json.loads(json.dumps(p)))["equipment"][0]["attrs"]["shadow"] == 0.05
+
+
+def test_black_flame_darkness_shadow_accessories():
+    p = L.new_profile()
+    for eq in ("black_flame_ring", "darkness_bracelet", "shadow_charm"):
+        L.add_equipment(p, eq)
+    L.set_equipment(p, 1, [1, 2, 3])
+    c = L.battle_config(1, L.EXTRA, "hard", 1, profile=p)
+    plain = L.battle_config(1, L.EXTRA, "hard", 1)
+    assert math.isclose(c["status"]["black_flame"]["damage"], plain["status"]["black_flame"]["damage"] / 2)
+    assert c["status"]["darkness"]["hit_scale"] == 0.89 and plain["status"]["darkness"]["hit_scale"] == 0.77
+    assert math.isclose(c["status"]["shadow"]["evade_rate"], 0.15)
+    import random
+    rng = random.Random(2)
+    def seen(diff):
+        return {e for _ in range(1500) for kind, e in L.roll_treasure(9, diff, rng) if kind == "equip"}
+    new = {"black_flame_ring", "darkness_bracelet", "shadow_charm"}
+    assert not (seen("normal") & new)              # ノーマル以下では出ない
+    assert new <= seen("hard")
 
 
 def test_battle_config_status_numbers():
