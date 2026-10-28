@@ -27,6 +27,7 @@ ALLY_TEXT = {
     8: "魔導と機械を極めた天才。守りも攻めも高い水準にある。",
     9: "まだ形の定まらない「概念」そのもの。底知れない力を秘める。",
     10: "光の国をすべる帝。ほかのだれも寄せつけない力を持つ。",
+    11: "ステージの番人だった宇宙龍が、心を通わせて仲間になった姿。背に乗る天使とともに、銀河そのものの力をふるう。",
 }
 
 ENEMY_TEXT = {
@@ -53,8 +54,18 @@ MYSTERY_TEXT = {
                           "その姿を見た者は、自分の攻撃がすり抜けるような感覚をおぼえるという。"),
 }
 
+# 倒したあとに見せる、謎の敵の本当の姿の説明
+REVEAL_TEXT = {
+    "enemy_10": "世界を創り、そして終わらせてきた創造主。体力が半分を切るとメテオを詠唱し、"
+                "次の攻撃で大きなダメージと黒炎を与えてくる。詠唱が見えたら、回復と封炎の巻物で備えよう。",
+    "enemy_11_hard": "光の輪と水晶をまとう、すべての始まり。メテオに加えて、あたりを暗くする「陰」で当たる範囲を狭めてくる。"
+                     "体の中心をねらって連打しよう。ベリーハードでは、最後の者の前に立ちはだかる。",
+    "enemy_11_veryhard": "ひとことも話さない、ベリーハードの最奥の存在。陰に加えて、攻撃をすり抜けさせる「影」を使う。"
+                         "必殺技やアイテムを出し惜しみせず、全力で挑もう。",
+}
+
 EXTRA_TEXT = ("各ステージを見回っている「ステージの番人」。謎多き者たちの使者だといわれる。"
-              "ステージを進むうちに、ごく稀に行く手に現れる。逃げることもできるが、倒せば見たことのない装備が手に入るという。")
+              "ステージを進むうちに、ごく稀に行く手に現れる。逃げることもできるが、倒せば見たことのない装備が手に入り、さらに……。")
 
 ULTRA_HOW = {
     "dragon_scale": "ステージの番人（極点の宇宙龍）を倒す",
@@ -63,8 +74,9 @@ ULTRA_HOW = {
 }
 
 TIPS = [
-    ("毒・火・黒炎", "ポーション類で治る。治しても、そのターンに攻撃できるよ。長い戦いになる敵には、よけのアクセサリが効く。"),
-    ("雷", "しびれて攻撃できないあいだも、アイテムは使える。ポーションで治せば、そのターンに攻撃できる。"),
+    ("毒・雷・火", "ポーション類では治らない。万能薬か浄化の魔法陣で治そう。治しても、そのターンに攻撃できる。"),
+    ("黒炎", "黒炎払いの巻物か浄化の魔法陣で消せる。封炎の巻物を先に使えば、しばらく黒炎にかからない（メテオのあとの黒炎も）。"),
+    ("雷", "しびれて攻撃できないあいだも、アイテムは使える。万能薬で治せば、そのターンに攻撃できる。"),
     ("メテオの詠唱", "予告が出たら、次の敵の攻撃は大ダメージ。そのあいだに回復しておこう。"),
     ("陰", "当たる範囲が真ん中に寄る。敵の体の中心をねらって連打しよう。"),
     ("影", "攻撃をまるごとかわされることがある。自分の攻撃の回数で消えるので、あせらず攻撃を続けよう。"),
@@ -73,7 +85,8 @@ TIPS = [
              "負けてやり直すと、そのステージを始めたときのチャージに戻る。"),
     ("リュック", "負けても、そのステージを始めたときの中身に戻る。こまめにアイテムを使ってだいじょうぶ。"),
     ("剣の属性", "毒・火・黒炎は、当たった攻撃が強いほど追加ダメージも大きくなる。属性の剣は1本しか付けられないので、いちばん合う1本をえらぼう。"),
-    ("ステージの番人", "勝てないと思ったら「にげる」を。負けても、もう一度戦うか先へ進むかをえらべる。"),
+    ("ステージの番人", "勝てないと思ったら「にげる」を。負けても、もう一度戦うか先へ進むかをえらべる。"
+                     "倒せば、いちばん強い仲間が加わる。"),
 ]
 
 CSS = """
@@ -144,13 +157,15 @@ def join_text(ally):
     cond = ally["unlock"]
     if not cond:
         return "最初から仲間"
+    if cond.get("extra"):
+        return "ステージの番人（極点の宇宙龍）を倒すと、必ず仲間になる"
     diff = L.get_difficulty(cond["min_difficulty"])["name"]
     scope = "で" if cond["min_difficulty"] == "very_hard" else "以上で"
     return f"{diff}{scope}ステージ{cond['stage']}をクリアすると、{nuance(cond['chance'])}仲間になる"
 
 
 def ability_text(ally):
-    return "・".join(f"{STAT_NAMES[a['stat']]}+{a['value']}" for a in ally["abilities"])
+    return "・".join(L.ability_label(a) for a in ally["abilities"])
 
 
 def section_allies(profile):
@@ -179,6 +194,9 @@ def section_allies(profile):
 def equip_how(equip):
     if equip["rank"] == "ultra":
         return ULTRA_HOW.get(equip["id"], "？？？")
+    if equip.get("roll"):
+        diff = L.get_difficulty(equip["roll"]["difficulty"])["name"]
+        return f"{diff}の宝箱から（どのステージでも）。ステージの後半ほど、数値の高い物が出やすい"
     rank = story_data.EQUIP_RANKS[equip["rank"]]
     diff_id = equip.get("min_difficulty") or rank["min_difficulty"]
     diff = "" if diff_id == "easy" else f"{L.get_difficulty(diff_id)['name']}以上の"
@@ -189,9 +207,7 @@ def equip_how(equip):
 def equip_effect(equip):
     if equip["rank"] == "ultra":
         return "？？？　まだだれも使ったことのない、未知の装備。"
-    if equip["resist"]:
-        return f"{story_data.STATUS_EFFECTS[equip['resist']]['name']}を半分にする"
-    return "・".join(f"{STAT_NAMES[s]}+{equip[s]}" for s in ("hp", "atk", "def") if equip[s])
+    return L.equip_effect_text(equip["id"])
 
 
 def section_equipment():
@@ -201,7 +217,7 @@ def section_equipment():
         rows = [e for e in story_data.EQUIPMENT if e["rank"] == rank_id]
         parts.append(f"<h4 style='color:#e9d6a6;margin:14px 0 6px'>{esc(rank['name'])}</h4>")
         for equip in rows:
-            sub = "アクセサリ（3つまで・同じ物は1つ）" if rank_id == "accessory" else "装備品（3つまで）"
+            sub = "アクセサリ（3つまで・同じ物は1つ）" if rank_id in story_data.ACCESSORY_RANKS else "装備品（3つまで）"
             body = f"<b>効果：</b>{esc(equip_effect(equip))}<br><b>手に入れ方：</b>{esc(equip_how(equip))}"
             parts.append(card(story_assets.equipment_thumb(equip["id"]), esc(equip["name"]), sub, body, small=True))
     group = [s for s in story_data.ATTR_GROUP]
@@ -215,24 +231,20 @@ def section_equipment():
         chips=status_chips(group + solo)))
     parts.append("<h4 style='color:#e9d6a6;margin:14px 0 6px'>アイテム</h4>")
     for item in story_data.ITEMS:
-        effect = []
-        if item["heal_rate"] >= 1:
-            effect.append("HPを全回復")
-        elif item["heal_rate"]:
-            effect.append(f"最大HPの{item['heal_rate']:.0%}を回復")
-        if item["cure"]:
-            effect.append("状態異常を治す")
-        if item["guard"]:
-            effect.append(f"{item['guard']}ターン防御力2倍")
-        if item["atk_bonus"]:
-            effect.append(f"自分の攻撃{item['atk_turns']}回ぶん攻撃力+{item['atk_bonus']}")
-        parts.append(card(story_assets.item_thumb(item["id"]), esc(item["name"]),
-                          f"宝箱から{nuance_weight(item['weight'])}出る", esc("・".join(effect)), small=True))
+        effect = [L.item_effect_text(item)]
+        where = item.get("where")
+        if where:
+            cond = "・".join(f"{L.get_difficulty(d)['name']}{n}" for d, n in where.items())
+            how = f"宝箱から（{cond} 以上のステージ）。{nuance_weight(item['weight'])}出る"
+        else:
+            how = f"宝箱から{nuance_weight(item['weight'])}出る"
+        parts.append(card(story_assets.item_thumb(item["id"]), esc(item["name"]), how, esc("・".join(effect)), small=True))
     st.markdown(CSS + "".join(parts), unsafe_allow_html=True)
 
 
-def section_enemies():
-    parts = []
+def section_enemies(profile):
+    defeated = set(profile.get("defeated") or [])
+    parts = ["<p style='font-size:14px'>影になっている敵は、倒すと本当の姿と詳しいことがわかる。</p>"]
     seen = set()
     for enemy in story_data.ENEMIES:
         key = L.enemy_key(enemy)
@@ -242,7 +254,14 @@ def section_enemies():
         where = ("ハード・ベリーハード" if enemy["difficulties"] == ["hard", "very_hard"]
                  else "ベリーハードだけ" if enemy["difficulties"] == ["very_hard"] else "すべての難易度")
         gimmicks = [g for g in enemy["gimmicks"] if g != "meteor"]
-        if key in MYSTERY:
+        beaten = "　✅ 倒した" if key in defeated else ""
+        if key in MYSTERY and key in defeated:      # 倒したことのある謎の敵は、本当の姿を見せる
+            chips = status_chips(gimmicks) + '<span class="chip">天変地異：雷が効かない</span>'
+            if "meteor" in enemy["gimmicks"]:
+                chips = '<span class="chip">☄️ メテオ</span>' + chips
+            parts.append(card(story_assets.thumb_uri(f"enemies/{enemy['image']}", 240),
+                              f"Lv.{enemy['lv']} {esc(enemy['name'])}", f"{where}{beaten}", esc(REVEAL_TEXT[key]), chips=chips))
+        elif key in MYSTERY:
             title, text = MYSTERY_TEXT[key]
             chips = status_chips(gimmicks[:2]) + '<span class="chip">…ほか、得体の知れない力</span>'
             parts.append(card(story_assets.silhouette_uri(key), esc(title), f"Lv.{enemy['lv']}　{where}",
@@ -252,7 +271,7 @@ def section_enemies():
             if "thunder" in enemy.get("immune", []):
                 chips += '<span class="chip">天変地異：雷が効かない</span>'
             parts.append(card(story_assets.thumb_uri(f"enemies/{enemy['image']}", 240), f"Lv.{enemy['lv']} {esc(enemy['name'])}",
-                              where, esc(ENEMY_TEXT.get(key, "")), chips=chips))
+                              where + beaten, esc(ENEMY_TEXT.get(key, "")), chips=chips))
     extra = story_data.EXTRA_ENEMY
     chips = status_chips(extra["gimmicks"]) + '<span class="chip">天変地異：雷が効かない</span>'
     parts.append(card(story_assets.thumb_uri(f"enemies/{extra['image']}", 300), f"Lv.??? {esc(extra['name'])}",
@@ -272,6 +291,6 @@ def render(profile):
     with tab_equip:
         section_equipment()
     with tab_enemy:
-        section_enemies()
+        section_enemies(profile)
     with tab_tips:
         section_tips()

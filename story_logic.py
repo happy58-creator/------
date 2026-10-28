@@ -81,6 +81,14 @@ def get_ally(lv):
     return next(a for a in story_data.ALLIES if a["lv"] == lv)
 
 
+def ability_label(ability):
+    """アビリティの説明。例：「攻撃力+1」「聖霊の加護（HP+50・毒・雷・火にかからない）」"""
+    text = f"{STAT_LABELS[ability['stat']]}+{ability['value']}"
+    if ability.get("immune"):
+        text += "・" + "・".join(story_data.STATUS_EFFECTS[s]["name"] for s in ability["immune"]) + "にかからない"
+    return f"{ability['name']}（{text}）" if ability.get("name") else text
+
+
 def short_name(lv):
     """キャラの名前だけ（「平凡な農民、コウ」→「コウ」）"""
     return get_ally(lv)["name"].split("、")[-1]
@@ -150,14 +158,71 @@ def new_profile():
         "items": initial_items(),
         "pack": {},
         "locked": [],
+        "defeated": [],          # 倒したことのある敵（攻略で、謎の敵の姿を見せる）
+        "bonus_day": "",         # ログインボーナスをもらった日（YYYY-MM-DD）
         "run": None,
         "starter_items": True,
     }
 
 
 def initial_items():
-    """最初にホームに持っているアイテム（全種類 INITIAL_ITEM_COUNT 個ずつ）"""
-    return {item["id"]: story_data.INITIAL_ITEM_COUNT for item in story_data.ITEMS}
+    """最初にホームに持っているアイテム（いつでも出るアイテムを INITIAL_ITEM_COUNT 個ずつ）"""
+    return {item["id"]: story_data.INITIAL_ITEM_COUNT for item in story_data.ITEMS if not item.get("where")}
+
+
+def item_available(item, stage, difficulty_id):
+    """そのステージの宝箱から出るアイテムか（where の条件）"""
+    where = item.get("where")
+    return not where or (difficulty_id in where and stage >= where[difficulty_id])
+
+
+def equip_bonus(entry):
+    """倉庫の装備1つぶんの上がり方 {"hp", "atk", "def"}（ランダムのアクセサリは、決まった数値が足される）"""
+    equip = get_equipment(entry["id"])
+    stats = {stat: equip[stat] for stat in ("hp", "atk", "def")}
+    for stat, value in (entry.get("bonus") or {}).items():
+        stats[stat] += value
+    return stats
+
+
+STAT_LABELS = {"hp": "HP", "atk": "攻撃力", "def": "防御力"}
+
+
+def equip_effect_text(entry_or_id):
+    """装備の効果の文（倉庫の1件を渡すと、ランダムのアクセサリは決まった数値で書く）"""
+    entry = entry_or_id if isinstance(entry_or_id, dict) else {"id": entry_or_id}
+    equip = get_equipment(entry["id"])
+    if equip["resist"]:
+        return f"{story_data.STATUS_EFFECTS[equip['resist']]['name']}を半分にする"
+    if equip.get("roll") and not entry.get("bonus"):
+        roll = equip["roll"]
+        return f"{STAT_LABELS[roll['stat']]}+{roll['min']}〜{roll['max']}（手に入れたときに決まる）"
+    stats = equip_bonus(entry)
+    return "・".join(f"{STAT_LABELS[st]}+{stats[st]:g}" for st in ("hp", "atk", "def") if stats[st])
+
+
+def item_effect_text(item):
+    parts = []
+    if item["heal_rate"] >= 1:
+        parts.append("HPを全回復")
+    elif item["heal_rate"]:
+        parts.append(f"最大HPの{item['heal_rate']:.0%}を回復")
+    if item.get("ward"):
+        parts.append(f"{item['ward']}ターン黒炎にかからない（かかっている黒炎は続く）")
+    if item["cure"]:
+        parts.append("・".join(story_data.STATUS_EFFECTS[c]["name"] for c in item["cure"]) + "を治す")
+    if item["guard"]:
+        parts.append(f"{item['guard']}ターン防御力2倍")
+    if item["atk_bonus"]:
+        parts.append(f"自分の攻撃{item['atk_turns']}回ぶん攻撃力+{item['atk_bonus']}")
+    return "・".join(parts)
+
+
+def roll_charm_value(roll, stage, count, rng=random):
+    """ランダムのアクセサリの数値。範囲 min〜max の中で、ステージの後半ほど高めに出る"""
+    t = (stage - 1) / max(1, count - 1)
+    u = 0.6 * min(1.0, max(0.0, t)) + 0.4 * rng.random()
+    return roll["min"] + round((roll["max"] - roll["min"]) * u)
 
 
 def normalize_run(run):
@@ -245,7 +310,7 @@ def equipped_items(profile, ally_lv):
 
 
 def is_accessory(equip_id):
-    return get_equipment(equip_id)["rank"] == story_data.ACCESSORY_RANK
+    return get_equipment(equip_id)["rank"] in story_data.ACCESSORY_RANKS
 
 
 def equip_choices(profile, ally_lv, accessory=None):
@@ -298,12 +363,14 @@ def set_equipment(profile, ally_lv, uids):
     profile["equipped"][str(ally_lv)] = uids
 
 
-def add_equipment(profile, equip_id, attrs=None):
-    """倉庫に装備を1つ入れて、番号（uid）を返す。attrs は剣の属性 {属性ID: 発動率}"""
+def add_equipment(profile, equip_id, attrs=None, bonus=None):
+    """倉庫に装備を1つ入れて、番号（uid）を返す。attrs は剣の属性 {属性ID: 発動率}、bonus はランダムのアクセサリの数値"""
     uid = profile["next_uid"]
     entry = {"uid": uid, "id": equip_id}
     if attrs:
         entry["attrs"] = dict(attrs)
+    if bonus:
+        entry["bonus"] = dict(bonus)
     profile["equipment"].append(entry)
     profile["next_uid"] = uid + 1
     return uid
@@ -361,7 +428,7 @@ def weapon_attr_config(entry):
 # 味方のステータス（基本 + アビリティ + 装備）
 # ---------------------------------------------------------------------------
 def level_points_max(ally_lv):
-    """そのキャラが Lv.10 になるのに要るポイント（コウからルナへ、順番に増える）"""
+    """そのキャラが Lv.10 になるのに要るポイント（コウからルナへ、順番に増える。アステルはルナより少し多い）"""
     low, high = story_data.LEVEL_POINTS
     return low + (high - low) * (ally_lv - 1) / 9
 
@@ -405,14 +472,19 @@ def base_stats(ally_lv, level=1):
 
 def ally_stats(lv, profile=None):
     """味方のステータス（レベル + アビリティ + 装備）。profile がなければ Lv.1 の素のステータス"""
-    stats = {**base_stats(lv, ally_level(profile, lv)), "resist": []}
+    stats = {**base_stats(lv, ally_level(profile, lv)), "resist": [], "immune": []}
     if profile is None:
         return stats
     for ability in unlocked_abilities(lv, ability_points(profile, lv)):
         stats[ability["stat"]] += ability["value"]
-    for equip in equipped_items(profile, lv):
-        for stat in ("hp", "atk", "def"):
-            stats[stat] += equip[stat]
+        stats["immune"] += [s for s in ability.get("immune", []) if s not in stats["immune"]]
+    by_uid = equipment_by_uid(profile)
+    for uid in equipped_uids(profile, lv):
+        if uid not in by_uid:
+            continue
+        entry, equip = by_uid[uid], get_equipment(by_uid[uid]["id"])
+        for stat, value in equip_bonus(entry).items():
+            stats[stat] += value
         if equip["resist"]:
             stats["resist"].append(equip["resist"])
     return stats
@@ -546,7 +618,7 @@ def roll_treasure(stage, difficulty_id, rng=random):
     found = []
     for _ in range(rng.randint(*story_data.TREASURE_COUNT)):
         if rng.random() < story_data.TREASURE_ITEM_RATE:
-            items = story_data.ITEMS
+            items = [i for i in story_data.ITEMS if item_available(i, stage, difficulty_id)]
             found.append(("item", rng.choices([i["id"] for i in items], [i["weight"] for i in items])[0]))
         else:
             ranks = [
@@ -554,6 +626,12 @@ def roll_treasure(stage, difficulty_id, rng=random):
                 if stage >= cond["min_stage"] and at_least(difficulty_id, cond["min_difficulty"])
             ]
             rank = rng.choices(ranks, [story_data.EQUIP_RANKS[r]["weight"] for r in ranks])[0]
+            if rank == "charm":     # 強さがランダムなアクセサリ：その難易度の3種類から1つ
+                choices = [e for e in story_data.EQUIPMENT if e["rank"] == "charm" and e["roll"]["difficulty"] == difficulty_id]
+                equip = rng.choice(choices)
+                value = roll_charm_value(equip["roll"], stage, stage_count(difficulty_id), rng)
+                found.append(("equip", equip["id"], {equip["roll"]["stat"]: value}))
+                continue
             found.append(("equip", rng.choice([
                 e["id"] for e in story_data.EQUIPMENT
                 if e["rank"] == rank and at_least(difficulty_id, e.get("min_difficulty", "easy"))
@@ -567,7 +645,7 @@ def roll_unlocks(profile, stage, difficulty_id, rng=random):
     joined = []
     for ally in story_data.ALLIES:
         cond = ally["unlock"]
-        if ally["lv"] in owned or not cond or cond["stage"] != stage:
+        if ally["lv"] in owned or not cond or cond.get("extra") or cond["stage"] != stage:
             continue
         if at_least(difficulty_id, cond["min_difficulty"]) and rng.random() < cond["chance"]:
             joined.append(ally["lv"])
@@ -586,6 +664,8 @@ def clear_stage(profile, rng=random):
     rewards = {"stage": run["stage"], "extra": bool(run.get("extra")), "healed": 0, "items": [], "sent_home": [],
                "equipment": [], "equipment_uids": [], "ultra": [], "allies": [], "chests": 0, "finished": None, "extra_next": False}
     enemy = run_enemy(run)
+    if enemy_key(enemy) not in profile["defeated"]:
+        profile["defeated"].append(enemy_key(enemy))
     ultra = story_data.ULTRA_REWARDS.get(enemy_key(enemy))
     if ultra:
         add_equipment(profile, ultra)
@@ -593,6 +673,10 @@ def clear_stage(profile, rng=random):
     if run.get("extra"):
         run["extra"] = False
         run["extra_won"] = True
+        for ally in story_data.ALLIES:          # 宇宙龍を倒すと仲間になるキャラ
+            if (ally["unlock"] or {}).get("extra") and ally["lv"] not in profile["allies"]:
+                profile["allies"].append(ally["lv"])
+                rewards["allies"].append(ally["lv"])
         rewards["enemy"] = enemy_key(enemy)
         return rewards
 
@@ -607,11 +691,12 @@ def clear_stage(profile, rng=random):
 
     treasure = roll_treasure(stage, run["difficulty"], rng)
     rewards["chests"] = len(treasure)
-    for kind, thing_id in treasure:
+    for kind, thing_id, *extra in treasure:
         if kind == "item":
             (rewards["items"] if put_picked(profile, run["bag"], thing_id) else rewards["sent_home"]).append(thing_id)
         else:
-            uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng))
+            bonus = extra[0] if extra else None
+            uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng), bonus)
             rewards["equipment"].append(thing_id)
             rewards["equipment_uids"].append(uid)
     for lv in roll_unlocks(profile, stage, run["difficulty"], rng):
@@ -676,6 +761,7 @@ def skill_config(ally_lv, ally, enemy, max_hp, charge=0):
     skill = dict(get_ally(ally_lv)["skill"])
     if skill["type"] == "strike":
         raw = ally["atk"] * skill["power"]
+        skill["break_turns"] = skill.get("break", 0)       # 敵の防御を0にするターン数（創世の咆哮）
         skill["damage"] = raw if skill.get("pierce") else damage(raw, enemy["def"])
         skill["damage_break"] = raw                       # 敵の防御が0のとき
     if skill["type"] == "guard":
@@ -726,7 +812,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
     counts = bag_counts(bag) if bag else {}
     items = [
         {"id": i["id"], "name": i["name"], "icon": i["icon"], "count": counts.get(i["id"], 0),
-         "heal": max_hp * i["heal_rate"], "cure": i["cure"], "guard": i["guard"],
+         "heal": max_hp * i["heal_rate"], "cure": list(i["cure"]), "ward": i.get("ward", 0), "guard": i["guard"],
          "atk_turns": i["atk_turns"] if i["atk_bonus"] else 0}
         for i in story_data.ITEMS
     ]
@@ -783,6 +869,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "tap_damage_up": damage(ally["atk"] + atk_up, enemy["def"]), # 攻撃力アップ中
             # 概念崩し（敵の防御0）のあいだ
             "tap_damage_break": damage(ally["atk"], 0),
+            "immune": ally.get("immune", []),                        # かからない状態異常（聖霊の加護）
             "tap_damage_up_break": damage(ally["atk"] + atk_up, 0),
         },
         "skill": skill_config(ally_lv, ally, enemy, max_hp, charge),
@@ -864,3 +951,17 @@ def apply_inventory(profile, ally_lv, result):
         profile.clear()
         profile.update(before)
         raise
+
+
+# ---------------------------------------------------------------------------
+# ログインボーナス（その日はじめてストーリーモードを開いたら、アイテムを1つ）
+# ---------------------------------------------------------------------------
+def daily_bonus(profile, today, rng=random):
+    """today（"2026-10-28" など）にまだもらっていなければ、ランダムでアイテムを1つ倉庫に入れて、その ID を返す"""
+    if profile.get("bonus_day") == today:
+        return None
+    items = [i for i in story_data.ITEMS if not i.get("where")]
+    item_id = rng.choices([i["id"] for i in items], [i["weight"] for i in items])[0]
+    profile["items"][item_id] = profile["items"].get(item_id, 0) + 1
+    profile["bonus_day"] = today
+    return item_id

@@ -47,11 +47,11 @@ def test_data_tables_consistent():
     assert [L.enemy_key(e) for e in L.stages_for("hard")][-1] == "enemy_11_hard"
     assert [L.enemy_key(e) for e in L.stages_for("very_hard")][-2:] == ["enemy_11_hard", "enemy_11_veryhard"]
     assert [L.stage_count(d) for d in ("easy", "normal", "hard", "very_hard")] == [10, 10, 11, 12]
-    assert [a["lv"] for a in story_data.ALLIES] == list(range(1, 11))
+    assert [a["lv"] for a in story_data.ALLIES] == list(range(1, 12))
     ids = {d["id"] for d in story_data.DIFFICULTIES}
     for a in story_data.ALLIES:
         assert len(a["abilities"]) == len(story_data.ABILITY_THRESHOLDS)
-        if a["unlock"]:
+        if a["unlock"] and not a["unlock"].get("extra"):
             assert a["unlock"]["min_difficulty"] in ids
     root = Path(L.__file__).parent / "assets/story"
     for e in story_data.ENEMIES + [story_data.EXTRA_ENEMY]:
@@ -60,10 +60,11 @@ def test_data_tables_consistent():
         assert (root / "enemies" / e["image"]).exists()
         assert (root / "hitmasks" / f"{L.enemy_key(e)}.png").exists()
         assert len(e["lines"]) == 3
+    pending = set()   # 画像待ちのID（届くまでは絵文字のアイコンで表示する）
     for i in story_data.ITEMS:
-        assert (root / "items" / f"{i['id']}.webp").exists() or (root / "items" / f"{i['id']}.png").exists()
+        assert i["id"] in pending or (root / "items" / f"{i['id']}.webp").exists()
     for eq in story_data.EQUIPMENT:
-        assert any((root / "equipment" / f"{eq['id']}{ext}").exists() for ext in (".webp", ".png"))
+        assert eq["id"] in pending or (root / "equipment" / f"{eq['id']}.webp").exists()
     for key, equip_id in story_data.ULTRA_REWARDS.items():
         assert L.enemy_by_key(key) and L.get_equipment(equip_id)["rank"] == "ultra"
     for a in story_data.ALLIES:
@@ -128,7 +129,7 @@ def test_levels_and_growth():
     steps = [L.level_threshold(1, n + 1) - L.level_threshold(1, n) for n in range(1, 10)]
     assert steps == sorted(steps) and steps[0] < steps[-1]          # 後のレベルほど多く要る
     assert L.level_of(1, 0) == 1 and L.level_of(1, 108) == 10 and L.level_of(1, 107.9) == 9
-    for lv in range(1, 11):
+    for lv in range(1, 12):
         ally = story_data.ALLIES[lv - 1]
         assert L.base_stats(lv, 1) == {"hp": ally["hp"], "atk": ally["atk"], "def": ally["def"]}
         assert L.base_stats(lv, 10) == ally["max"]
@@ -223,7 +224,7 @@ def test_finish_run_returns_everything_and_adds_ability():
 
 def test_new_profile_has_starter_items():
     p = L.new_profile()
-    assert p["items"] == {i["id"]: 10 for i in story_data.ITEMS}
+    assert p["items"] == {i["id"]: 10 for i in story_data.ITEMS if not i.get("where")}
 
 
 def test_clear_stage_heals_rolls_and_saves_rewards():
@@ -251,14 +252,14 @@ def test_treasure_equipment_ranks_follow_stage_and_difficulty():
     import random
     rng = random.Random(1)
     seen = {L.get_equipment(e)["rank"] for _ in range(400)
-            for kind, e in L.roll_treasure(2, "very_hard", rng) if kind == "equip"}
-    assert seen == {"normal"}
+            for kind, e, *_ in L.roll_treasure(2, "very_hard", rng) if kind == "equip"}
+    assert seen == {"normal", "charm"}
     seen = {L.get_equipment(e)["rank"] for _ in range(800)
-            for kind, e in L.roll_treasure(7, "normal", rng) if kind == "equip"}
-    assert seen == {"normal", "rare", "epic", "accessory"}
+            for kind, e, *_ in L.roll_treasure(7, "normal", rng) if kind == "equip"}
+    assert seen == {"normal", "rare", "epic", "accessory", "charm"}
     seen = {L.get_equipment(e)["rank"] for _ in range(800)
-            for kind, e in L.roll_treasure(9, "easy", rng) if kind == "equip"}
-    assert seen == {"normal", "rare"}
+            for kind, e, *_ in L.roll_treasure(9, "easy", rng) if kind == "equip"}
+    assert seen == {"normal", "rare", "charm"}
 
 
 def test_checkpoint_restores_hp_and_bag():
@@ -383,7 +384,7 @@ def test_black_flame_darkness_shadow_accessories():
     import random
     rng = random.Random(2)
     def seen(diff):
-        return {e for _ in range(1500) for kind, e in L.roll_treasure(9, diff, rng) if kind == "equip"}
+        return {e for _ in range(1500) for kind, e, *_ in L.roll_treasure(9, diff, rng) if kind == "equip"}
     new = {"black_flame_ring", "darkness_bracelet", "shadow_charm"}
     assert not (seen("normal") & new)              # ノーマル以下では出ない
     assert new <= seen("hard")
@@ -435,6 +436,83 @@ def test_pack_and_inventory():
     assert L.bag_counts(run["bag"]) == {"potion": 7} and p["items"] == {"potion": 1}
 
 
+def test_new_items_and_potions():
+    potion = L.get_item("potion")
+    assert potion["cure"] == [] and L.get_item("elixir")["cure"] == []          # ポーション類はHPだけ
+    assert L.get_item("panacea")["cure"] == ["poison", "thunder", "fire"]
+    assert "black_flame" in L.get_item("holy_circle")["cure"] and L.get_item("seal_scroll")["ward"] == 3
+    av = lambda item_id, stage, diff: L.item_available(L.get_item(item_id), stage, diff)
+    assert av("panacea", 1, "easy")
+    assert not av("seal_scroll", 9, "normal") and not av("seal_scroll", 4, "hard") and av("seal_scroll", 5, "hard")
+    assert av("purge_scroll", 7, "normal") and not av("purge_scroll", 6, "normal") and av("purge_scroll", 5, "very_hard")
+    assert [d for d in ("easy", "normal", "hard", "very_hard") if av("holy_circle", 8, d)] == ["hard", "very_hard"]
+    assert av("holy_circle", 10, "easy") and not av("holy_circle", 9, "easy")
+    assert set(L.initial_items()) == {"potion", "guard_up", "atk_up", "hi_potion", "mega_potion", "elixir", "panacea"}
+    import random
+    rng = random.Random(3)
+    got = {i for _ in range(2000) for kind, i, *_ in L.roll_treasure(3, "easy", rng) if kind == "item"}
+    assert "panacea" in got and not got & {"seal_scroll", "purge_scroll", "holy_circle"}
+
+
+def test_random_accessories():
+    import random
+    rng = random.Random(4)
+    for diff, lo, hi in (("easy", 1, 3), ("very_hard", 6, 12)):
+        early = [L.roll_charm_value({"min": lo, "max": hi}, 1, L.stage_count(diff), rng) for _ in range(300)]
+        late = [L.roll_charm_value({"min": lo, "max": hi}, L.stage_count(diff), L.stage_count(diff), rng) for _ in range(300)]
+        assert min(early) == lo and max(late) == hi and max(early) <= lo + 0.45 * (hi - lo) + 0.5
+        assert sum(late) / 300 > sum(early) / 300
+    # 宝箱：その難易度の種類だけ出て、数値が付く
+    found = [x for _ in range(3000) for x in L.roll_treasure(5, "hard", rng) if x[0] == "equip" and len(x) == 3]
+    assert found and {L.get_equipment(e)["roll"]["difficulty"] for _, e, _ in found} == {"hard"}
+    # 付けるとステータスに足される。ちがう指輪は同時に付けられる、同じ物は1つだけ
+    p = L.new_profile()
+    a = L.add_equipment(p, "ring_1", bonus={"atk": 3})
+    b = L.add_equipment(p, "ring_3", bonus={"atk": 7})
+    h = L.add_equipment(p, "life_2", bonus={"hp": 22})
+    L.set_equipment(p, 1, [a, b, h])
+    s = L.ally_stats(1, p)
+    assert s["atk"] == 1 + 10 and s["hp"] == 10 + 22
+    c = L.add_equipment(p, "ring_1", bonus={"atk": 1})
+    try:
+        L.set_equipment(p, 1, [a, c])
+        assert False
+    except ValueError:
+        pass
+
+
+def test_defeated_and_daily_bonus():
+    p = L.new_profile()
+    L.start_run(p, 1, "easy", {})
+    L.clear_stage(p, FixedRng([0.9, 0.5]))
+    assert p["defeated"] == ["enemy_01"]
+    before = sum(p["items"].values())
+    got = L.daily_bonus(p, "2026-10-28", FixedRng([]))
+    assert got == "potion" and sum(p["items"].values()) == before + 1
+    assert L.daily_bonus(p, "2026-10-28") is None                  # 同じ日は1回だけ
+    assert L.daily_bonus(p, "2026-10-29", FixedRng([])) == "potion"
+
+
+def test_extra_ally_joins_and_is_strongest():
+    astel = story_data.ALLIES[10]
+    for stat in ("hp", "atk", "def"):
+        assert all(astel[stat] > a[stat] and astel["max"][stat] > a["max"][stat] for a in story_data.ALLIES[:10])
+    assert astel["skill"]["charge"] == max(a["skill"]["charge"] for a in story_data.ALLIES)
+    p = L.new_profile()
+    run = L.start_run(p, 1, "easy", {})
+    assert L.roll_unlocks(p, 1, "very_hard", FixedRng([0.0] * 10)) == [5]      # 宝箱の抽選では出ない
+    run["extra"] = run["extra_seen"] = True
+    rewards = L.clear_stage(p, FixedRng([]))
+    assert rewards["allies"] == [11] and 11 in p["allies"]
+    c = L.battle_config(1, 1, "easy", 11)["skill"]
+    assert c["break_turns"] == 2 and math.isclose(c["damage"], 40 * 70)
+    # アビリティ3「聖霊の加護」：毒・雷・火にかからない（25ポイントから）
+    assert L.battle_config(1, 9, "hard", 11, profile=p)["ally"]["immune"] == []
+    p["ability"]["11"] = 25
+    assert L.battle_config(1, 9, "hard", 11, profile=p)["ally"]["immune"] == ["poison", "thunder", "fire"]
+    assert "聖霊の加護" in L.ability_label(astel["abilities"][2])
+
+
 def test_battle_config_status_numbers():
     p = L.new_profile()
     L.add_equipment(p, "fire_bangle")
@@ -449,7 +527,7 @@ def test_battle_config_status_numbers():
     assert math.isclose(c["status"]["black_flame"]["damage"], 1.0)
     assert c["enemy"]["hit_damage_guard"] < c["enemy"]["hit_damage"]
     potion = next(i for i in c["items"] if i["id"] == "potion")
-    assert potion["count"] == 3 and math.isclose(potion["heal"], 3.0)
+    assert potion["count"] == 3 and math.isclose(potion["heal"], 3.0) and potion["cure"] == []
 
 
 def test_profile_round_trips_through_json():

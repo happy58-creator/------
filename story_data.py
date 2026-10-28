@@ -133,7 +133,9 @@ EXTRA_ENEMY = {
 # 味方
 #   unlock    : None なら最初から使える。
 #               min_difficulty 以上の難易度で stage をクリアしたとき、chance の確率で仲間になる
+#               {"extra": True} はエクストラステージ（極点の宇宙龍）を倒したときに必ず仲間になる
 #   abilities : アビリティポイントの合計が ABILITY_THRESHOLDS に達するたびに順に解放
+#               name があれば名前つきのアビリティ。immune はかからなくなる状態異常
 #   image     : assets/story/allies/（全身）と assets/story/ally_icons/（顔）の中のファイル名
 #   hp/atk/def: Lv.1 のステータス。max は Lv.10 のステータス（あいだは STAT_CURVE の曲線で上がる）
 #   skill     : 必殺技（下の「必殺技」を参照）
@@ -186,6 +188,14 @@ ALLIES = [
      "abilities": [{"stat": "hp", "value": 10}, {"stat": "hp", "value": 10}, {"stat": "def", "value": 15}], "skill": {"name": "概念崩し", "type": "break", "charge": 125, "turns": 3, "anim": "garen", "text": "敵の「守る」という概念を壊し、3ターン敵の防御を0にする"}},
     {"lv": 10, "name": "至高の光帝、ルナ",         "hp": 100, "atk": 33, "def": 35, "max": {"hp": 160, "atk": 50, "def": 52}, "image": "ally_10.webp", "unlock": {"min_difficulty": "very_hard", "stage": 7, "chance": 0.20},
      "abilities": [{"stat": "atk", "value": 3}, {"stat": "atk", "value": 3}, {"stat": "hp", "value": 40}], "skill": {"name": "光帝の裁き", "type": "strike", "charge": 250, "power": 60, "pierce": True, "anim": "luna", "text": "天から光の柱が降りる。攻撃力×60 の防御無視ダメージ"}},
+    # エクストラステージ（極点の宇宙龍）を倒すと、必ず仲間になる（unlock の extra）。いちばん強いキャラ
+    {"lv": 11, "name": "極点の宇宙龍、アステル",   "hp": 120, "atk": 40, "def": 42, "max": {"hp": 200, "atk": 62, "def": 65},
+     "image": "ally_11.webp", "unlock": {"extra": True, "chance": 1.0},
+     # アビリティ3「聖霊の加護」：HP+50 と、基本の状態異常（毒・雷・火）にかからない
+     "abilities": [{"stat": "atk", "value": 4}, {"stat": "def", "value": 4},
+                   {"stat": "hp", "value": 50, "name": "聖霊の加護", "immune": ["poison", "thunder", "fire"]}],
+     "skill": {"name": "創世の咆哮", "type": "strike", "charge": 275, "power": 70, "pierce": True, "break": 2, "anim": "astel",
+               "text": "銀河を呑む咆哮。攻撃力×70 の防御無視ダメージと、2ターン敵の防御を0にする"}},
 ]
 
 # ---------------------------------------------------------------------------
@@ -195,6 +205,10 @@ ALLIES = [
 #   guard     : 防御力2倍が続くターン数
 #   atk_bonus : 攻撃力に足す値（atk_turns ターン＝自分の攻撃 atk_turns 回のあいだ）
 #   weight    : 宝箱でアイテムが出たときの選ばれやすさ
+#   cure      : 治す状態異常（ポーション類はHPを回復するだけで、状態異常は治さない）
+#   ward      : そのターン数のあいだ、新しく黒炎にかからない（すでにかかっている黒炎は続く）
+#   where     : 宝箱から出る条件 {難易度: そのステージ以上}。書いていなければ、いつでも出る
+#   最初に持っているのは、where のないアイテムを INITIAL_ITEM_COUNT 個ずつ
 # 自分のターンに1つだけ使え、使ったあとも攻撃できる
 # ---------------------------------------------------------------------------
 MAX_CARRY_ITEMS = 30
@@ -202,12 +216,19 @@ GUARD_MULTIPLIER = 2.0
 INITIAL_ITEM_COUNT = 10     # 最初にホームに持っているアイテムの数（全種類それぞれ）
 
 ITEMS = [
-    {"id": "potion",      "icon": "🧪", "name": "ポーション",     "heal_rate": 0.3, "cure": True,  "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 40},
-    {"id": "guard_up",    "icon": "🛡️", "name": "防御アップ",     "heal_rate": 0.0, "cure": False, "guard": 3, "atk_bonus": 0, "atk_turns": 0, "weight": 25},
-    {"id": "atk_up",      "icon": "💪", "name": "攻撃力アップ",   "heal_rate": 0.0, "cure": False, "guard": 0, "atk_bonus": 3, "atk_turns": 3, "weight": 20},
-    {"id": "hi_potion",   "icon": "⚗️", "name": "ハイポーション", "heal_rate": 0.6, "cure": True,  "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 20},
-    {"id": "mega_potion", "icon": "💖", "name": "メガポーション", "heal_rate": 1.0, "cure": True,  "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 10},
-    {"id": "elixir",      "icon": "✨", "name": "エリクサー",     "heal_rate": 1.0, "cure": True,  "guard": 3, "atk_bonus": 0, "atk_turns": 0, "weight": 5},
+    {"id": "potion",       "icon": "🧪", "name": "ポーション",       "heal_rate": 0.3, "cure": [], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 40},
+    {"id": "guard_up",     "icon": "🛡️", "name": "防御アップ",       "heal_rate": 0.0, "cure": [], "guard": 3, "atk_bonus": 0, "atk_turns": 0, "weight": 25},
+    {"id": "atk_up",       "icon": "💪", "name": "攻撃力アップ",     "heal_rate": 0.0, "cure": [], "guard": 0, "atk_bonus": 3, "atk_turns": 3, "weight": 20},
+    {"id": "hi_potion",    "icon": "⚗️", "name": "ハイポーション",   "heal_rate": 0.6, "cure": [], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 20},
+    {"id": "mega_potion",  "icon": "💖", "name": "メガポーション",   "heal_rate": 1.0, "cure": [], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 10},
+    {"id": "elixir",       "icon": "✨", "name": "エリクサー",       "heal_rate": 1.0, "cure": [], "guard": 3, "atk_bonus": 0, "atk_turns": 0, "weight": 5},
+    {"id": "panacea",      "icon": "🌿", "name": "万能薬",           "heal_rate": 0.0, "cure": ["poison", "thunder", "fire"], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 25},
+    {"id": "seal_scroll",  "icon": "📜", "name": "封炎の巻物",       "heal_rate": 0.0, "cure": [], "ward": 3, "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 10,
+     "where": {"hard": 5, "very_hard": 5}},
+    {"id": "purge_scroll", "icon": "🔥", "name": "黒炎払いの巻物",   "heal_rate": 0.0, "cure": ["black_flame"], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 10,
+     "where": {"normal": 7, "hard": 5, "very_hard": 5}},
+    {"id": "holy_circle",  "icon": "🔯", "name": "浄化の魔法陣",     "heal_rate": 0.0, "cure": ["poison", "thunder", "fire", "black_flame"], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 5,
+     "where": {"easy": 10, "normal": 9, "hard": 8, "very_hard": 7}},
 ]
 
 # ---------------------------------------------------------------------------
@@ -222,12 +243,15 @@ MAX_GEAR_SLOTS = 3          # 装備品のわく
 MAX_ACCESSORY_SLOTS = 3     # アクセサリのわく
 MAX_ATTR_WEAPONS = 1        # 属性の付いた剣は、1キャラ1本まで
 ACCESSORY_RANK = "accessory"
+ACCESSORY_RANKS = ("accessory", "charm")   # アクセサリのわくに付けるランク
 
 EQUIP_RANKS = {
     "normal":    {"name": "ノーマル",   "weight": 60, "min_stage": 1, "min_difficulty": "easy"},
     "rare":      {"name": "レア",       "weight": 30, "min_stage": 3, "min_difficulty": "easy"},
     "epic":      {"name": "激レア",     "weight": 10, "min_stage": 7, "min_difficulty": "normal"},
     "accessory": {"name": "アクセサリ", "weight": 30, "min_stage": 5, "min_difficulty": "normal"},
+    # 強さがランダムなアクセサリ（攻撃・防御・体力）。どの難易度・ステージでも出る。種類は難易度で決まる
+    "charm":     {"name": "アクセサリ", "weight": 30, "min_stage": 1, "min_difficulty": "easy"},
     # 超激レアは宝箱からは出ない（weight 0）。特別な敵を倒したときのごほうび（ULTRA_REWARDS）だけ
     "ultra":     {"name": "超激レア",   "weight": 0,  "min_stage": 99, "min_difficulty": "very_hard"},
 }
@@ -249,6 +273,20 @@ EQUIPMENT = [
     {"id": "black_flame_ring",  "icon": "🌑", "name": "黒炎の指輪",   "rank": "accessory", "atk": 0, "def": 0, "hp": 0, "resist": "black_flame", "min_difficulty": "hard"},
     {"id": "darkness_bracelet", "icon": "🌘", "name": "陰の腕輪",     "rank": "accessory", "atk": 0, "def": 0, "hp": 0, "resist": "darkness",    "min_difficulty": "hard"},
     {"id": "shadow_charm",      "icon": "👤", "name": "影のお守り",   "rank": "accessory", "atk": 0, "def": 0, "hp": 0, "resist": "shadow",      "min_difficulty": "hard"},
+    # 強さがランダムなアクセサリ。roll の stat が min〜max だけ上がる（宝箱から出たときに決まる。ステージ後半ほど高め）
+    #   difficulty の難易度でだけ出る。同じ物は2つ付けられないが、ちがう物（木霊の指輪と金獅子の指輪など）は同時に付けられる
+    {"id": "ring_1", "icon": "💍", "name": "木霊の指輪", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "atk", "min": 1, "max": 3, "difficulty": "easy"}},
+    {"id": "ring_2", "icon": "💍", "name": "闘志の銅輪", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "atk", "min": 2, "max": 6, "difficulty": "normal"}},
+    {"id": "ring_3", "icon": "💍", "name": "金獅子の指輪", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "atk", "min": 4, "max": 9, "difficulty": "hard"}},
+    {"id": "ring_4", "icon": "💍", "name": "覇王の神秘輪", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "atk", "min": 6, "max": 12, "difficulty": "very_hard"}},
+    {"id": "guard_1", "icon": "🧿", "name": "若葉の守り札", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "def", "min": 1, "max": 3, "difficulty": "easy"}},
+    {"id": "guard_2", "icon": "🧿", "name": "銅の守護符", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "def", "min": 2, "max": 6, "difficulty": "normal"}},
+    {"id": "guard_3", "icon": "🧿", "name": "守護術式の魔石", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "def", "min": 4, "max": 9, "difficulty": "hard"}},
+    {"id": "guard_4", "icon": "🧿", "name": "精霊王の護符", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "def", "min": 6, "max": 12, "difficulty": "very_hard"}},
+    {"id": "life_1", "icon": "📿", "name": "生命の木の首飾り", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "hp", "min": 5, "max": 15, "difficulty": "easy"}},
+    {"id": "life_2", "icon": "📿", "name": "銅の生命鈴", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "hp", "min": 10, "max": 30, "difficulty": "normal"}},
+    {"id": "life_3", "icon": "📿", "name": "活力の魔石", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "hp", "min": 20, "max": 45, "difficulty": "hard"}},
+    {"id": "life_4", "icon": "📿", "name": "不死鳥の羽飾り", "rank": "charm", "atk": 0, "def": 0, "hp": 0, "resist": None, "roll": {"stat": "hp", "min": 30, "max": 60, "difficulty": "very_hard"}},
     {"id": "dragon_scale",   "icon": "🐲", "name": "宇宙龍の逆鱗",   "rank": "ultra",     "atk": 12, "def": 25, "hp": 60, "resist": None},
     {"id": "origin_robe",    "icon": "👘", "name": "初源の聖衣",     "rank": "ultra",     "atk": 0,  "def": 60, "hp": 0,  "resist": None},
     {"id": "silence_blade",  "icon": "🗡️", "name": "沈黙の魔剣",     "rank": "ultra",     "atk": 30, "def": 0,  "hp": 0,  "resist": None},

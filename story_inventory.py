@@ -42,18 +42,7 @@ ATTR_TEXT = {
 
 
 def item_effect(item):
-    parts = []
-    if item["heal_rate"] >= 1:
-        parts.append("HPを全回復")
-    elif item["heal_rate"]:
-        parts.append(f"最大HPの{item['heal_rate']:.0%}を回復")
-    if item["cure"]:
-        parts.append("状態異常を治す")
-    if item["guard"]:
-        parts.append(f"{item['guard']}ターン防御力2倍")
-    if item["atk_bonus"]:
-        parts.append(f"自分の攻撃{item['atk_turns']}回ぶん攻撃力+{item['atk_bonus']}")
-    return "・".join(parts)
+    return L.item_effect_text(item)
 
 
 def inventory_config(profile, ally_lv, round_id):
@@ -78,7 +67,9 @@ def inventory_config(profile, ally_lv, round_id):
             "uid": entry["uid"], "id": entry["id"], "name": equip["name"],
             "rank": story_data.EQUIP_RANKS[equip["rank"]]["name"], "ultra": equip["rank"] == "ultra",
             "accessory": L.is_accessory(entry["id"]), "icon": story_assets.equipment_thumb(entry["id"]),
-            "effect": equip_effect(equip),
+            "effect": L.equip_effect_text(entry),
+            # ランダムのアクセサリは、アイコンの右下に数値を出す
+            "tag": "".join(f"+{v}" for v in (entry.get("bonus") or {}).values()),
             "attrs": [{"id": a, "name": statuses[a]["name"], "icon": story_assets.status_thumb(a),
                        "chance": round(c * 100), "text": ATTR_TEXT[a]} for a, c in attrs.items()],
             "place": "gear" if entry["uid"] in gear else "acc" if entry["uid"] in acc else "store",

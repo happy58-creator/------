@@ -46,20 +46,43 @@ def ally_icon_uri(lv):
     return image_uri(f"ally_icons/{story_data.ALLIES[lv - 1]['image']}")
 
 
+@lru_cache(maxsize=None)
+def emoji_icon_uri(emoji, color="#2a2230"):
+    """画像がまだないときの代わりのアイコン（四角いわくに絵文字）"""
+    svg = (f"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect x='3' y='3' width='90' height='90' rx='14' "
+           f"fill='{color}' stroke='#c9a24a' stroke-width='4'/><text x='48' y='64' font-size='48' text-anchor='middle'>{emoji}</text></svg>")
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+
+
+def _item_emoji(item_id):
+    return next((i["icon"] for i in story_data.ITEMS if i["id"] == item_id), "❔")
+
+
+def _equip_emoji(equip_id):
+    return next((e["icon"] for e in story_data.EQUIPMENT if e["id"] == equip_id), "❔")
+
+
 def item_icon_uri(item_id):
+    if not (ASSET_DIR / "items" / f"{item_id}.webp").exists():
+        return emoji_icon_uri(_item_emoji(item_id))
     return image_uri(f"items/{item_id}.webp")
 
 
 def item_icon_path(item_id):
-    return ASSET_DIR / "items" / f"{item_id}.webp"
+    """st.image に渡す絵（画像がまだなければ代わりのアイコン）"""
+    path = ASSET_DIR / "items" / f"{item_id}.webp"
+    return str(path) if path.exists() else emoji_icon_uri(_item_emoji(item_id))
 
 
 def equipment_icon_uri(equipment_id):
+    if not (ASSET_DIR / "equipment" / f"{equipment_id}.webp").exists():
+        return emoji_icon_uri(_equip_emoji(equipment_id))
     return image_uri(f"equipment/{equipment_id}.webp")
 
 
 def equipment_icon_path(equipment_id):
-    return ASSET_DIR / "equipment" / f"{equipment_id}.webp"
+    path = ASSET_DIR / "equipment" / f"{equipment_id}.webp"
+    return str(path) if path.exists() else emoji_icon_uri(_equip_emoji(equipment_id))
 
 
 def enemy_image_path(enemy):
@@ -85,11 +108,11 @@ def thumb_uri(relative_path, size=96):
 
 
 def item_thumb(item_id, size=96):
-    return thumb_uri(f"items/{item_id}.webp", size)
+    return thumb_uri(f"items/{item_id}.webp", size) or emoji_icon_uri(_item_emoji(item_id))
 
 
 def equipment_thumb(equip_id, size=96):
-    return thumb_uri(f"equipment/{equip_id}.webp", size)
+    return thumb_uri(f"equipment/{equip_id}.webp", size) or emoji_icon_uri(_equip_emoji(equip_id))
 
 
 def status_thumb(status_id, size=48):

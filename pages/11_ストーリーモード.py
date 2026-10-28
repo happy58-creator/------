@@ -88,6 +88,13 @@ if st.session_state.get("story_profile_user") != USER:
     st.session_state.story_view = "home"
 profile = st.session_state.story_profile
 
+# ログインボーナス：その日はじめて開いたら、ランダムでアイテムを1つ（倉庫へ）
+_today = __import__("datetime").datetime.now(__import__("zoneinfo").ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d")
+_bonus = L.daily_bonus(profile, _today)
+if _bonus:
+    save()
+    st.session_state.story_notice = f"🎁 今日のログインボーナス：{L.get_item(_bonus)['name']} を1こ もらったよ（倉庫に入れたよ）"
+
 if st.session_state.story_view in ("battle", "between", "retry", "extra_lost") and not profile["run"]:
     st.session_state.story_view = "home"
 
@@ -100,13 +107,11 @@ def short_name(lv):
 
 
 def ability_text(ability):
-    return f"{STAT_NAMES[ability['stat']]}+{ability['value']}"
+    return L.ability_label(ability)
 
 
-def equip_text(equip):
-    if equip["resist"]:
-        return f"{story_data.STATUS_EFFECTS[equip['resist']]['name']}を半分にする"
-    return "・".join(f"{STAT_NAMES[s]}+{equip[s]}" for s in ("hp", "atk", "def") if equip[s])
+def equip_text(equip, entry=None):
+    return L.equip_effect_text(entry or equip["id"])
 
 
 def attr_text(attrs):
@@ -126,7 +131,7 @@ def equip_label(equip, entry=None):
     """装備の名前と効果。entry（倉庫の1件）を渡すと、剣の属性も書く"""
     rank = "【超激レア】" if equip["rank"] == "ultra" else ""
     attrs = attr_text((entry or {}).get("attrs"))
-    return f"{equip['icon']} {rank}{equip['name']}（{equip_text(equip)}）" + (f"【属性 {attrs}】" if attrs else "")
+    return f"{equip['icon']} {rank}{equip['name']}（{equip_text(equip, entry)}）" + (f"【属性 {attrs}】" if attrs else "")
 
 
 def entry_label(entry):
@@ -253,7 +258,7 @@ def show_rewards(rewards):
     for e, u in zip(rewards["equipment"], uids):
         entry = by_uid.get(u) or {"id": e}
         attrs = attr_text(entry.get("attrs"))
-        lines.append(f"{entry_icon(entry)} {L.get_equipment(e)['name']}（{equip_text(L.get_equipment(e))}）"
+        lines.append(f"{entry_icon(entry)} {L.get_equipment(e)['name']}（{equip_text(L.get_equipment(e), entry if 'uid' in entry else None)}）"
                      + (f"【属性 {attrs}】" if attrs else "") + " → 倉庫へ")
     st.markdown("**🎁 宝箱の中身**<br>" + "<br>".join(lines), unsafe_allow_html=True)
     return True
@@ -598,9 +603,8 @@ def view_between():
         n = counts.get(item["id"], 0)
         if not n:
             continue
-        col_icon, col_name, col_use = st.columns([1, 4, 3])
-        col_icon.image(str(story_assets.item_icon_path(item["id"])), width=36)
-        col_name.markdown(f"{item['name']} ×{n}")
+        col_name, col_use = st.columns([5, 3])
+        col_name.markdown(f"{item_icon(item['id'], n, size=36)} {item['name']}", unsafe_allow_html=True)
         if item["heal_rate"] > 0:
             if col_use.button("つかう", key=f"_story_use_{item['id']}", width="stretch",
                               disabled=run["hp"] >= max_hp):

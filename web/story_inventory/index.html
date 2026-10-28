@@ -143,6 +143,7 @@ function tile(kind, id, from, n) {
     html = `<img class="main" src="${e.icon}" alt="${e.name}">`;
     if (S.locked.has(e.uid)) html += `<span class="lock">🔒</span>`;
     if (e.ultra) html += `<span class="ultra">🌟</span>`;
+    if (e.tag) html += `<span class="n">${e.tag}</span>`;
     if (e.attrs.length) { html += `<span class="attrs">${e.attrs.map((a) => `<img src="${a.icon}" alt="${a.name}">`).join("")}</span>`; el.classList.add("hasattr"); }
     if (e.other) el.classList.add("dim");
   }
