@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>auth bridge</title></head>
+<body style="margin:0">
+<script>
+"use strict";
+// ログインのトークンを、ブラウザーに保存・削除・読み出しする部品（画面には何も出ない）。
+// Python から {name, max_age, cmd: "set"|"clear", token, nonce} を受け取り、
+// {token: 保存されているトークン（なければ ""）, done: 最後に実行した指示の nonce} を返す。
+const Streamlit = {
+  send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data), "*"); },
+};
+let lastNonce = "", lastSent = null;
+
+function getCookie(name) {
+  const hit = document.cookie.split("; ").find((c) => c.startsWith(name + "="));
+  return hit ? decodeURIComponent(hit.slice(name.length + 1)) : "";
+}
+function setCookie(name, value, maxAge) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${maxAge}; path=/; SameSite=Lax` +
+    (location.protocol === "https:" ? "; Secure" : "");
+}
+function store(name) {
+  try { return window.localStorage; } catch (e) { return null; }
+}
+
+function handle(args) {
+  const name = args.name || "kyouzai_token";
+  if (args.cmd && args.nonce && args.nonce !== lastNonce) {
+    lastNonce = args.nonce;
+    const ls = store(name);
+    if (args.cmd === "set") {
+      setCookie(name, args.token || "", args.max_age || 86400);
+      try { ls && ls.setItem(name, args.token || ""); } catch (e) {}
+    } else if (args.cmd === "clear") {
+      setCookie(name, "", 0);
+      try { ls && ls.removeItem(name); } catch (e) {}
+    }
+  }
+  let token = "";
+  try { const ls = store(name); token = (ls && ls.getItem(name)) || ""; } catch (e) {}
+  if (!token) token = getCookie(name);
+  const reply = { token, done: lastNonce };
+  const text = JSON.stringify(reply);
+  if (text !== lastSent) {           // 変わったときだけ返す（同じ値で何度も読み直さないように）
+    lastSent = text;
+    Streamlit.send("streamlit:setComponentValue", { value: reply, dataType: "json" });
+  }
+}
+
+window.addEventListener("message", (ev) => {
+  const d = ev.data;
+  if (d && d.type === "streamlit:render") handle(d.args || {});
+});
+Streamlit.send("streamlit:componentReady", { apiVersion: 1 });
+Streamlit.send("streamlit:setFrameHeight", { height: 0 });
+</script>
+</body>
+</html>

@@ -1,12 +1,29 @@
-"""ログイン（スプレッドシートの「ユーザー」タブ）。ゲスト用アカウントで入ったときだけ、なまえと年齢を聞く。"""
+"""ログイン（スプレッドシートの「ユーザー」タブ）。ゲスト用アカウントで入ったときだけ、なまえと年齢を聞く。
+
+ログイン状態は、最後に使ってから1時間（SESSION_SECONDS）保つ。再読み込みや、画面を閉じて開き直したときも続く。
+
+しくみ：
+- ログインすると、なまえ・期限などを入れた「合言葉（トークン）」を作り、サーバーだけが知っている鍵で署名する。
+  中身は署名で守られているので、サーバーのメモリに何も置かなくてよい（アプリが再起動・更新されても消えない）。
+- トークンはブラウザーに保存する（クッキーと localStorage の両方）。保存と読み出しは、小さな部品
+  web/auth_bridge/（画面には何も出ない）で行う。クッキーがサーバーに届く環境では、st.context.cookies からも読む。
+- 使うたびに期限を延ばし、30分ごとにトークンを作り直して保存し直す。期限はトークンの中にあるので、
+  1時間をすぎたトークンは署名が正しくても使えない（「期限切れ」として記録して消す）。
+"""
+import base64
+import hashlib
+import hmac
+import json
 import os
 import re
 import secrets
 import time
 import unicodedata
 from datetime import date
+from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import history
 
@@ -18,7 +35,8 @@ LOCK_SECONDS = 300
 SESSION_SECONDS = int(os.environ.get("SESSION_SECONDS", 3600))  # 最後にアクセスしてから、ログイン状態を保つ時間（1時間）
 COOKIE_REFRESH_SECONDS = 1800  # クッキーを延ばし直す間隔
 COOKIE_NAME = "kyouzai_token"
-COOKIE_MAX_AGE = 86400  # クッキー自体は1日残す（使うたびに延ばし直す）。1時間の期限はサーバー側で判定する（期限切れも記録できる）
+COOKIE_MAX_AGE = 86400  # クッキー自体は1日残す（使うたびに延ばし直す）。1時間の期限はトークンの中で判定する（期限切れも記録できる）
+_bridge = components.declare_component("auth_bridge", path=str(Path(__file__).resolve().parent / "web" / "auth_bridge"))
 GUEST_ACCOUNT_NAMES = {"ゲスト", "げすと", "guest"}  # 名簿でこの名前のアカウントはゲスト用
 
 
@@ -125,22 +143,109 @@ def is_logged_in():
     return bool(st.session_state.get("auth_name"))
 
 
+# ---------------------------------------------------------------------------
+# 署名つきトークン
+# ---------------------------------------------------------------------------
+@st.cache_resource
+def _secret_key():
+    """署名の鍵。secrets の AUTH_SECRET → サービスアカウントの秘密鍵から作る → 手元のファイル の順に使う"""
+    try:
+        if "AUTH_SECRET" in st.secrets:
+            return str(st.secrets["AUTH_SECRET"]).encode()
+        if "gcp_service_account" in st.secrets:
+            return hashlib.sha256(("kyouzai-auth:" + str(st.secrets["gcp_service_account"]["private_key"])).encode()).digest()
+    except Exception:
+        pass
+    path = Path(__file__).resolve().parent / ".auth_secret"
+    try:
+        if not path.exists():
+            path.write_text(secrets.token_hex(32), encoding="utf-8")
+        return path.read_text(encoding="utf-8").strip().encode()
+    except OSError:
+        return b"kyouzai-fallback-key"  # 書き込めない環境の最後の手段（再起動するとログインは切れる）
+
+
+def _b64(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _unb64(text):
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def make_token(name, age, guest, admin, expires, key=None):
+    """ログイン情報に署名したトークン（「本文.署名」の形）"""
+    body = _b64(json.dumps({"n": name, "a": age, "g": bool(guest), "ad": bool(admin), "exp": int(expires),
+                            "r": secrets.token_hex(4)}, ensure_ascii=False, separators=(",", ":")).encode())
+    sig = _b64(hmac.new(key or _secret_key(), body.encode(), hashlib.sha256).digest())
+    return f"{body}.{sig}"
+
+
+def read_token(token, key=None):
+    """トークンを確かめて中身を返す。署名が合わなければ None（期限切れかどうかは呼ぶ側で exp を見る）"""
+    try:
+        body, sig = str(token).split(".")
+        good = _b64(hmac.new(key or _secret_key(), body.encode(), hashlib.sha256).digest())
+        if not hmac.compare_digest(sig, good):
+            return None
+        data = json.loads(_unb64(body))
+        return {"name": data["n"], "age": data.get("a"), "guest": bool(data.get("g")),
+                "admin": bool(data.get("ad")), "expires": float(data["exp"])}
+    except Exception:
+        return None
+
+
+@st.cache_resource
+def _revoked():
+    """ログアウトしたトークン（期限まで覚えておく。再起動で消えても、ブラウザー側も消しているので問題ない）"""
+    return {}
+
+
+def _forget(token):
+    """この画面ではもう使わないトークン（期限切れ・ログアウトしたもの）"""
+    st.session_state.setdefault("_auth_dead", set()).add(token)
+
+
+def _bridge_reply():
+    """部品からの返事 {"token": 保存されているトークン, "done": 最後に実行した指示の番号}。まだなければ None"""
+    reply = st.session_state.get("auth_bridge")
+    return reply if isinstance(reply, dict) else None
+
+
+def _stored_token():
+    """ブラウザーに保存されているトークン。まだ部品から返事がないときは None、保存されていなければ ""。"""
+    try:
+        cookie = st.context.cookies.get(COOKIE_NAME)
+    except Exception:
+        cookie = None
+    if cookie:
+        return cookie
+    reply = _bridge_reply()
+    if reply is None or st.session_state.get("_auth_bridge_ignore"):
+        return None if reply is None else ""
+    return reply.get("token") or ""
+
+
+def _render_bridge():
+    """トークンを保存・削除・読み出しする部品を出す（画面には何も出ない）"""
+    cmd = st.session_state.get("auth_cookie_cmd")
+    reply = _bridge_reply()
+    if cmd and reply and reply.get("done") == cmd[2]:        # ブラウザーが実行し終えた指示は消す
+        st.session_state.pop("auth_cookie_cmd", None)
+        st.session_state.pop("_auth_bridge_ignore", None)
+        cmd = None
+    args = {"name": COOKIE_NAME, "max_age": COOKIE_MAX_AGE}
+    if cmd:
+        args.update({"cmd": cmd[0], "token": cmd[1], "nonce": cmd[2]})
+    _bridge(**args, key="auth_bridge", default=None)
+
+
 def session_alive():
     """このあとのページ表示でログイン中になるか（メニューを出すかどうかの判定用。画面には何も出さない）。"""
     if is_logged_in():
         return time.time() <= st.session_state.get("auth_expires", 0)
-    try:
-        token = st.context.cookies.get(COOKIE_NAME)
-    except Exception:
-        return False
-    entry = _token_store().get(token) if token else None
+    entry = read_token(_stored_token()) if _stored_token() else None
     return bool(entry) and entry["expires"] > time.time()
-
-
-@st.cache_resource
-def _token_store():
-    """ブラウザーに持たせた合言葉(トークン) -> ログイン情報。サーバーのメモリ上だけに置く。"""
-    return {}
 
 
 def _kind(guest, admin):
@@ -149,6 +254,11 @@ def _kind(guest, admin):
 
 def _log(action, who=None, kind="-"):
     history.log_result("ログイン", who=who, 操作=action, 種類=kind)
+
+
+def _save_cmd(action, token=""):
+    """ブラウザーへの保存・削除の指示（部品が実行したら消える）"""
+    st.session_state["auth_cookie_cmd"] = (action, token, secrets.token_hex(4))
 
 
 def _set_session(name, age, guest, admin, expires):
@@ -163,43 +273,30 @@ def _set_session(name, age, guest, admin, expires):
 def _enter(name, age, guest, admin=False):
     """ログイン成功。1時間は再読み込みしてもログインしたままにする。"""
     expires = time.time() + SESSION_SECONDS
-    store = _token_store()
-    for old in [t for t, v in store.items() if v["expires"] < time.time()]:
-        del store[old]
-    token = secrets.token_urlsafe(32)
-    store[token] = {"name": name, "age": age, "guest": guest, "admin": admin, "expires": expires}
+    token = make_token(name, age, guest, admin, expires)
     _set_session(name, age, guest, admin, expires)
     st.session_state["auth_token"] = token
-    st.session_state["auth_cookie_cmd"] = ("set", token)
+    st.session_state["auth_cookie_at"] = time.time()
+    _save_cmd("set", token)
     _log("ログイン", kind=_kind(guest, admin))
 
 
 def logout(action="ログアウト", notice=None):
     if st.session_state.get("auth_name"):
         _log(action, kind=_kind(st.session_state.get("auth_guest"), st.session_state.get("auth_admin")))
-    _token_store().pop(st.session_state.get("auth_token"), None)
+    revoked = _revoked()
+    for old in [t for t, exp in revoked.items() if exp < time.time()]:
+        del revoked[old]
+    for token in (st.session_state.get("auth_token"), _stored_token()):   # いまのトークンと、開いたときのクッキー
+        if token:
+            revoked[token] = time.time() + SESSION_SECONDS + 60
+            _forget(token)
     for key in ("auth_name", "auth_guest", "auth_admin", "auth_age", "auth_expires", "auth_token", "player_name"):
         st.session_state.pop(key, None)
-    st.session_state["auth_cookie_cmd"] = ("clear", "")
+    st.session_state["_auth_bridge_ignore"] = True   # 消し終わるまで、前に読んだトークンは使わない
+    _save_cmd("clear")
     if notice:
         st.session_state["auth_notice"] = notice
-
-
-def _flush_cookie():
-    """ブラウザーのクッキーを、保存・削除する（JavaScript を1回だけ出す）。"""
-    cmd = st.session_state.pop("auth_cookie_cmd", None)
-    if not cmd:
-        return
-    action, token = cmd
-    max_age = COOKIE_MAX_AGE if action == "set" else 0
-    value = token if action == "set" else ""
-    st.html(
-        f"""<script>
-        document.cookie = "{COOKIE_NAME}={value}; max-age={max_age}; path=/; SameSite=Lax" +
-          (location.protocol === "https:" ? "; Secure" : "");
-        </script>""",
-        unsafe_allow_javascript=True,
-    )
 
 
 def _touch():
@@ -207,34 +304,36 @@ def _touch():
     now = time.time()
     expires = now + SESSION_SECONDS
     st.session_state["auth_expires"] = expires
-    entry = _token_store().get(st.session_state.get("auth_token"))
-    if entry:
-        entry["expires"] = expires
-    if now - st.session_state.get("auth_cookie_at", 0) > COOKIE_REFRESH_SECONDS and st.session_state.get("auth_token"):
-        st.session_state["auth_cookie_at"] = now
-        st.session_state["auth_cookie_cmd"] = ("set", st.session_state["auth_token"])
-        _flush_cookie()
+    # トークンの中の期限も延ばすため、30分ごとに作り直してブラウザーに保存し直す
+    if now - st.session_state.get("auth_cookie_at", 0) > COOKIE_REFRESH_SECONDS:
+        ss = st.session_state
+        token = make_token(ss["auth_name"], ss.get("auth_age"), ss.get("auth_guest"), ss.get("auth_admin"), expires)
+        ss["auth_token"] = token
+        ss["auth_cookie_at"] = now
+        _save_cmd("set", token)
 
 
 def _try_restore():
     """再読み込みしたあとでも、1時間以内なら、クッキーのトークンでログイン状態に戻す。"""
-    try:
-        token = st.context.cookies.get(COOKIE_NAME)
-    except Exception:
+    token = _stored_token()
+    if not token or token in _revoked() or token in st.session_state.get("_auth_dead", ()):
         return
-    entry = _token_store().get(token) if token else None
+    entry = read_token(token)
     if not entry:
+        _forget(token)
+        _save_cmd("clear")          # 鍵が変わった・こわれたトークンは消す
         return
     if entry["expires"] > time.time():
         _set_session(entry["name"], entry["age"], entry["guest"], entry["admin"], entry["expires"])
         st.session_state["auth_token"] = token
-    else:  # 1時間をすぎたトークン：記録を残して、クッキーも消す
-        _token_store().pop(token, None)
+        st.session_state["auth_cookie_at"] = 0     # すぐに作り直して、期限を延ばしたものを保存する
+    else:  # 1時間をすぎたトークン：記録を残して、ブラウザーからも消す
         who = f"{entry['name']}（ゲスト）" if entry["guest"] else entry["name"]
         _log("期限切れ", who=who, kind=_kind(entry["guest"], entry["admin"]))
-        st.session_state["auth_cookie_cmd"] = ("clear", "")
+        _forget(token)
+        _save_cmd("clear")
+        st.session_state["_auth_bridge_ignore"] = True
         st.session_state["auth_notice"] = "さいごに使ってから1時間たったので、もういちどログインしてね。"
-        _flush_cookie()
 
 
 def login_screen():
@@ -308,15 +407,18 @@ def _check_login_no_count(name, password):
 
 def gate(is_home):
     """ログインしていなければログイン画面（トップ）か案内（他ページ）を出して止める。"""
-    _flush_cookie()
     if is_logged_in() and time.time() > st.session_state.get("auth_expires", 0):
         logout("期限切れ", notice="さいごに使ってから1時間たったので、もういちどログインしてね。")
-        _flush_cookie()
     if not is_logged_in():
         _try_restore()
     if is_logged_in():
         _touch()
+    _render_bridge()                 # 保存・削除の指示を出し、保存されているトークンを読む
+    if is_logged_in():
         return
+    if _stored_token() is None:
+        # ブラウザーに保存されたトークンの返事を待っているところ（返事が来たら自動で読み直して、ログインしたままにする）
+        st.caption("ログイン状態を たしかめています…")
     if is_home:
         login_screen()
     else:
