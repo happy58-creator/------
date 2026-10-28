@@ -18,11 +18,11 @@ def test_damage_never_negative_and_never_zero_for_positive_attack():
 
 def test_difficulty_multipliers():
     vh = L.enemy_stats(10, "very_hard")
-    assert math.isclose(vh["hp"], 1551 * 4.32) and math.isclose(vh["atk"], 12.2 * 4.32) and math.isclose(vh["def"], 19.8 * 2.88)
+    assert math.isclose(vh["hp"], 1551 * 5.184) and math.isclose(vh["atk"], 12.2 * 5.184) and math.isclose(vh["def"], 19.8 * 3.456)
     extra = L.enemy_stats(story_data.EXTRA_ENEMY, "very_hard")          # エクストラは難易度に関係なく固定
-    assert extra == {"hp": 2233, "atk": 17.8, "def": 24.2}           # ベリーハードのステージ6と同じ
+    assert extra == {"hp": 2680, "atk": 21.3, "def": 29.0}           # ベリーハードのステージ6と同じ
     n = L.enemy_stats(1, "normal")
-    assert math.isclose(n["hp"], 186) and math.isclose(n["def"], 1.62)
+    assert math.isclose(n["hp"], 204.6) and math.isclose(n["def"], 1.782)
 
 
 def test_display_hp():
@@ -33,9 +33,9 @@ def test_display_hp():
 
 def test_battle_config_lv1():
     c = L.battle_config(1, 1, "easy", 1)
-    assert math.isclose(c["ally"]["tap_damage"], 1 * (1 - 1.1 / 51.1))          # イージーは敵が1.1倍
-    assert math.isclose(c["enemy"]["hit_damage"], 1.1 * (1 - 1 / 51))
-    assert math.isclose(c["ally"]["tap_damage_up"], 4 * (1 - 1.1 / 51.1))   # 攻撃力アップ（+3）中
+    assert math.isclose(c["ally"]["tap_damage"], 1 * (1 - 1.155 / 51.155))      # イージーは敵が1.155倍
+    assert math.isclose(c["enemy"]["hit_damage"], 1.155 * (1 - 1 / 51))
+    assert math.isclose(c["ally"]["tap_damage_up"], 4 * (1 - 1.155 / 51.155))   # 攻撃力アップ（+3）中
     assert c["attack_ms"] == 3000 and c["pause_ms"] == 800 and c["ally"]["hp"] == 10
     assert not c["final"] and not c["extra"] and c["stage_count"] == 10
     assert L.battle_config(1, 1, "easy", 1, ally_hp=4.5)["ally"]["hp"] == 4.5
@@ -147,7 +147,7 @@ def test_skill_config_and_charge_carry():
     p = L.new_profile()
     c = L.battle_config(1, 1, "easy", 1, profile=p, charge=50)
     assert c["skill"]["type"] == "strike" and c["skill"]["start"] == 50
-    assert math.isclose(c["skill"]["damage"], L.damage(1 * 20, 1.1))
+    assert math.isclose(c["skill"]["damage"], L.damage(1 * 20, 1.155))
     luna = L.battle_config(1, 12, "very_hard", 10)["skill"]
     assert math.isclose(luna["damage"], 33 * 60)                     # 防御無視
     assert math.isclose(L.battle_config(1, 1, "easy", 2)["skill"]["heal"], 11 * 0.2)
