@@ -6,13 +6,17 @@
 <title>story inventory</title>
 <style>
   :root { --gold:#e9d6a6; --ink:#f4ecda; --muted:#b9ab90; --panel:#1b161f; --line:rgba(233,214,166,.28); --ok:#7fd8a0; --bad:#ff8a7a; }
-  html, body { margin:0; background:transparent; color:var(--ink);
+  html, body { margin:0; height:100%; overflow-y:auto; background:#121015; color:var(--ink); -webkit-overflow-scrolling:touch;
     font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Noto Serif CJK JP",serif; }
   * { box-sizing:border-box; }
-  #app { background:#121015; border-radius:16px; padding:10px; user-select:none; -webkit-user-select:none; }
+  /* 画面いっぱいに表示する（ページ側で iframe を全画面にしている） */
+  #app { min-height:100%; max-width:1100px; margin:0 auto; background:#121015; user-select:none; -webkit-user-select:none;
+    padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  @media (min-width:700px) { .grid { grid-template-columns:repeat(auto-fill, minmax(66px, 1fr)); } .cols { gap:12px; } }
   .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
   .head h2 { margin:0; font-size:17px; color:var(--gold); }
   .head .who { margin-left:auto; font-size:13px; color:var(--muted); }
+  .bar { position:sticky; bottom:0; background:#121015; padding-top:8px; }
   .cols { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
   .box { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:8px; min-height:64px; }
   .box.drop { outline:2px dashed var(--gold); outline-offset:-3px; background:#2a2220; }
@@ -35,7 +39,7 @@
   .tile .attrs img { width:15px; height:15px; border-radius:50%; border:1px solid rgba(120,200,255,.9); background:#000; }
   .tile.hasattr { margin-bottom:6px; }
   .slot { aspect-ratio:1/1; border-radius:10px; border:1px dashed rgba(233,214,166,.25); }
-  .empty { font-size:12px; color:var(--muted); padding:6px 2px; }
+  .empty { font-size:12px; color:var(--muted); padding:6px 2px; grid-column:1 / -1; }
 
   #detail { margin-top:8px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; min-height:70px; }
   #detail .row { display:flex; gap:10px; align-items:flex-start; }

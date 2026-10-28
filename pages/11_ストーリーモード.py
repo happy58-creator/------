@@ -283,13 +283,23 @@ def ally_panel_html(lv):
                       f"<div style='height:100%;width:{gauge * 100:.0f}%;background:linear-gradient(90deg,#c9a24a,#ffe28a)'></div></div></div>")
     gear, acc = L.split_equipped(profile, lv)
     by_uid = L.equipment_by_uid(profile)
-    icons = "".join(entry_icon(by_uid[u], size=34) for u in gear + acc)
+    icons = "".join(icon_html(story_assets.equipment_thumb(by_uid[u]["id"]), L.get_equipment(by_uid[u]["id"])["name"], size=34)
+                    for u in gear + acc)
+    # 剣の属性は、キャラの絵の下のほうに小さく重ねて出す
+    attrs = [a for u in gear for a in (by_uid[u].get("attrs") or {})]
+    overlay = "".join(
+        f"<img src='{story_assets.status_thumb(a)}' title='{story_data.STATUS_EFFECTS[a]['name']}' "
+        "style='width:22px;height:22px;border-radius:50%;border:1px solid rgba(140,200,255,.95);"
+        "box-shadow:0 1px 4px rgba(0,0,0,.8);background:#000'>" for a in dict.fromkeys(attrs))
+    overlay_html = (f"<div style='position:absolute;left:0;right:0;bottom:6px;display:flex;justify-content:center;gap:3px'>"
+                    f"{overlay}</div>") if overlay else ""
     resist = now["resist"]
     resist_html = ("<div style='font-size:12px;color:#b9ab90;margin-top:4px'>たいせい："
                    + "・".join(story_data.STATUS_EFFECTS[r]["name"] for r in resist) + "</div>") if resist else ""
     return (
         "<div style='display:flex;gap:12px;align-items:flex-start'>"
-        f"<div style='width:30%;flex:none'><img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:12px'>"
+        f"<div style='width:30%;flex:none'><div style='position:relative'>"
+        f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:12px;display:block'>{overlay_html}</div>"
         f"<div style='margin-top:4px;line-height:0'>{icons or ''}</div></div>"
         f"<div style='flex:1;min-width:0'><div style='font-weight:700;font-size:17px'>Lv.{lv} {ally['name']}</div>"
         f"<div style='font-size:14px;margin-top:4px'>{'　'.join(stats)}</div>{resist_html}{''.join(gauges)}</div></div>"
@@ -299,7 +309,14 @@ def ally_panel_html(lv):
 def view_ally_picker():
     """キャラクター一覧（まだ仲間でないキャラはグレー）"""
     owned = L.owned_allies(profile)
-    with st.container(border=True):
+    # スマホでも1行5体のまま並べる（Streamlit は狭い画面で列を縦に積むので、この箱の中だけ止める）
+    st.markdown("""<style>
+.st-key-story_picker [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 6px !important; }
+.st-key-story_picker [data-testid="stColumn"], .st-key-story_picker [data-testid="column"] {
+  min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
+.st-key-story_picker button { padding: 2px 4px !important; min-height: 32px !important; font-size: 12px !important; }
+</style>""", unsafe_allow_html=True)
+    with st.container(border=True, key="story_picker"):
         st.markdown("**キャラクターを えらぶ**")
         for row in range(0, len(story_data.ALLIES), 5):
             cols = st.columns(5)
@@ -309,7 +326,8 @@ def view_ally_picker():
                 style = "" if have else "filter:grayscale(1) brightness(.45)"
                 name = short_name(lv) if have else "？？？"
                 col.markdown(f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:8px;{style}'>"
-                             f"<div style='text-align:center;font-size:12px'>Lv.{lv} {name}</div>", unsafe_allow_html=True)
+                             f"<div style='text-align:center;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;"
+                             f"text-overflow:ellipsis'>Lv.{lv}<br>{name}</div>", unsafe_allow_html=True)
                 if have and col.button("えらぶ", key=f"_story_pick_{lv}", width="stretch",
                                        type="primary" if lv == st.session_state.story_ally else "secondary"):
                     st.session_state.story_ally = lv
@@ -430,6 +448,7 @@ def view_prepare():
 def view_inventory():
     lv = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
     round_id = st.session_state.story_round
+    st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)    # 画面いっぱいに広げる
     result = story_inventory.inventory(profile, lv, round_id, key=f"story_inventory_{round_id}")
     if not result or result.get("round") != round_id:
         return
