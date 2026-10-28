@@ -12,7 +12,7 @@
 ATTACK_SECONDS = 3.0        # 1回の攻撃で連打できる時間
 TURN_PAUSE_SECONDS = 0.8    # 攻撃のあと、相手のターンに移るまでの間
 DEFENSE_K = 50              # 軽減率 = 防御 ÷ (防御 + DEFENSE_K)。小さくすると防御が効きやすい
-STAGE_HEAL_RATE = 0.5       # ステージ間で回復する割合（最大HPに対して）
+STAGE_HEAL_RATE = 0.5       # ステージをクリアしたときに回復する割合（減っているHPに対して）
 
 # ---------------------------------------------------------------------------
 # 難易度
@@ -20,12 +20,14 @@ STAGE_HEAL_RATE = 0.5       # ステージ間で回復する割合（最大HPに
 #   enemy_def    : 敵の防御力にかける倍率
 #   ability      : アビリティポイントにかける倍率
 #   rank         : 「◯◯以上」の判定に使う順位（大きいほど難しい）
+#   敵の倍率は、ベリーハードを HP・攻撃力 3.6倍・防御力 2.4倍とし、イージー（1倍）とのあいだを
+#   同じ比率で上がるように決めた（ノーマル・ハードは小数第2位で丸め）
 # ---------------------------------------------------------------------------
 DIFFICULTIES = [
     {"id": "easy",      "name": "イージー",     "rank": 0, "enemy_hp_atk": 1.0, "enemy_def": 1.0, "ability": 1.0},
-    {"id": "normal",    "name": "ノーマル",     "rank": 1, "enemy_hp_atk": 1.5, "enemy_def": 1.2, "ability": 1.5},
-    {"id": "hard",      "name": "ハード",       "rank": 2, "enemy_hp_atk": 2.0, "enemy_def": 1.5, "ability": 2.0},
-    {"id": "very_hard", "name": "ベリーハード", "rank": 3, "enemy_hp_atk": 3.0, "enemy_def": 2.0, "ability": 3.0},
+    {"id": "normal",    "name": "ノーマル",     "rank": 1, "enemy_hp_atk": 1.55, "enemy_def": 1.35, "ability": 1.5},
+    {"id": "hard",      "name": "ハード",       "rank": 2, "enemy_hp_atk": 2.35, "enemy_def": 1.8,  "ability": 2.0},
+    {"id": "very_hard", "name": "ベリーハード", "rank": 3, "enemy_hp_atk": 3.6,  "enemy_def": 2.4,  "ability": 3.0},
 ]
 
 # ---------------------------------------------------------------------------
@@ -65,7 +67,8 @@ STATUS_EFFECTS = {
 #   floating    : 宙に浮かせて表示する（足元の影を出さない）
 #   gimmicks    : 使う状態異常。後から別のギミックを足すときはここに書く
 #   immune      : 効かない剣の属性（Lv.9 以降と宇宙龍は「天変地異」の特性で雷が効かない）。書いていなければ全部効く
-#   difficulties: 出てくる難易度。None ならすべて。Lv.11 はハードとベリーハードで別の敵が出る
+#   difficulties: 出てくる難易度。None ならすべて。
+#                 ハードは11ステージ（最後が混沌の初源）、ベリーハードは12ステージ（混沌の初源のあとに永遠の沈黙）
 #   lines       : 敵のターンに出す一言（毎回この中から1つ選ぶ）
 #   effect      : 敵の攻撃エフェクトの種類と色（web/story/index.html の EFFECTS）
 # ---------------------------------------------------------------------------
@@ -102,7 +105,7 @@ ENEMIES = [
      "image": "enemy_10.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor"], "difficulties": _ALL,
      "lines": ["世界を創り、そして終わらせる", "星の一つも、我が意のまま", "よくぞここまで来た。だが、ここで終わりだ"], "effect": {"type": "cosmic", "color": "#a8d4ff"}},
     {"lv": 11, "name": "混沌の初源", "hp": 2013, "atk": 15.8, "def": 23.1,
-     "image": "enemy_11_hard.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness"], "difficulties": ["hard"],
+     "image": "enemy_11_hard.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness"], "difficulties": ["hard", "very_hard"],
      "lines": ["すべてはわたしから生まれた", "還りなさい、始まりの光へ", "混沌こそ、世界の母"], "effect": {"type": "radiance", "color": "#ffd27a"}},
     {"lv": 11, "name": "永遠の沈黙", "hp": 2013, "atk": 15.8, "def": 23.1,
      "image": "enemy_11_veryhard.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness", "shadow"], "difficulties": ["very_hard"],
@@ -113,12 +116,12 @@ ENEMIES = [
 # エクストラステージ：極点の宇宙龍（混沌の初源・永遠の沈黙の使い。各ステージを見回っている）
 #   ステージをクリアするたびに EXTRA_CHANCE の確率で、次のステージの前に現れる（1回の挑戦で1度まで）
 #   「にげる」で戦わずに先へ進める（負けにならない）。倒すと超激レア装備（ULTRA_REWARDS）
-#   強さは難易度に関係なく固定（ベリーハードのステージ5と同じ：HP380×3・攻撃3×3・防御6×2）
+#   強さは難易度に関係なく固定（ベリーハードのステージ6と同じ：Lv.6 の HP517・攻撃4.1 × 3.6、防御8.4 × 2.4）
 #   fit / focus : 横長の絵なので、画面を埋めるように拡大し（cover）、focus の位置を中心に見せる
 # ---------------------------------------------------------------------------
 EXTRA_CHANCE = 0.01
 EXTRA_ENEMY = {
-    "lv": "???", "name": "極点の宇宙龍", "title": "災厄と創造の統合者", "hp": 1140, "atk": 9, "def": 12, "fixed_stats": True,
+    "lv": "???", "name": "極点の宇宙龍", "title": "災厄と創造の統合者", "hp": 1861, "atk": 14.8, "def": 20.2, "fixed_stats": True,
     "image": "enemy_extra.webp", "cutout": False, "scene": "image", "floating": False, "fit": "cover", "focus": "64% 50%",
     "immune": ["thunder"], "gimmicks": ["black_flame", "shadow", "darkness"], "difficulties": None,
     "lines": ["……見つけたぞ、小さき者", "我が主の領域を荒らすか", "星ごと呑み込んでくれよう"],
@@ -191,6 +194,7 @@ ITEMS = [
 # ---------------------------------------------------------------------------
 MAX_GEAR_SLOTS = 3          # 装備品のわく
 MAX_ACCESSORY_SLOTS = 3     # アクセサリのわく
+MAX_ATTR_WEAPONS = 1        # 属性の付いた剣は、1キャラ1本まで
 ACCESSORY_RANK = "accessory"
 
 EQUIP_RANKS = {

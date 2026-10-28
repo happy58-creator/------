@@ -66,6 +66,61 @@ def enemy_image_path(enemy):
     return ASSET_DIR / "enemies" / get_enemy(enemy)["image"]
 
 
+@lru_cache(maxsize=None)
+def thumb_uri(relative_path, size=96):
+    """アイコンを小さくした data URI（画面にたくさん並べるとき用。1回作ったら覚えておく）"""
+    import io
+
+    from PIL import Image
+
+    path = ASSET_DIR / relative_path
+    if not path.exists():
+        return None
+    with Image.open(path) as im:
+        im = im.convert("RGBA" if im.mode in ("RGBA", "LA", "P") else "RGB")
+        im.thumbnail((size, size), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "WEBP", quality=85)
+    return f"data:image/webp;base64,{base64.b64encode(buf.getvalue()).decode()}"
+
+
+def item_thumb(item_id, size=96):
+    return thumb_uri(f"items/{item_id}.webp", size)
+
+
+def equipment_thumb(equip_id, size=96):
+    return thumb_uri(f"equipment/{equip_id}.webp", size)
+
+
+def status_thumb(status_id, size=48):
+    return thumb_uri(f"status/{status_id}.webp", size)
+
+
+def ally_thumb(lv, size=240):
+    return thumb_uri(f"allies/{story_data.ALLIES[lv - 1]['image']}", size)
+
+
+@lru_cache(maxsize=None)
+def silhouette_uri(enemy_key, width=360):
+    """謎の敵の「形だけ」の絵（当たりマスクから作る。黒い影に紫のにじみ）"""
+    import io
+
+    from PIL import Image, ImageFilter
+
+    mask = Image.open(ASSET_DIR / "hitmasks" / f"{enemy_key}.png").convert("L")
+    mask = mask.resize((width, round(mask.height * width / mask.width)), Image.LANCZOS)
+    w, h = mask.size
+    bg = Image.new("RGB", (w, h), (12, 10, 18))
+    glow = mask.filter(ImageFilter.GaussianBlur(10))
+    purple = Image.new("RGB", (w, h), (120, 70, 200))
+    bg = Image.composite(purple, bg, glow.point(lambda v: int(min(255, v * 0.9))))
+    body = Image.new("RGB", (w, h), (6, 5, 10))
+    bg = Image.composite(body, bg, mask.filter(ImageFilter.GaussianBlur(1)))
+    buf = io.BytesIO()
+    bg.save(buf, "WEBP", quality=85)
+    return f"data:image/webp;base64,{base64.b64encode(buf.getvalue()).decode()}"
+
+
 def status_icon_uri(status_id):
     """状態異常のアイコン。メテオは一瞬なのでアイコンなし（そのあとの黒炎で表示する）"""
     path = ASSET_DIR / "status" / f"{status_id}.webp"

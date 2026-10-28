@@ -13,10 +13,13 @@
         "equipment": [{"uid": 1, "id": "wood_sword"}, ...],   倉庫（1つずつ番号つき）
         "next_uid": 2,
         "equipped": {"1": [1, ...]},          キャラごとに付けている装備の番号（3つまで）
-        "items": {"potion": 3, ...},          ホームのアイテム
+        "items": {"potion": 3, ...},          倉庫（ホーム）のアイテム
+        "pack": {"potion": 5, ...},           リュック（挑戦していないとき。次の挑戦に持っていく分）
+        "locked": [3, ...],                   ロックした装備の番号（削除できない）
         "run": 挑戦 or None,                   進行中の挑戦（自動で保存。手動の中断セーブはない）
         "starter_items": True,                最初のアイテム（全種類10個）を受け取ったか
     }
+    挑戦中のリュックは、挑戦の "bag"（下）を使う。
     挑戦 = {"id", "ally", "difficulty",
             "stage"（次に戦うステージ番号）, "extra"（次の戦いがエクストラなら True）,
             "hp", "bag": {"carried": {...}, "picked": {...}}（いまのHPとかばん）,
@@ -76,6 +79,11 @@ def run_enemy(run):
 
 def get_ally(lv):
     return next(a for a in story_data.ALLIES if a["lv"] == lv)
+
+
+def short_name(lv):
+    """キャラの名前だけ（「平凡な農民、コウ」→「コウ」）"""
+    return get_ally(lv)["name"].split("、")[-1]
 
 
 def get_item(item_id):
@@ -140,6 +148,8 @@ def new_profile():
         "next_uid": 1,
         "equipped": {},
         "items": initial_items(),
+        "pack": {},
+        "locked": [],
         "run": None,
         "starter_items": True,
     }
@@ -264,6 +274,7 @@ def set_equipment(profile, ally_lv, uids):
 
     - 装備品は3つまで。同じ種類を重ねて付けてよい
     - アクセサリは3つまで。同じ種類は2つ付けられない
+    - 属性の付いた剣は MAX_ATTR_WEAPONS 本まで
     - ほかのキャラが付けている装備（番号）は付けられない
     """
     uids = list(dict.fromkeys(uids))
@@ -281,6 +292,8 @@ def set_equipment(profile, ally_lv, uids):
         raise ValueError(f"アクセサリは {story_data.MAX_ACCESSORY_SLOTS}つまでだよ。")
     if len(accessories) != len(set(accessories)):
         raise ValueError("同じアクセサリを2つ付けることはできないよ。")
+    if sum(1 for u in gear if by_uid[u].get("attrs")) > story_data.MAX_ATTR_WEAPONS:
+        raise ValueError("属性の付いた剣は1本だけ付けられるよ。")
     profile["equipped"][str(ally_lv)] = uids
 
 
@@ -410,10 +423,18 @@ def heal(hp, max_hp, item):
 # ---------------------------------------------------------------------------
 # 挑戦の始まりと終わり
 # ---------------------------------------------------------------------------
-def start_run(profile, ally_lv, difficulty_id, carried):
-    """ホームのアイテムを持ち込んで、ステージ1から挑戦を始める"""
+def start_run(profile, ally_lv, difficulty_id, carried=None):
+    """ステージ1から挑戦を始める。
+
+    carried を渡さなければ、リュック（profile["pack"]）の中身をそのまま持っていく。
+    carried を渡したときは、倉庫からその数を持ち出す。
+    """
     if ally_lv not in owned_allies(profile):
         raise ValueError("まだ仲間になっていないキャラだよ。")
+    if carried is None:
+        carried = {k: int(v) for k, v in profile["pack"].items() if int(v) > 0}
+        profile["items"] = {k: profile["items"].get(k, 0) + carried.get(k, 0) for k in set(profile["items"]) | set(carried)}
+        profile["pack"] = {}
     carried = {k: int(v) for k, v in carried.items() if int(v) > 0}
     if sum(carried.values()) > story_data.MAX_CARRY_ITEMS:
         raise ValueError(f"持っていけるアイテムは {story_data.MAX_CARRY_ITEMS}個までだよ。")
@@ -532,7 +553,7 @@ def clear_stage(profile, rng=random):
     run["cleared"] += 1
     run["stage"] += 1
     healed_from = run["hp"]
-    run["hp"] = min(max_hp, run["hp"] + max_hp * story_data.STAGE_HEAL_RATE)
+    run["hp"] = min(max_hp, run["hp"] + max(0.0, max_hp - run["hp"]) * story_data.STAGE_HEAL_RATE)
     rewards["healed"] = run["hp"] - healed_from
 
     treasure = roll_treasure(stage, run["difficulty"], rng)
@@ -709,3 +730,71 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         "attack_ms": int(story_data.ATTACK_SECONDS * 1000),
         "pause_ms": int(story_data.TURN_PAUSE_SECONDS * 1000),
     }
+
+
+# ---------------------------------------------------------------------------
+# 倉庫とリュック（画面でまとめて入れ替えて、「決定」で反映する）
+# ---------------------------------------------------------------------------
+def pack_counts(profile):
+    """いまのリュックの中身 {アイテムID: 個数}（挑戦中は挑戦のかばん）"""
+    if profile["run"]:
+        return bag_counts(profile["run"]["bag"])
+    return {k: int(v) for k, v in profile["pack"].items() if int(v) > 0}
+
+
+def delete_equipment(profile, uid):
+    """倉庫から装備を捨てる。ロックしている物と、ほかのキャラが付けている物は捨てられない"""
+    if uid in profile["locked"]:
+        raise ValueError("ロックしている装備は削除できないよ。")
+    profile["equipment"] = [e for e in profile["equipment"] if e["uid"] != uid]
+    for lv in profile["equipped"]:
+        profile["equipped"][lv] = [u for u in profile["equipped"][lv] if u != uid]
+
+
+def apply_inventory(profile, ally_lv, result):
+    """倉庫とリュックの画面の「決定」を反映する。ルールに合わなければ ValueError（何も変えない）
+
+    result = {"store": {アイテムID: 個数}, "pack": {アイテムID: 個数},
+              "gear": [uid, ...], "acc": [uid, ...], "deleted": [uid, ...], "locked": [uid, ...]}
+    - アイテムは、倉庫とリュックの合計が前より増えてはいけない（減った分は削除）
+    - リュックは MAX_CARRY_ITEMS 個まで
+    - 装備のルールは set_equipment と同じ。ロックした装備・ほかのキャラが付けている装備は削除できない
+    """
+    import copy as _copy
+    before = _copy.deepcopy(profile)
+    try:
+        old_pack = pack_counts(profile)
+        store = {k: int(v) for k, v in (result.get("store") or {}).items() if int(v) > 0}
+        pack = {k: int(v) for k, v in (result.get("pack") or {}).items() if int(v) > 0}
+        for item_id in set(store) | set(pack):
+            get_item(item_id)
+            if store.get(item_id, 0) + pack.get(item_id, 0) > profile["items"].get(item_id, 0) + old_pack.get(item_id, 0):
+                raise ValueError("アイテムの数が合わないよ。もう一度ためしてね。")
+        if sum(pack.values()) > story_data.MAX_CARRY_ITEMS:
+            raise ValueError(f"リュックに入るのは {story_data.MAX_CARRY_ITEMS}個までだよ。")
+
+        locked = [int(u) for u in (result.get("locked") or [])]
+        by_uid = equipment_by_uid(profile)
+        profile["locked"] = [u for u in dict.fromkeys(locked) if u in by_uid]
+        others = {u for lv, uids in profile["equipped"].items() if lv != str(ally_lv) for u in uids}
+        for uid in (int(u) for u in (result.get("deleted") or [])):
+            if uid not in by_uid:
+                continue
+            if uid in others:
+                raise ValueError("ほかのキャラが付けている装備は削除できないよ。")
+            delete_equipment(profile, uid)
+
+        set_equipment(profile, ally_lv, [int(u) for u in (result.get("gear") or [])] + [int(u) for u in (result.get("acc") or [])])
+
+        profile["items"] = store
+        if profile["run"]:
+            run = profile["run"]
+            run["bag"] = {"carried": pack, "picked": {}}
+            if run["ally"] == ally_lv:
+                run["hp"] = min(run["hp"], ally_stats(ally_lv, profile)["hp"])
+        else:
+            profile["pack"] = pack
+    except Exception:
+        profile.clear()
+        profile.update(before)
+        raise
