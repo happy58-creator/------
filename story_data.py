@@ -7,10 +7,12 @@
 # ---------------------------------------------------------------------------
 # 戦闘の基本
 # ---------------------------------------------------------------------------
-TURN_SECONDS = 3.0          # 敵が攻撃する間隔。この長さを「1ターン」として数える
+# ターン制：自分のターン（攻撃かアイテム）→ 敵のターン（1回攻撃）を、どちらかのHPが0になるまで繰り返す。
+# 攻撃は「よーい、スタート！」から ATTACK_SECONDS 秒のあいだ連打し、合計ダメージで一気に攻撃する。
+ATTACK_SECONDS = 3.0        # 1回の攻撃で連打できる時間
+TURN_PAUSE_SECONDS = 0.8    # 攻撃のあと、相手のターンに移るまでの間
 DEFENSE_K = 50              # 軽減率 = 防御 ÷ (防御 + DEFENSE_K)。小さくすると防御が効きやすい
 STAGE_HEAL_RATE = 0.5       # ステージ間で回復する割合（最大HPに対して）
-STAGE_COUNT = 10
 
 # ---------------------------------------------------------------------------
 # 難易度
@@ -39,35 +41,83 @@ RESIST_RATE = 0.5               # 耐性アクセサリの効果（ダメージ�
 
 STATUS_EFFECTS = {
     "poison":      {"icon": "☠️", "name": "毒",   "turns": 4, "max_hp_rate": 0.05, "defense_applies": False, "resistible": True},
-    "thunder":     {"icon": "⚡", "name": "雷",   "turns_min": 1, "turns_max": 3, "resistible": True},  # タップできない
+    "thunder":     {"icon": "⚡", "name": "雷",   "turns_min": 1, "turns_max": 3, "resistible": True},  # 攻撃できない（アイテムは使える）
     "fire":        {"icon": "🔥", "name": "火",   "turns": 3, "max_hp_rate": 0.08, "defense_applies": True,  "resistible": True},
     "meteor":      {"icon": "☄️", "name": "メテオ", "current_hp_rate": 0.5, "then": "black_flame", "resistible": False},
     "black_flame": {"icon": "🌑", "name": "黒炎", "turns": 3, "max_hp_rate": 0.10, "defense_applies": False, "resistible": False},
+    # 陰：画面が暗くなり、当たりマスクが敵の重心を中心に縦横 hit_scale 倍に縮む（面積で約6割）。自分の攻撃1回分
+    "darkness":    {"icon": "🌘", "name": "陰",   "turns": 1, "hit_scale": 0.77, "resistible": False},
+    # 影：自分の攻撃が evade_rate の確率で丸ごと回避される。自分の攻撃2回分
+    "shadow":      {"icon": "👤", "name": "影",   "turns": 2, "evade_rate": 0.30, "resistible": False},
 }
 
 # ---------------------------------------------------------------------------
 # 敵（イージーの値。ほかの難易度は DIFFICULTIES の倍率をかける）
-#   HP     : 同じLvの味方（装備なし）が毎秒8回ほどの連打で、Lv.1 は約12秒、Lv.10 は約45秒で倒せる量。
-#            Lv.6 だけ多め（装備なしの Lv.10 がベリーハードで5ステージ止まりになるように）
-#   攻撃力 : 1ステージごとに約1.45倍
-#   image      : assets/story/enemies/ の中のファイル名
-#   cutout     : True なら背景を透過した画像。scene の背景はCSSで描く
-#   scene      : 背景の種類（story_assets.SCENE_CSS のクラス名）
-#   floating   : 宙に浮かせて表示する（足元の影を出さない）
-#   gimmicks   : 使う状態異常。後から別のギミックを足すときはここに書く
+#   決め方：Lv.1〜5 は最初の数値。Lv.6 からは1ステージごとに HP・攻撃力を約1.3倍にしている
+#   image       : assets/story/enemies/ の中のファイル名（当たりマスクは hitmasks/ の同じ名前の .png）
+#   cutout      : True なら背景を透過した画像。背景は scene の画像とCSSで描く
+#   scene       : 背景の種類（story_assets の _SCENE_LAYERS のキー。"image" は画像そのものが背景）
+#   floating    : 宙に浮かせて表示する（足元の影を出さない）
+#   gimmicks    : 使う状態異常。後から別のギミックを足すときはここに書く
+#   difficulties: 出てくる難易度。None ならすべて。Lv.11 はハードとベリーハードで別の敵が出る
+#   lines       : 敵のターンに出す一言（毎回この中から1つ選ぶ）
+#   effect      : 敵の攻撃エフェクトの種類と色（web/story/index.html の EFFECTS）
 # ---------------------------------------------------------------------------
+_ALL = None
 ENEMIES = [
-    {"lv": 1,  "name": "薄汚れたゾンビ", "hp": 100,  "atk": 1.5,  "def": 1,  "image": "enemy_01.webp", "cutout": True,  "scene": "corridor", "floating": False, "gimmicks": []},
-    {"lv": 2,  "name": "呪われた戦士",   "hp": 220,  "atk": 2.2,  "def": 2,  "image": "enemy_02.webp", "cutout": True,  "scene": "prison",   "floating": False, "gimmicks": []},
-    {"lv": 3,  "name": "幽霊の暗殺者",   "hp": 250,  "atk": 3.2,  "def": 3,  "image": "enemy_03.webp", "cutout": True,  "scene": "catacomb", "floating": False, "gimmicks": []},
-    {"lv": 4,  "name": "骨の魔術師",     "hp": 300,  "atk": 4.6,  "def": 4,  "image": "enemy_04.webp", "cutout": True,  "scene": "altar",    "floating": False, "gimmicks": []},
-    {"lv": 5,  "name": "深淵の従者",     "hp": 600,  "atk": 6.6,  "def": 6,  "image": "enemy_05.webp", "cutout": False, "scene": "image",    "floating": False, "gimmicks": []},
-    {"lv": 6,  "name": "死霊の将軍",     "hp": 1300, "atk": 9.6,  "def": 8,  "image": "enemy_06.webp", "cutout": False, "scene": "image",    "floating": False, "gimmicks": []},
-    {"lv": 7,  "name": "悪魔の貴族",     "hp": 2000, "atk": 14,   "def": 10, "image": "enemy_07.webp", "cutout": False, "scene": "image",    "floating": False, "gimmicks": ["poison"]},
-    {"lv": 8,  "name": "半神の魔王",     "hp": 2800, "atk": 20,   "def": 12, "image": "enemy_08.webp", "cutout": False, "scene": "image",    "floating": False, "gimmicks": ["thunder"]},
-    {"lv": 9,  "name": "災厄の代行者",   "hp": 4800, "atk": 29,   "def": 15, "image": "enemy_09.webp", "cutout": True,  "scene": "nebula",   "floating": True,  "gimmicks": ["poison", "thunder", "fire"]},
-    {"lv": 10, "name": "終焉の創造主",   "hp": 9000, "atk": 42,   "def": 18, "image": "enemy_10.webp", "cutout": False, "scene": "image",    "floating": False, "gimmicks": ["poison", "thunder", "fire", "meteor"]},
+    {"lv": 1, "name": "薄汚れたゾンビ", "hp": 100, "atk": 1, "def": 1,
+     "image": "enemy_01.webp", "cutout": True, "scene": "corridor", "floating": False, "gimmicks": [], "difficulties": _ALL,
+     "lines": ["ウゥ……アァ……", "……ニク……", "グアァァッ！"], "effect": {"type": "claw", "color": "#9db36b"}},
+    {"lv": 2, "name": "呪われた戦士", "hp": 140, "atk": 1, "def": 2,
+     "image": "enemy_02.webp", "cutout": True, "scene": "prison", "floating": False, "gimmicks": [], "difficulties": _ALL,
+     "lines": ["呪いは……解けぬ……", "この剣、錆びてはおらぬ", "ここから先へは通さん"], "effect": {"type": "slash", "color": "#d8d2c4"}},
+    {"lv": 3, "name": "幽霊の暗殺者", "hp": 200, "atk": 2, "def": 3,
+     "image": "enemy_03.webp", "cutout": True, "scene": "catacomb", "floating": False, "gimmicks": [], "difficulties": _ALL,
+     "lines": ["……背中が、がら空きだ", "影は斬れまい", "音もなく、消えろ"], "effect": {"type": "ghost", "color": "#8fd8ff"}},
+    {"lv": 4, "name": "骨の魔術師", "hp": 280, "atk": 2, "def": 4,
+     "image": "enemy_04.webp", "cutout": True, "scene": "altar", "floating": False, "gimmicks": [], "difficulties": _ALL,
+     "lines": ["我が魔術の糧となれ", "骨の髄まで凍えるがいい", "クク……愚かな"], "effect": {"type": "magic", "color": "#b26bff"}},
+    {"lv": 5, "name": "深淵の従者", "hp": 380, "atk": 3, "def": 6,
+     "image": "enemy_05.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": [], "difficulties": _ALL,
+     "lines": ["深淵へ……引きずり込んでやる", "シャアアッ！", "主のもとへは行かせぬ"], "effect": {"type": "whip", "color": "#e0483e"}},
+    {"lv": 6, "name": "死霊の将軍", "hp": 490, "atk": 3.9, "def": 8,
+     "image": "enemy_06.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": [], "difficulties": _ALL,
+     "lines": ["我が軍勢の前にひれ伏せ", "死してなお、我は戦う", "この一撃、受けてみよ"], "effect": {"type": "slash", "color": "#a9c4b0"}},
+    {"lv": 7, "name": "悪魔の貴族", "hp": 640, "atk": 5.1, "def": 10,
+     "image": "enemy_07.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": ["poison"], "difficulties": _ALL,
+     "lines": ["下賤の者が、我に触れるな", "地獄の炎で焼かれるがいい", "フフ……退屈させるな"], "effect": {"type": "fire", "color": "#ff7a2a"}},
+    {"lv": 8, "name": "半神の魔王", "hp": 830, "atk": 6.6, "def": 12,
+     "image": "enemy_08.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": ["thunder"], "difficulties": _ALL,
+     "lines": ["玉座から動くまでもない", "神の雷、その身で知れ", "ひざまずけ"], "effect": {"type": "thunder", "color": "#ffd84a"}},
+    {"lv": 9, "name": "災厄の代行者", "hp": 1090, "atk": 8.6, "def": 15,
+     "image": "enemy_09.webp", "cutout": True, "scene": "nebula", "floating": True, "gimmicks": ["poison", "thunder", "fire"], "difficulties": _ALL,
+     "lines": ["すべては無に還る", "災いは、選ばない", "抗うな。苦しむだけだ"], "effect": {"type": "void", "color": "#9a6bff"}},
+    {"lv": 10, "name": "終焉の創造主", "hp": 1410, "atk": 11.1, "def": 18,
+     "image": "enemy_10.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": ["poison", "thunder", "fire", "meteor"], "difficulties": _ALL,
+     "lines": ["世界を創り、そして終わらせる", "星の一つも、我が意のまま", "よくぞここまで来た。だが、ここで終わりだ"], "effect": {"type": "cosmic", "color": "#a8d4ff"}},
+    {"lv": 11, "name": "混沌の初源", "hp": 1830, "atk": 14.4, "def": 21,
+     "image": "enemy_11_hard.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness"], "difficulties": ["hard"],
+     "lines": ["すべてはわたしから生まれた", "還りなさい、始まりの光へ", "混沌こそ、世界の母"], "effect": {"type": "radiance", "color": "#ffd27a"}},
+    {"lv": 11, "name": "永遠の沈黙", "hp": 1830, "atk": 14.4, "def": 21,
+     "image": "enemy_11_veryhard.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness", "shadow"], "difficulties": ["very_hard"],
+     "lines": ["…………", "音も、光も、ここには届かない", "沈め"], "effect": {"type": "silence", "color": "#6f8cff"}},
 ]
+
+# ---------------------------------------------------------------------------
+# エクストラステージ：極点の宇宙龍（混沌の初源・永遠の沈黙の使い。各ステージを見回っている）
+#   ステージをクリアするたびに EXTRA_CHANCE の確率で、次のステージの前に現れる（1回の挑戦で1度まで）
+#   「にげる」で戦わずに先へ進める（負けにならない）。倒すと超激レア装備（ULTRA_REWARDS）
+#   強さは難易度に関係なく固定（ベリーハードのステージ5と同じ：HP380×3・攻撃3×3・防御6×2）
+#   fit / focus : 横長の絵なので、画面を埋めるように拡大し（cover）、focus の位置を中心に見せる
+# ---------------------------------------------------------------------------
+EXTRA_CHANCE = 0.01
+EXTRA_ENEMY = {
+    "lv": "???", "name": "極点の宇宙龍", "title": "災厄と創造の統合者", "hp": 1140, "atk": 9, "def": 12, "fixed_stats": True,
+    "image": "enemy_extra.webp", "cutout": False, "scene": "image", "floating": False, "fit": "cover", "focus": "64% 50%",
+    "gimmicks": ["black_flame", "shadow", "darkness"], "difficulties": None,
+    "lines": ["……見つけたぞ、小さき者", "我が主の領域を荒らすか", "星ごと呑み込んでくれよう"],
+    "effect": {"type": "cosmic", "color": "#c49bff"},
+}
 
 # ---------------------------------------------------------------------------
 # 味方
@@ -108,17 +158,21 @@ ALLIES = [
 #   heal_rate : 最大HPに対する回復量（1.0 で全回復）
 #   icon      : 画面に出す絵文字（装備・状態異常も同じ）
 #   guard     : 防御力2倍が続くターン数
+#   atk_bonus : 攻撃力に足す値（atk_turns ターン＝自分の攻撃 atk_turns 回のあいだ）
 #   weight    : 宝箱でアイテムが出たときの選ばれやすさ
+# 自分のターンに1つだけ使え、使ったあとも攻撃できる
 # ---------------------------------------------------------------------------
 MAX_CARRY_ITEMS = 30
 GUARD_MULTIPLIER = 2.0
+INITIAL_ITEM_COUNT = 10     # 最初にホームに持っているアイテムの数（全種類それぞれ）
 
 ITEMS = [
-    {"id": "potion",      "icon": "🧪", "name": "ポーション",     "heal_rate": 0.3, "cure": True,  "guard": 0, "weight": 40},
-    {"id": "guard_up",    "icon": "🛡️", "name": "防御アップ",     "heal_rate": 0.0, "cure": False, "guard": 3, "weight": 25},
-    {"id": "hi_potion",   "icon": "⚗️", "name": "ハイポーション", "heal_rate": 0.6, "cure": True,  "guard": 0, "weight": 20},
-    {"id": "mega_potion", "icon": "💖", "name": "メガポーション", "heal_rate": 1.0, "cure": True,  "guard": 0, "weight": 10},
-    {"id": "elixir",      "icon": "✨", "name": "エリクサー",     "heal_rate": 1.0, "cure": True,  "guard": 3, "weight": 5},
+    {"id": "potion",      "icon": "🧪", "name": "ポーション",     "heal_rate": 0.3, "cure": True,  "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 40},
+    {"id": "guard_up",    "icon": "🛡️", "name": "防御アップ",     "heal_rate": 0.0, "cure": False, "guard": 3, "atk_bonus": 0, "atk_turns": 0, "weight": 25},
+    {"id": "atk_up",      "icon": "💪", "name": "攻撃力アップ",   "heal_rate": 0.0, "cure": False, "guard": 0, "atk_bonus": 3, "atk_turns": 3, "weight": 20},
+    {"id": "hi_potion",   "icon": "⚗️", "name": "ハイポーション", "heal_rate": 0.6, "cure": True,  "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 20},
+    {"id": "mega_potion", "icon": "💖", "name": "メガポーション", "heal_rate": 1.0, "cure": True,  "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 10},
+    {"id": "elixir",      "icon": "✨", "name": "エリクサー",     "heal_rate": 1.0, "cure": True,  "guard": 3, "atk_bonus": 0, "atk_turns": 0, "weight": 5},
 ]
 
 # ---------------------------------------------------------------------------
@@ -133,6 +187,8 @@ EQUIP_RANKS = {
     "rare":      {"name": "レア",       "weight": 30, "min_stage": 3, "min_difficulty": "easy"},
     "epic":      {"name": "激レア",     "weight": 10, "min_stage": 7, "min_difficulty": "normal"},
     "accessory": {"name": "アクセサリ", "weight": 30, "min_stage": 5, "min_difficulty": "normal"},
+    # 超激レアは宝箱からは出ない（weight 0）。特別な敵を倒したときのごほうび（ULTRA_REWARDS）だけ
+    "ultra":     {"name": "超激レア",   "weight": 0,  "min_stage": 99, "min_difficulty": "very_hard"},
 }
 
 EQUIPMENT = [
@@ -148,7 +204,17 @@ EQUIPMENT = [
     {"id": "poison_charm",   "icon": "📿", "name": "毒よけのお守り", "rank": "accessory", "atk": 0,  "def": 0,  "hp": 0,  "resist": "poison"},
     {"id": "thunder_ring",   "icon": "💍", "name": "雷よけの指輪",   "rank": "accessory", "atk": 0,  "def": 0,  "hp": 0,  "resist": "thunder"},
     {"id": "fire_bangle",    "icon": "🔥", "name": "火よけの腕輪",   "rank": "accessory", "atk": 0,  "def": 0,  "hp": 0,  "resist": "fire"},
+    {"id": "dragon_scale",   "icon": "🐲", "name": "宇宙龍の逆鱗",   "rank": "ultra",     "atk": 12, "def": 25, "hp": 60, "resist": None},
+    {"id": "origin_robe",    "icon": "👘", "name": "初源の聖衣",     "rank": "ultra",     "atk": 0,  "def": 60, "hp": 0,  "resist": None},
+    {"id": "silence_blade",  "icon": "🗡️", "name": "沈黙の魔剣",     "rank": "ultra",     "atk": 30, "def": 0,  "hp": 0,  "resist": None},
 ]
+
+# 特別な敵を倒したときに必ずもらえる超激レア装備（敵の画像ファイル名の拡張子なし → 装備ID）
+ULTRA_REWARDS = {
+    "enemy_extra": "dragon_scale",        # 極点の宇宙龍：HP・防御・攻撃をそろって大きく上げる
+    "enemy_11_hard": "origin_robe",       # 混沌の初源：防御を非常に大きく上げる
+    "enemy_11_veryhard": "silence_blade", # 永遠の沈黙：攻撃を非常に大きく上げる
+}
 
 # ---------------------------------------------------------------------------
 # 宝箱

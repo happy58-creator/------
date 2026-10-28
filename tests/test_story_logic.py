@@ -17,7 +17,9 @@ def test_damage_never_negative_and_never_zero_for_positive_attack():
 
 def test_difficulty_multipliers():
     vh = L.enemy_stats(10, "very_hard")
-    assert vh == {"hp": 27000, "atk": 126, "def": 36}
+    assert math.isclose(vh["hp"], 4230) and math.isclose(vh["atk"], 33.3) and vh["def"] == 36
+    extra = L.enemy_stats(story_data.EXTRA_ENEMY, "very_hard")          # エクストラは難易度に関係なく固定
+    assert extra == {"hp": 1140, "atk": 9, "def": 12}
     n = L.enemy_stats(1, "normal")
     assert math.isclose(n["hp"], 150) and math.isclose(n["def"], 1.2)
 
@@ -31,23 +33,37 @@ def test_display_hp():
 def test_battle_config_lv1():
     c = L.battle_config(1, 1, "easy", 1)
     assert math.isclose(c["ally"]["tap_damage"], 1 * (1 - 1 / 51))
-    assert math.isclose(c["enemy"]["hit_damage"], 1.5 * (1 - 1 / 51))
-    assert c["turn_ms"] == 3000 and c["ally"]["hp"] == 10
+    assert math.isclose(c["enemy"]["hit_damage"], 1 * (1 - 1 / 51))
+    assert math.isclose(c["ally"]["tap_damage_up"], 4 * (1 - 1 / 51))   # 攻撃力アップ（+3）中
+    assert c["attack_ms"] == 3000 and c["pause_ms"] == 800 and c["ally"]["hp"] == 10
+    assert not c["final"] and not c["extra"] and c["stage_count"] == 10
     assert L.battle_config(1, 1, "easy", 1, ally_hp=4.5)["ally"]["hp"] == 4.5
 
 
 def test_data_tables_consistent():
-    assert [e["lv"] for e in story_data.ENEMIES] == list(range(1, 11))
+    assert [e["lv"] for e in story_data.ENEMIES] == list(range(1, 12)) + [11]
+    assert [e["lv"] for e in L.stages_for("easy")] == list(range(1, 11))
+    assert [L.enemy_key(e) for e in L.stages_for("hard")][-1] == "enemy_11_hard"
+    assert [L.enemy_key(e) for e in L.stages_for("very_hard")][-1] == "enemy_11_veryhard"
     assert [a["lv"] for a in story_data.ALLIES] == list(range(1, 11))
     ids = {d["id"] for d in story_data.DIFFICULTIES}
     for a in story_data.ALLIES:
         assert len(a["abilities"]) == len(story_data.ABILITY_THRESHOLDS)
         if a["unlock"]:
             assert a["unlock"]["min_difficulty"] in ids
-    for e in story_data.ENEMIES:
+    root = Path(L.__file__).parent / "assets/story"
+    for e in story_data.ENEMIES + [story_data.EXTRA_ENEMY]:
         for g in e["gimmicks"]:
             assert g in story_data.STATUS_EFFECTS
-        assert (Path(L.__file__).parent / "assets/story/enemies" / e["image"]).exists()
+        assert (root / "enemies" / e["image"]).exists()
+        assert (root / "hitmasks" / f"{L.enemy_key(e)}.png").exists()
+        assert len(e["lines"]) == 3
+    for i in story_data.ITEMS:
+        assert (root / "items" / f"{i['id']}.webp").exists() or (root / "items" / f"{i['id']}.png").exists()
+    for eq in story_data.EQUIPMENT:
+        assert any((root / "equipment" / f"{eq['id']}{ext}").exists() for ext in (".webp", ".png"))
+    for key, equip_id in story_data.ULTRA_REWARDS.items():
+        assert L.enemy_by_key(key) and L.get_equipment(equip_id)["rank"] == "ultra"
     for a in story_data.ALLIES:
         for folder in ("allies", "ally_icons"):
             assert (Path(L.__file__).parent / "assets/story" / folder / a["image"]).exists()
@@ -81,7 +97,7 @@ def test_ability_points():
     for _ in range(50):                             # 1ステージずつ50回でちょうど 5.0 になる
         run = L.start_run(p, 1, "easy", {})
         run["cleared"] = 1
-        L.finish_run(p, "lose")
+        L.finish_run(p, "abandon")
     assert L.ability_points(p, 1) == 5.0
     assert len(L.unlocked_abilities(1, 4.99)) == 0 and len(L.unlocked_abilities(1, 5.0)) == 1
     assert L.ability_gauges(7.5) == [1.0, 0.5, 0.0]
@@ -129,17 +145,21 @@ def test_bag_uses_carried_first_and_overflow_goes_home():
     assert run["bag"]["carried"] == {} and run["bag"]["picked"] == {"elixir": 1, "potion": 1}
 
 
-def test_finish_run_item_and_ability_rules():
-    for outcome, carried_back, gained in (("clear", True, True), ("lose", False, True), ("quit", False, False)):
+def test_finish_run_returns_everything_and_adds_ability():
+    for outcome in ("clear", "abandon"):
         p = profile_with_items(potion=5)
         run = L.start_run(p, 1, "hard", {"potion": 5})
         run["bag"]["picked"] = {"elixir": 2}
         run["cleared"] = 3
         summary = L.finish_run(p, outcome)
         assert p["run"] is None
-        assert p["items"]["elixir"] == 2
-        assert p["items"]["potion"] == (5 if carried_back else 0)
-        assert summary["ability_after"] == (0.6 if gained else 0)
+        assert p["items"]["elixir"] == 2 and p["items"]["potion"] == 5
+        assert summary["ability_after"] == 0.6 and summary["lost"] == {}
+
+
+def test_new_profile_has_starter_items():
+    p = L.new_profile()
+    assert p["items"] == {i["id"]: 10 for i in story_data.ITEMS}
 
 
 def test_clear_stage_heals_rolls_and_saves_rewards():
@@ -148,11 +168,12 @@ def test_clear_stage_heals_rolls_and_saves_rewards():
     run["stage"] = 2
     run["hp"] = 1.0
     # 宝箱が出る → 2個 → 1個目アイテム・2個目装備 → マリの抽選に当たる
-    rewards = L.clear_stage(p, FixedRng([0.0, 0.0, 0.9, 0.1], randint=2))
+    rewards = L.clear_stage(p, FixedRng([0.0, 0.0, 0.9, 0.1, 0.5], randint=2))   # 最後はエクストラの抽選（外れ）
     assert run["hp"] == 6.0 and run["stage"] == 3 and run["cleared"] == 1
     assert rewards["items"] == ["potion"] and rewards["equipment"] == ["wood_sword"]
     assert 2 in p["allies"] and rewards["allies"] == [2]
     assert p["equipment"] == [{"uid": 1, "id": "wood_sword"}]
+    assert not run["extra"] and not rewards["extra_next"]
 
 
 def test_unlock_needs_difficulty_and_exact_stage():
@@ -176,13 +197,68 @@ def test_treasure_equipment_ranks_follow_stage_and_difficulty():
     assert seen == {"normal", "rare"}
 
 
-def test_suspend_and_resume():
+def test_checkpoint_restores_hp_and_bag():
+    p = profile_with_items(potion=3)
+    run = L.start_run(p, 1, "easy", {"potion": 3})
+    L.apply_battle(p, {"ally_hp": 0, "used": {"potion": 2}})
+    assert run["hp"] == 0 and L.bag_counts(run["bag"]) == {"potion": 1}
+    L.restore_checkpoint(p)                       # 負けたら、そのステージを始めたときに戻る
+    assert run["hp"] == 10 and L.bag_counts(run["bag"]) == {"potion": 3}
+    L.apply_battle(p, {"ally_hp": 4, "used": {}})
+    L.clear_stage(p, FixedRng([0.9, 0.5]))       # 宝箱なし・エクストラなし
+    assert run["hp"] == 9 and run["checkpoint"]["hp"] == 9   # クリアしたら、次のステージのチェックポイント
+    run["hp"] = 10                                # ステージ間でポーションを使った
+    L.begin_stage(p)                              # 戦闘の前にもう一度残す
+    assert run["checkpoint"]["hp"] == 10
+
+
+def test_extra_stage_flow():
     p = L.new_profile()
-    L.start_run(p, 1, "easy", {})
-    L.suspend_run(p)
-    assert p["run"] is None and p["suspended"]
-    run = L.resume_run(p)
-    assert p["run"] is run and p["suspended"] is None
+    run = L.start_run(p, 1, "easy", {})
+    rewards = L.clear_stage(p, FixedRng([0.9, 0.0]))   # 宝箱なし → エクストラが出る
+    assert rewards["extra_next"] and run["extra"] and run["extra_seen"] and run["stage"] == 2
+    assert L.run_enemy(run)["name"] == "極点の宇宙龍"
+    c = L.battle_config(1, L.EXTRA, "easy", 1)
+    assert c["extra"] and not c["final"] and c["enemy"]["gimmicks"] == ["black_flame", "shadow", "darkness"]
+    rewards = L.clear_stage(p, FixedRng([]))            # 倒した：回復・宝箱・クリア数なし、逆鱗をもらう
+    assert rewards["ultra"] == ["dragon_scale"] and run["cleared"] == 1 and run["stage"] == 2
+    assert not run["extra"] and run["extra_won"]
+    assert L.clear_stage(p, FixedRng([0.9]))["extra_next"] is False   # 1回の挑戦で1度まで（抽選もしない）
+
+
+def test_skip_extra():
+    p = L.new_profile()
+    run = L.start_run(p, 1, "easy", {})
+    run["extra"] = run["extra_seen"] = True
+    L.skip_extra(p)
+    assert not run["extra"] and L.run_enemy(run)["lv"] == 1
+
+
+def test_final_stage_gives_ultra_and_clears():
+    for diff, ultra in (("hard", "origin_robe"), ("very_hard", "silence_blade")):
+        p = L.new_profile()
+        run = L.start_run(p, 1, diff, {})
+        run["stage"], run["cleared"] = 11, 10
+        assert L.battle_config(1, 11, diff, 1)["final"]
+        rewards = L.clear_stage(p, FixedRng([0.9]))
+        assert rewards["ultra"] == [ultra] and rewards["finished"]["outcome"] == "clear"
+        assert rewards["finished"]["cleared"] == 11 and p["run"] is None
+    p = L.new_profile()
+    run = L.start_run(p, 1, "easy", {})
+    run["stage"] = 10
+    assert L.clear_stage(p, FixedRng([0.9]))["finished"]
+
+
+def test_old_profile_migrates():
+    old = {"allies": [1, 2], "items": {"potion": 15}, "run": None,
+           "suspended": {"id": "x", "ally": 1, "difficulty": "easy", "stage": 3, "hp": 5.0, "cleared": 2,
+                         "bag": {"carried": {}, "picked": {"potion": 1}}}}
+    p = L.normalize_profile(old)
+    assert p["run"]["stage"] == 3 and p["run"]["checkpoint"]["hp"] == 5.0 and p["run"]["extra"] is False
+    assert p["items"]["potion"] == 15 and p["items"]["atk_up"] == 10
+    assert "suspended" not in p
+    p["items"]["atk_up"] = 0                      # 一度受け取ったら、もう補わない
+    assert L.normalize_profile(p)["items"]["atk_up"] == 0
 
 
 def test_battle_config_status_numbers():
@@ -190,6 +266,8 @@ def test_battle_config_status_numbers():
     L.add_equipment(p, "fire_bangle")
     L.set_equipment(p, 1, [1])
     c = L.battle_config(1, 10, "easy", 1, profile=p, bag={"carried": {"potion": 2}, "picked": {"potion": 1}})
+    assert c["final"] and c["enemy"]["key"] == "enemy_10" and len(c["enemy"]["lines"]) == 3
+    assert c["status"]["darkness"]["hit_scale"] == 0.77 and c["status"]["shadow"]["evade_rate"] == 0.30
     assert c["enemy"]["gimmicks"] == ["poison", "thunder", "fire"] and c["enemy"]["meteor"]
     assert math.isclose(c["status"]["poison"]["damage"], 10 * 0.05)
     assert math.isclose(c["status"]["fire"]["damage"], 10 * 0.08 * 0.5 * (1 - 1 / 51))

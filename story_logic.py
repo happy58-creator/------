@@ -14,14 +14,20 @@
         "next_uid": 2,
         "equipped": {"1": [1, ...]},          キャラごとに付けている装備の番号（3つまで）
         "items": {"potion": 3, ...},          ホームのアイテム
-        "run": 挑戦 or None,                   進行中の挑戦
-        "suspended": 挑戦 or None,             中断セーブ（1つだけ）
+        "run": 挑戦 or None,                   進行中の挑戦（自動で保存。手動の中断セーブはない）
+        "starter_items": True,                最初のアイテム（全種類10個）を受け取ったか
     }
-    挑戦 = {"id", "ally", "difficulty", "stage"（次に戦うステージ）, "hp", "cleared",
-            "bag": {"carried": {...}, "picked": {...}}}
+    挑戦 = {"id", "ally", "difficulty",
+            "stage"（次に戦うステージ番号）, "extra"（次の戦いがエクストラなら True）,
+            "hp", "bag": {"carried": {...}, "picked": {...}}（いまのHPとかばん）,
+            "checkpoint": {"hp", "bag"}（そのステージを始めたときのHPとかばん。負けたら・やめたらここに戻る）,
+            "cleared"（クリアしたステージ数。エクストラは数えない。やり直しても減らない）,
+            "extra_seen", "extra_won"（エクストラが出たか・倒したか）}
 """
+import copy
 import random
 import secrets
+from pathlib import Path
 
 import story_data
 
@@ -30,8 +36,42 @@ def get_difficulty(difficulty_id):
     return next(d for d in story_data.DIFFICULTIES if d["id"] == difficulty_id)
 
 
-def get_enemy(lv):
-    return next(e for e in story_data.ENEMIES if e["lv"] == lv)
+EXTRA = "EX"   # エクストラステージを表すステージ番号の代わり
+
+
+def stages_for(difficulty_id):
+    """その難易度で戦う敵を、ステージ順に並べた一覧（イージー・ノーマルは10、ハード・ベリーハードは11）"""
+    return [e for e in story_data.ENEMIES if e["difficulties"] is None or difficulty_id in e["difficulties"]]
+
+
+def stage_count(difficulty_id):
+    return len(stages_for(difficulty_id))
+
+
+def stage_enemy(stage_no, difficulty_id):
+    """ステージ番号（1から）と難易度から、その敵を返す。stage_no が EXTRA ならエクストラの敵"""
+    if stage_no == EXTRA:
+        return story_data.EXTRA_ENEMY
+    return stages_for(difficulty_id)[stage_no - 1]
+
+
+def get_enemy(lv, difficulty_id="easy"):
+    """Lv の敵（Lv.11 は難易度で変わるので difficulty_id で選ぶ）"""
+    return next(e for e in stages_for(difficulty_id if lv == 11 else "easy") if e["lv"] == lv)
+
+
+def enemy_key(enemy):
+    """敵を区別する名前（画像ファイル名の拡張子なし。例：enemy_11_hard）"""
+    return Path(enemy["image"]).stem
+
+
+def enemy_by_key(key):
+    return next(e for e in story_data.ENEMIES + [story_data.EXTRA_ENEMY] if enemy_key(e) == key)
+
+
+def run_enemy(run):
+    """挑戦で次に戦う敵"""
+    return stage_enemy(EXTRA if run.get("extra") else run["stage"], run["difficulty"])
 
 
 def get_ally(lv):
@@ -65,9 +105,15 @@ def damage(attack, defense):
     return float(attack) * (1.0 - reduction(defense))
 
 
-def enemy_stats(lv, difficulty_id):
-    """難易度の倍率をかけた敵のステータス"""
-    enemy = get_enemy(lv)
+def enemy_stats(enemy, difficulty_id):
+    """難易度の倍率をかけた敵のステータス。enemy は敵のデータ（Lv の数字でもよい）。
+
+    fixed_stats の敵（エクストラ）は倍率をかけない。
+    """
+    if not isinstance(enemy, dict):
+        enemy = get_enemy(enemy, difficulty_id)
+    if enemy.get("fixed_stats"):
+        return {"hp": float(enemy["hp"]), "atk": float(enemy["atk"]), "def": float(enemy["def"])}
     difficulty = get_difficulty(difficulty_id)
     return {
         "hp": enemy["hp"] * difficulty["enemy_hp_atk"],
@@ -93,17 +139,47 @@ def new_profile():
         "equipment": [],
         "next_uid": 1,
         "equipped": {},
-        "items": {},
+        "items": initial_items(),
         "run": None,
-        "suspended": None,
+        "starter_items": True,
     }
 
 
+def initial_items():
+    """最初にホームに持っているアイテム（全種類 INITIAL_ITEM_COUNT 個ずつ）"""
+    return {item["id"]: story_data.INITIAL_ITEM_COUNT for item in story_data.ITEMS}
+
+
+def normalize_run(run):
+    """古い形の挑戦データに、新しい項目を補う"""
+    if not isinstance(run, dict):
+        return None
+    run.setdefault("extra", False)
+    run.setdefault("extra_seen", False)
+    run.setdefault("extra_won", False)
+    run.setdefault("cleared", 0)
+    if not run.get("checkpoint"):
+        run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"])}
+    return run
+
+
 def normalize_profile(data):
-    """読みこんだデータに足りない項目を補う（古い形のデータでも動くように）"""
+    """読みこんだデータに足りない項目を補う（古い形のデータでも動くように）
+
+    - 前の版の「中断セーブ」（suspended）は、そのまま進行中の挑戦に移す
+    - 最初のアイテムをまだ受け取っていなければ、全種類 INITIAL_ITEM_COUNT 個までふやす
+    """
     profile = new_profile()
     if isinstance(data, dict):
+        profile["starter_items"] = False
         profile.update({k: v for k, v in data.items() if k in profile})
+        if not profile["run"] and data.get("suspended"):
+            profile["run"] = data["suspended"]
+    if not profile["starter_items"]:
+        for item_id, n in initial_items().items():
+            profile["items"][item_id] = max(n, profile["items"].get(item_id, 0))
+        profile["starter_items"] = True
+    profile["run"] = normalize_run(profile["run"])
     if 1 not in profile["allies"]:
         profile["allies"].insert(0, 1)
     return profile
@@ -272,12 +348,45 @@ def start_run(profile, ally_lv, difficulty_id, carried):
         "ally": ally_lv,
         "difficulty": difficulty_id,
         "stage": 1,
+        "extra": False,
         "hp": ally_stats(ally_lv, profile)["hp"],
         "cleared": 0,
         "bag": new_bag(carried),
+        "extra_seen": False,
+        "extra_won": False,
     }
     profile["run"] = run
+    begin_stage(profile)
     return run
+
+
+def begin_stage(profile):
+    """ステージを始めるときのチェックポイント（いまのHPとかばん）を残す"""
+    run = profile["run"]
+    run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"])}
+
+
+def restore_checkpoint(profile):
+    """負けたとき・「やめる」で戻ったとき：そのステージを始めたときのHPとかばんに戻す"""
+    run = profile["run"]
+    run["hp"] = run["checkpoint"]["hp"]
+    run["bag"] = copy.deepcopy(run["checkpoint"]["bag"])
+
+
+def apply_battle(profile, result):
+    """戦闘の結果（使ったアイテムと残りHP）を挑戦に反映する"""
+    run = profile["run"]
+    for item_id, n in (result.get("used") or {}).items():
+        try:
+            take_from_bag(run["bag"], item_id, int(n))
+        except (ValueError, KeyError, TypeError):
+            pass
+    run["hp"] = max(0.0, float(result.get("ally_hp", run["hp"])))
+
+
+def skip_extra(profile):
+    """エクストラを飛ばして、次のステージへ（「にげる」・負けたあとの「先へ進む」）"""
+    profile["run"]["extra"] = False
 
 
 def roll_treasure(stage, difficulty_id, rng=random):
@@ -313,20 +422,36 @@ def roll_unlocks(profile, stage, difficulty_id, rng=random):
 
 
 def clear_stage(profile, rng=random):
-    """ステージをクリアしたときの処理（HP回復・宝箱・仲間入り）。もらった物を返す。
+    """ステージをクリアしたときの処理。もらった物を返す。
 
-    全クリアなら挑戦も終わらせる（返り値の "finished" に結果が入る）。
+    ふつうのステージ：HP回復・宝箱・仲間入り・（Lv.11 なら）超激レア装備。最後のステージなら挑戦も
+    終わらせる（返り値の "finished" に結果が入る）。そうでなければ EXTRA_CHANCE の確率で、次の戦いを
+    エクストラにする（1回の挑戦で1度まで）。
+    エクストラ：超激レア装備をもらう。回復・宝箱・仲間入りはなく、クリア数にも数えない。
     """
     run = profile["run"]
+    rewards = {"stage": run["stage"], "extra": bool(run.get("extra")), "healed": 0, "items": [], "sent_home": [],
+               "equipment": [], "ultra": [], "allies": [], "chests": 0, "finished": None, "extra_next": False}
+    enemy = run_enemy(run)
+    ultra = story_data.ULTRA_REWARDS.get(enemy_key(enemy))
+    if ultra:
+        add_equipment(profile, ultra)
+        rewards["ultra"].append(ultra)
+    if run.get("extra"):
+        run["extra"] = False
+        run["extra_won"] = True
+        rewards["enemy"] = enemy_key(enemy)
+        return rewards
+
     stage = run["stage"]
+    rewards["enemy"] = enemy_key(enemy)
     max_hp = ally_stats(run["ally"], profile)["hp"]
     run["cleared"] += 1
     run["stage"] += 1
     healed_from = run["hp"]
     run["hp"] = min(max_hp, run["hp"] + max_hp * story_data.STAGE_HEAL_RATE)
+    rewards["healed"] = run["hp"] - healed_from
 
-    rewards = {"stage": stage, "healed": run["hp"] - healed_from, "items": [], "sent_home": [], "equipment": [],
-               "allies": [], "chests": 0, "finished": None}
     treasure = roll_treasure(stage, run["difficulty"], rng)
     rewards["chests"] = len(treasure)
     for kind, thing_id in treasure:
@@ -338,26 +463,33 @@ def clear_stage(profile, rng=random):
     for lv in roll_unlocks(profile, stage, run["difficulty"], rng):
         profile["allies"].append(lv)
         rewards["allies"].append(lv)
-    if run["cleared"] >= story_data.STAGE_COUNT:
+    if stage >= stage_count(run["difficulty"]):
         rewards["finished"] = finish_run(profile, "clear")
+    else:
+        if not run["extra_seen"] and rng.random() < story_data.EXTRA_CHANCE:
+            run["extra"] = True
+            run["extra_seen"] = True
+            rewards["extra_next"] = True
+        begin_stage(profile)    # 次のステージのチェックポイント（ステージ間でアイテムを使ったら、戦闘の前にもう一度残す）
     return rewards
 
 
 def finish_run(profile, outcome, run=None):
-    """挑戦を終わらせる。outcome は "clear" / "lose" / "quit"。
+    """挑戦を終わらせる。outcome は "clear"（全クリア）/ "abandon"（「新規にプレイ」で終えた）。
 
-    持ち込んだ残りは全クリアのときだけホームに戻る。拾った残りはいつもホームに入る。
-    アビリティポイントは全クリアと負けのときだけ加える。
+    どちらでも、かばんのアイテム（持ち込んだ分も拾った分も）はすべてホームに戻り、
+    クリアしたステージ数に応じてアビリティポイントを加える。
     """
     run = run or profile["run"]
     bag = run["bag"]
-    returned = dict(bag["picked"])
-    if outcome == "clear":
-        for item_id, n in bag["carried"].items():
+    returned = {}
+    for part in ("carried", "picked"):
+        for item_id, n in bag[part].items():
             returned[item_id] = returned.get(item_id, 0) + n
+    returned = {k: v for k, v in returned.items() if v > 0}
     for item_id, n in returned.items():
         profile["items"][item_id] = profile["items"].get(item_id, 0) + n
-    gained = ability_gain(run["cleared"], run["difficulty"]) if outcome in ("clear", "lose") else 0
+    gained = ability_gain(run["cleared"], run["difficulty"])
     key = str(run["ally"])
     before = float(profile["ability"].get(key, 0))
     # 0.1 を足し続けて 4.9999… になり、5 に届かないことがないよう、小数第2位で丸める
@@ -366,47 +498,34 @@ def finish_run(profile, outcome, run=None):
         profile["run"] = None
     return {
         "outcome": outcome, "ally": run["ally"], "difficulty": run["difficulty"], "cleared": run["cleared"],
-        "returned": returned, "lost": {} if outcome == "clear" else dict(bag["carried"]),
+        "extra_won": bool(run.get("extra_won")), "returned": returned, "lost": {},
         "ability_before": before, "ability_after": profile["ability"][key],
         "new_abilities": len(unlocked_abilities(run["ally"], profile["ability"][key])) - len(unlocked_abilities(run["ally"], before)),
     }
 
 
-def suspend_run(profile):
-    """中断セーブ（ステージ間の画面でだけ呼ぶ）"""
-    profile["suspended"] = profile["run"]
-    profile["run"] = None
-
-
-def resume_run(profile):
-    """中断セーブから再開する。セーブは消える"""
-    profile["run"] = profile["suspended"]
-    profile["suspended"] = None
-    return profile["run"]
-
-
-def drop_suspended(profile):
-    """中断セーブを消して、その挑戦を「やめた」扱いで終わらせる"""
-    run = profile["suspended"]
-    profile["suspended"] = None
-    return finish_run(profile, "quit", run=run) if run else None
+def abandon_run(profile):
+    """「新規にプレイ」：いまの挑戦を負け扱いで終わらせる"""
+    return finish_run(profile, "abandon")
 
 
 # ---------------------------------------------------------------------------
 # 戦闘コンポーネントに渡す設定
 # ---------------------------------------------------------------------------
-def battle_config(round_id, enemy_lv, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None):
+def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None):
     """戦闘コンポーネントに渡す設定（JSON にそのまま変換できる dict）
 
+    stage_no はステージ番号（1から）か EXTRA。
     ally_hp を渡すと、そのHPから戦闘を始める（ステージをまたいだHPの引き継ぎ用）。
     profile を渡すと、アビリティと装備の補正を入れる。bag を渡すと、戦闘中に使えるアイテムを入れる。
     """
-    enemy = enemy_stats(enemy_lv, difficulty_id)
+    enemy_data = stage_enemy(stage_no, difficulty_id)
+    enemy = enemy_stats(enemy_data, difficulty_id)
     ally = ally_stats(ally_lv, profile)
     max_hp = ally["hp"]
     resist = set(ally["resist"])
     effects = story_data.STATUS_EFFECTS
-    gimmicks = get_enemy(enemy_lv)["gimmicks"]
+    gimmicks = enemy_data["gimmicks"]
 
     def rate(status_id):
         return story_data.RESIST_RATE if status_id in resist else 1.0
@@ -426,20 +545,35 @@ def battle_config(round_id, enemy_lv, difficulty_id, ally_lv, ally_hp=None, prof
     thunder = effects["thunder"]
     status["thunder"] = {"name": thunder["name"], "icon": thunder["icon"], "turns_min": thunder["turns_min"],
                          "turns_max": thunder["turns_max"], "halve": "thunder" in resist}
+    darkness, shadow = effects["darkness"], effects["shadow"]
+    status["darkness"] = {"name": darkness["name"], "icon": darkness["icon"], "turns": darkness["turns"],
+                          "hit_scale": darkness["hit_scale"]}
+    status["shadow"] = {"name": shadow["name"], "icon": shadow["icon"], "turns": shadow["turns"],
+                        "evade_rate": shadow["evade_rate"]}
 
     counts = bag_counts(bag) if bag else {}
     items = [
         {"id": i["id"], "name": i["name"], "icon": i["icon"], "count": counts.get(i["id"], 0),
-         "heal": max_hp * i["heal_rate"], "cure": i["cure"], "guard": i["guard"]}
+         "heal": max_hp * i["heal_rate"], "cure": i["cure"], "guard": i["guard"],
+         "atk_turns": i["atk_turns"] if i["atk_bonus"] else 0}
         for i in story_data.ITEMS
     ]
+    atk_up = max(i["atk_bonus"] for i in story_data.ITEMS)
+    extra = stage_no == EXTRA
+    count = stage_count(difficulty_id)
     return {
         "round": round_id,
-        "stage": enemy_lv,
-        "stage_count": story_data.STAGE_COUNT,
+        "stage": stage_no,
+        "stage_count": count,
+        "extra": extra,
+        "final": not extra and stage_no == count,
         "enemy": {
-            "lv": enemy_lv,
-            "name": get_enemy(enemy_lv)["name"],
+            "key": enemy_key(enemy_data),
+            "lv": enemy_data["lv"],
+            "name": enemy_data["name"],
+            "title": enemy_data.get("title", ""),
+            "lines": enemy_data["lines"],
+            "effect": enemy_data["effect"],
             "max_hp": enemy["hp"],
             "atk": enemy["atk"],
             "def": enemy["def"],
@@ -455,13 +589,14 @@ def battle_config(round_id, enemy_lv, difficulty_id, ally_lv, ally_hp=None, prof
             "hp": max_hp if ally_hp is None else float(ally_hp),
             "atk": ally["atk"],
             "def": ally["def"],
-            "tap_damage": damage(ally["atk"], enemy["def"]),     # 1タップで敵に与えるダメージ
+            "tap_damage": damage(ally["atk"], enemy["def"]),             # 1タップで敵に与えるダメージ
+            "tap_damage_up": damage(ally["atk"] + atk_up, enemy["def"]), # 攻撃力アップ中
         },
         "status": status,
         "status_chance": story_data.STATUS_CHANCE,
         "meteor": {"trigger_rate": story_data.METEOR_TRIGGER_HP_RATE,
                    "current_hp_rate": effects["meteor"]["current_hp_rate"]},
         "items": items,
-        "turn_ms": int(story_data.TURN_SECONDS * 1000),
-        "countdown": 3,
+        "attack_ms": int(story_data.ATTACK_SECONDS * 1000),
+        "pause_ms": int(story_data.TURN_PAUSE_SECONDS * 1000),
     }

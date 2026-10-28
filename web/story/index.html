@@ -2,121 +2,254 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>story battle</title>
 <style>
-  :root { --gold:#e9d6a6; --ink:#f4ecda; --muted:#b9ab90; --enemy:#d8453c; --ally:#46c37b; --warn:#ffb347; }
-  html, body { margin:0; background:transparent; color:var(--ink);
-    font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Noto Serif CJK JP",serif; }
+  :root { --gold:#e9d6a6; --ink:#f4ecda; --muted:#bfb196; --enemy:#e2453b; --ally:#46c37b; --panel:rgba(12,10,16,.82); }
+  html, body { margin:0; height:100%; overflow:hidden; background:#07060a; color:var(--ink);
+    font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Noto Serif CJK JP",serif;
+    -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
   * { box-sizing:border-box; }
-  #app { max-width:560px; margin:0 auto; padding:4px 4px 8px; touch-action:manipulation;
-    background:#18141b; border-radius:16px; }
-  .stage-no { text-align:center; font-size:13px; color:var(--muted); letter-spacing:.1em; padding-top:4px; }
-  .bar-row { display:flex; align-items:center; gap:8px; margin:6px 2px; }
-  .label { font-weight:700; font-size:15px; white-space:nowrap; text-shadow:0 1px 2px #000; }
-  .hpbar { position:relative; flex:1; height:16px; border-radius:9px; background:#241d22;
-    border:1px solid rgba(233,214,166,.35); overflow:hidden; }
-  .hpbar .lag { position:absolute; inset:0 auto 0 0; background:#f0d080; transition:width .6s ease .15s; }
-  .hpbar .fill { position:absolute; inset:0 auto 0 0; transition:width .08s linear; }
+  #app { position:fixed; inset:0; touch-action:manipulation; }
+
+  /* 画面いっぱいの背景＋敵（story_assets.stage_html の中身） */
+  #stage { position:absolute; inset:0; }
+  #stage .st-scene { width:100%; height:100%; aspect-ratio:auto; border-radius:0; box-shadow:none; }
+  #stage .st-enemy { height:min(74%, 120vw); bottom:19%; }
+  #stage .st-enemy.floating { height:min(78%, 125vw); bottom:16%; }
+  #stage .st-shadow { bottom:17.5%; }
+  #stage .st-photo { top:9%; bottom:17%; left:0; width:100%; height:74%; }
+  #stage.shake { animation:shake .38s linear; }
+  @keyframes shake { 0%,100%{transform:translate(0,0)} 15%{transform:translate(-9px,4px)} 30%{transform:translate(8px,-5px)} 45%{transform:translate(-6px,3px)} 60%{transform:translate(5px,-2px)} 80%{transform:translate(-2px,1px)} }
+  .st-target.hit { filter:brightness(1.6) saturate(1.2); }
+  .st-target.struck { animation:struck .45s ease-out; }
+  @keyframes struck { 0%{filter:brightness(3) saturate(0)} 40%{filter:brightness(1.6)} 100%{filter:none} }
+
+  /* 上下の表示 */
+  .hud { position:absolute; left:0; right:0; z-index:40; padding:10px max(12px, env(safe-area-inset-left)) 10px; pointer-events:none; }
+  .hud.top { top:0; padding-top:max(10px, env(safe-area-inset-top));
+    background:linear-gradient(to bottom, rgba(5,4,8,.88), rgba(5,4,8,.55) 70%, transparent); }
+  .hud.bottom { bottom:0; padding-bottom:max(12px, env(safe-area-inset-bottom));
+    background:linear-gradient(to top, rgba(5,4,8,.94), rgba(5,4,8,.75) 70%, transparent); }
+  .row { display:flex; align-items:center; gap:10px; max-width:720px; margin:0 auto; }
+  .ename { font-weight:700; font-size:clamp(15px,4.2vw,20px); text-shadow:0 2px 4px #000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .stageno { margin-left:auto; font-size:13px; color:var(--muted); white-space:nowrap; }
+  .hpbar { position:relative; flex:1; height:14px; border-radius:8px; background:#221b21; border:1px solid rgba(233,214,166,.35); overflow:hidden; }
+  .hpbar .lag { position:absolute; inset:0 auto 0 0; background:#f0d080; transition:width .7s ease .25s; }
+  .hpbar .fill { position:absolute; inset:0 auto 0 0; transition:width .35s ease-out; }
   #enemyBar .fill { background:linear-gradient(#ef6a5f,#b3271f); }
   #allyBar .fill  { background:linear-gradient(#6fe39d,#24894f); }
   #allyBar.low .fill { background:linear-gradient(#ffb070,#d1541f); }
-  .num { font:700 14px/1 ui-monospace,Menlo,monospace; min-width:84px; text-align:right; text-shadow:0 1px 2px #000; }
-  .charge { height:5px; margin:0 2px 6px; border-radius:3px; background:#2a2026; overflow:hidden; }
-  .charge > div { height:100%; width:0; background:linear-gradient(90deg,#7a2a26,#ff5a4a); }
-  .charge.hot > div { box-shadow:0 0 8px #ff5a4a; }
+  .num { font:700 14px/1 ui-monospace,Menlo,monospace; min-width:92px; text-align:right; text-shadow:0 1px 3px #000; }
+  .icon { width:52px; height:52px; flex:none; border-radius:50%; object-fit:cover; border:2px solid var(--gold); box-shadow:0 2px 8px rgba(0,0,0,.7); background:#1a1520; }
+  .icon.low { border-color:#ff6b4a; box-shadow:0 0 12px rgba(255,90,60,.8); }
+  .icon.hurt { animation:hurt .5s ease-out; }
+  @keyframes hurt { 0%{transform:translateX(0);filter:none} 15%{transform:translateX(-6px);filter:sepia(1) saturate(7) hue-rotate(-35deg) brightness(.85)} 35%{transform:translateX(6px)} 55%{transform:translateX(-3px)} 100%{transform:none;filter:none} }
+  .icon.down { filter:grayscale(1) brightness(.5); }
+  .aname { font-weight:700; font-size:16px; text-shadow:0 2px 4px #000; }
+  .badges { display:flex; flex-wrap:wrap; gap:8px; min-height:40px; margin:8px auto 0; max-width:720px; padding-left:62px; align-items:center; }
+  /* 状態アイコン（毒・雷などの状態異常と、攻撃力アップ・防御アップ） */
+  .st-icon { position:relative; width:38px; height:38px; flex:none; }
+  .st-icon img { width:100%; height:100%; border-radius:50%; object-fit:cover; box-shadow:0 2px 8px rgba(0,0,0,.7); }
+  .st-icon.buff img { border-radius:10px; border:2px solid rgba(255,220,140,.8); }
+  .st-icon.bad img { border:2px solid rgba(255,90,80,.85); }
+  .st-icon .t { position:absolute; right:-5px; bottom:-5px; min-width:19px; height:19px; padding:0 4px; border-radius:10px;
+    background:#120d16; border:1px solid rgba(255,255,255,.55); font:800 12px/17px ui-sans-serif,system-ui,sans-serif; color:#fff; text-align:center; }
+  .st-icon.new { animation:stIn .5s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes stIn { from{transform:scale(2.2);opacity:0} to{transform:scale(1);opacity:1} }
+  .badge { font:600 12px/1 sans-serif; padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25); }
+  .badge.atk { color:#ffcf8a; border-color:#ffb347; } .badge.guard { color:#9fd0ff; border-color:#6fb2ff; }
+  .buttons { display:flex; gap:10px; max-width:720px; margin:10px auto 0; pointer-events:auto; }
+  .btn { flex:1; min-height:58px; border-radius:14px; border:1px solid rgba(233,214,166,.6); color:#1b120a; font-weight:800; font-size:19px; line-height:1;
+    font-family:inherit; letter-spacing:.06em; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.4); }
+  .btn.attack { background:linear-gradient(#ffd98a,#e3a33f); }
+  .btn.item { background:linear-gradient(#cfe6ff,#7aa9e0); flex:.7; }
+  .btn:disabled { filter:grayscale(.8) brightness(.55); cursor:default; }
+  .btn:not(:disabled):active { transform:translateY(2px); }
+  #quit { position:absolute; z-index:60; top:max(8px, env(safe-area-inset-top)); right:10px; pointer-events:auto;
+    font:600 12px/1 sans-serif; color:var(--muted); background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.2); border-radius:999px; padding:7px 11px; cursor:pointer; }
+  .hud.top .row { padding-right:64px; }
 
-  .icon { width:44px; height:44px; border-radius:50%; object-fit:cover; flex:none;
-    border:2px solid var(--gold); box-shadow:0 2px 6px rgba(0,0,0,.6); }
-  .icon.hurt { animation:hurt .4s linear; }
-  @keyframes hurt { 0%,100%{transform:translate(0,0);filter:none} 20%{transform:translate(-4px,1px);filter:sepia(1) saturate(6) hue-rotate(-30deg)}
-    50%{transform:translate(4px,-1px);filter:sepia(1) saturate(6) hue-rotate(-30deg)} 80%{transform:translate(-2px,0)} }
-  .ally-side { flex:1; min-width:0; }
-  .ally-side .bar-row { margin:0; }
+  /* 連打中 */
+  #tapzone { position:absolute; inset:0; z-index:30; display:none; }
+  #tapzone.on { display:block; }
+  #timer { position:absolute; z-index:45; left:50%; top:calc(max(10px, env(safe-area-inset-top)) + 64px); transform:translateX(-50%);
+    width:min(70vw,420px); height:10px; border-radius:6px; background:rgba(0,0,0,.5); overflow:hidden; display:none; border:1px solid rgba(255,255,255,.3); }
+  #timer > div { height:100%; width:100%; background:linear-gradient(90deg,#ffe28a,#ff8a3a); }
+  #combo { position:absolute; z-index:45; right:6%; top:32%; text-align:right; display:none; pointer-events:none;
+    text-shadow:0 3px 10px #000, 0 0 2px #000; }
+  #combo .c { font:900 clamp(40px,12vw,84px)/1 ui-sans-serif,system-ui,sans-serif; color:#fff2c8; }
+  #combo .d { font:800 clamp(16px,4.5vw,24px)/1.3 ui-sans-serif,system-ui,sans-serif; color:#ffcf6a; }
+  .spark { position:absolute; z-index:44; width:46px; height:46px; margin:-23px 0 0 -23px; pointer-events:none; border-radius:50%;
+    background:radial-gradient(circle, #fff 0 18%, rgba(255,230,150,.9) 30%, rgba(255,160,60,0) 70%); animation:spark .35s ease-out forwards; }
+  .spark.miss { background:radial-gradient(circle, rgba(255,255,255,.5) 0 12%, transparent 60%); }
+  @keyframes spark { from{transform:scale(.4);opacity:1} to{transform:scale(1.6);opacity:0} }
 
-  #statusRow { display:flex; flex-wrap:wrap; gap:6px; min-height:24px; margin:6px 2px 0; }
-  .chip { display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:99px; font-size:13px;
-    background:#2e2530; border:1px solid rgba(233,214,166,.25); }
-  .chip.bad { background:#3a1f22; border-color:#a8433b; }
-  .chip.good { background:#1d3326; border-color:#3f9a64; }
-  .pips { display:inline-flex; gap:2px; }
-  .pips i { width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.9; }
+  /* 大きな文字・吹き出し・数字 */
+  #banner { position:absolute; inset:0; z-index:50; display:none; align-items:center; justify-content:center; pointer-events:none; flex-direction:column; }
+  #banner .t { font-weight:900; font-size:clamp(44px,14vw,110px); line-height:1; font-family:inherit; color:#fff0c4; letter-spacing:.06em;
+    text-shadow:0 0 18px rgba(255,180,60,.8), 0 5px 0 #6b3a00, 0 10px 30px #000; animation:bannerIn .45s cubic-bezier(.2,1.6,.4,1); }
+  #banner .s { margin-top:12px; font-size:18px; text-shadow:0 2px 8px #000; }
+  #banner.win .t { color:#ffe28a; } #banner.lose .t { color:#ff8075; text-shadow:0 0 18px rgba(255,60,40,.7), 0 5px 0 #4a0a05, 0 10px 30px #000; }
+  @keyframes bannerIn { from{transform:scale(2.2);opacity:0} to{transform:scale(1);opacity:1} }
+  #bubble { position:absolute; z-index:48; left:50%; top:calc(max(10px, env(safe-area-inset-top)) + 70px); transform:translateX(-50%);
+    width:max-content; max-width:min(86vw,520px); padding:12px 18px; border-radius:16px; background:rgba(14,10,18,.9); border:1px solid var(--bubble,#e9d6a6);
+    box-shadow:0 0 18px var(--bubble,#e9d6a6), 0 6px 20px rgba(0,0,0,.6); font-size:clamp(16px,4.6vw,22px); font-weight:700; display:none; text-align:center; }
+  #bubble::after { content:""; position:absolute; left:50%; bottom:-9px; width:16px; height:16px; transform:translateX(-50%) rotate(45deg);
+    background:rgba(14,10,18,.9); border-right:1px solid var(--bubble,#e9d6a6); border-bottom:1px solid var(--bubble,#e9d6a6); }
+  .pop { position:absolute; z-index:55; pointer-events:none; transform:translate(-50%,-50%); font:900 26px/1 ui-sans-serif,system-ui,sans-serif;
+    color:#fff6d8; text-shadow:0 0 6px #000, 0 3px 0 #7a4a00; animation:pop 1s ease-out forwards; white-space:nowrap; }
+  .pop.big { font-size:clamp(48px,15vw,104px); color:#fff3c0; text-shadow:0 0 20px rgba(255,170,40,.9), 0 6px 0 #7a3a00, 0 12px 30px #000; animation:popBig 1.3s ease-out forwards; }
+  .pop.hurt { color:#ff6b5b; font-size:34px; text-shadow:0 0 8px #000, 0 3px 0 #4a0000; }
+  .pop.heal { color:#7dffae; font-size:30px; text-shadow:0 0 8px #000, 0 3px 0 #004a20; }
+  @keyframes pop { 0%{opacity:0;transform:translate(-50%,-30%) scale(.6)} 15%{opacity:1;transform:translate(-50%,-60%) scale(1.2)} 100%{opacity:0;transform:translate(-50%,-170%) scale(1)} }
+  @keyframes popBig { 0%{opacity:0;transform:translate(-50%,-50%) scale(2.4)} 18%{opacity:1;transform:translate(-50%,-50%) scale(1)} 70%{opacity:1;transform:translate(-50%,-62%) scale(1)} 100%{opacity:0;transform:translate(-50%,-90%) scale(.9)} }
 
-  #items { display:flex; flex-wrap:wrap; gap:6px; margin:8px 2px 0; }
-  #items button { flex:1 1 30%; min-width:92px; min-height:44px; border-radius:10px; border:1px solid rgba(233,214,166,.35);
-    background:#2b2330; color:var(--ink); font:700 13px/1.2 inherit; cursor:pointer; padding:4px 6px; }
-  #items button:disabled { opacity:.35; cursor:default; }
-  #items button:not(:disabled):active { transform:scale(.97); }
-  #items .cnt { display:block; font-size:11px; color:var(--muted); font-weight:400; }
-
-  #stage { position:relative; }
-  #stage .st-target { cursor:crosshair; }
-  #stage.shake { animation:shake .32s linear; }
-  @keyframes shake { 0%,100%{transform:translate(0,0)} 20%{transform:translate(-6px,3px)} 40%{transform:translate(5px,-4px)} 60%{transform:translate(-4px,2px)} 80%{transform:translate(3px,-1px)} }
-  .st-enemy.hit { filter:brightness(1.7) saturate(1.2); }
-  .st-photo.hit { filter:brightness(1.18); }
-  .flash { position:absolute; inset:0; border-radius:14px; pointer-events:none; z-index:20;
-    background:radial-gradient(ellipse at center, transparent 40%, rgba(220,30,20,.55) 100%); opacity:0; }
-  .flash.on { animation:flash .45s ease-out; }
-  .flash.meteor { background:radial-gradient(ellipse at center, rgba(255,160,40,.35) 10%, rgba(120,20,0,.75) 100%); }
+  /* エフェクトの層 */
+  #fx { position:absolute; inset:0; z-index:35; pointer-events:none; overflow:hidden; }
+  .fx { position:absolute; pointer-events:none; }
+  .flash { inset:0; animation:flash .5s ease-out forwards; }
   @keyframes flash { from{opacity:1} to{opacity:0} }
-  .stun { position:absolute; inset:0; z-index:19; border-radius:14px; pointer-events:none; display:none;
-    background:rgba(255,230,80,.12); box-shadow:inset 0 0 40px rgba(255,230,80,.55); }
-  .stun.on { display:block; animation:stun .25s steps(2) infinite; }
-  @keyframes stun { 50% { box-shadow:inset 0 0 24px rgba(255,255,160,.85); } }
-  .banner { position:absolute; left:50%; top:10px; transform:translateX(-50%); z-index:22; pointer-events:none;
-    padding:6px 14px; border-radius:99px; font-weight:900; font-size:16px; white-space:nowrap; display:none;
-    background:rgba(60,10,0,.85); color:#ffb070; border:1px solid #ff7a3a; text-shadow:0 1px 2px #000; }
-  .banner.on { display:block; animation:pulse .9s ease-in-out infinite; }
-  @keyframes pulse { 50% { box-shadow:0 0 18px #ff7a3a; } }
-  .pop { position:absolute; z-index:21; pointer-events:none; font:800 22px/1 ui-sans-serif,system-ui,sans-serif;
-    color:#fff6d8; text-shadow:0 0 4px #000,0 2px 0 #7a4a00; transform:translate(-50%,-50%);
-    animation:pop .7s ease-out forwards; }
-  .pop.player { color:#ff6b5b; font-size:28px; text-shadow:0 0 6px #000; }
-  .pop.dot { color:#d48cff; font-size:22px; }
-  .pop.heal { color:#7dffb0; font-size:26px; }
-  .pop.info { color:#ffe28a; font-size:20px; white-space:nowrap; }
-  @keyframes pop { 0%{opacity:0;transform:translate(-50%,-30%) scale(.7)} 15%{opacity:1;transform:translate(-50%,-60%) scale(1.15)} 100%{opacity:0;transform:translate(-50%,-160%) scale(1)} }
-  .overlay { position:absolute; inset:0; z-index:30; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    border-radius:14px; pointer-events:none; text-align:center; }
-  .overlay .big { font-size:min(26vw,120px); font-weight:900; color:var(--gold); text-shadow:0 4px 18px #000, 0 0 2px #000; }
-  .overlay .msg { font-size:min(9vw,40px); font-weight:900; letter-spacing:.08em; text-shadow:0 4px 18px #000, 0 0 2px #000; }
-  .overlay.dim { background:rgba(0,0,0,.45); }
-  .overlay.win .msg { color:#ffe28a; }
-  .overlay.lose .msg { color:#ff7a6e; }
-  .overlay .sub { margin-top:8px; font-size:16px; color:var(--ink); text-shadow:0 2px 6px #000; }
-  .footer { display:flex; justify-content:space-between; align-items:center; margin:8px 4px 0; font-size:13px; color:var(--muted); }
-  #quit { border:1px solid rgba(233,214,166,.3); background:transparent; color:var(--muted); border-radius:8px;
-    padding:6px 10px; font:700 12px inherit; cursor:pointer; }
-  #quit.armed { background:#7a2620; color:#fff; border-color:#ff7a6e; }
-  .hint { text-align:center; font-size:13px; color:var(--muted); margin-top:4px; min-height:1em; }
+  .slash { left:50%; top:45%; width:150vmax; height:10px; margin:-5px 0 0 -75vmax; border-radius:50%;
+    background:linear-gradient(90deg, transparent, var(--c) 30%, #fff 50%, var(--c) 70%, transparent);
+    box-shadow:0 0 18px var(--c), 0 0 40px var(--c); transform-origin:center; animation:slash .42s ease-out forwards; }
+  @keyframes slash { 0%{transform:rotate(var(--r)) translate(var(--o)) scaleX(0);opacity:1} 45%{transform:rotate(var(--r)) translate(var(--o)) scaleX(1);opacity:1} 100%{transform:rotate(var(--r)) translate(var(--o)) scaleX(1.05);opacity:0} }
+  .ring { left:50%; top:45%; width:20px; height:20px; margin:-10px 0 0 -10px; border-radius:50%; border:6px solid var(--c);
+    box-shadow:0 0 30px var(--c), inset 0 0 30px var(--c); animation:ring .7s ease-out forwards; }
+  @keyframes ring { from{transform:scale(.2);opacity:1} to{transform:scale(var(--s,40));opacity:0} }
+  .burst { left:50%; top:45%; width:60vmin; height:60vmin; margin:-30vmin 0 0 -30vmin; border-radius:50%;
+    background:radial-gradient(circle, #fff 0 8%, var(--c) 22%, transparent 62%); animation:burst .6s ease-out forwards; mix-blend-mode:screen; }
+  @keyframes burst { from{transform:scale(.2);opacity:1} to{transform:scale(1.8);opacity:0} }
+  .particle { left:50%; top:45%; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50%; background:var(--c); box-shadow:0 0 10px var(--c);
+    animation:particle .9s ease-out forwards; }
+  @keyframes particle { from{transform:translate(0,0) scale(1);opacity:1} to{transform:translate(var(--dx),var(--dy)) scale(.3);opacity:0} }
+  .mist { top:20%; height:60%; width:70vw; left:-70vw; border-radius:50%; filter:blur(18px);
+    background:radial-gradient(ellipse, var(--c), transparent 70%); animation:mist .8s ease-in-out forwards; opacity:.85; }
+  @keyframes mist { to{transform:translateX(170vw)} }
+  .flame { bottom:-10%; width:30vw; height:60vh; border-radius:50% 50% 40% 40%; filter:blur(10px); mix-blend-mode:screen;
+    background:radial-gradient(ellipse at 50% 80%, #fff3b0 0 10%, var(--c) 35%, rgba(200,40,0,.6) 60%, transparent 75%); animation:flame .9s ease-out forwards; }
+  @keyframes flame { 0%{transform:translateY(40%) scaleY(.4);opacity:0} 30%{opacity:1} 100%{transform:translateY(-30%) scaleY(1.2);opacity:0} }
+  .svgfx { inset:0; width:100%; height:100%; }
+  .bolt { fill:none; stroke:#fff; stroke-width:5; filter:drop-shadow(0 0 10px var(--c)) drop-shadow(0 0 22px var(--c)); animation:bolt .55s steps(1) forwards; }
+  @keyframes bolt { 0%{opacity:1} 20%{opacity:0} 35%{opacity:1} 60%{opacity:.4} 100%{opacity:0} }
+  .whip { fill:none; stroke:var(--c); stroke-width:7; stroke-linecap:round; filter:drop-shadow(0 0 10px var(--c));
+    stroke-dasharray:1600; stroke-dashoffset:1600; animation:whip .5s ease-in forwards; }
+  @keyframes whip { 70%{stroke-dashoffset:0;opacity:1} 100%{stroke-dashoffset:0;opacity:0} }
+  .implode { left:50%; top:45%; width:240vmax; height:240vmax; margin:-120vmax 0 0 -120vmax; border-radius:50%;
+    background:radial-gradient(circle, transparent 0 8%, rgba(0,0,0,.92) 30%); animation:implode .9s ease-in forwards; }
+  @keyframes implode { 0%{transform:scale(1);opacity:0} 40%{opacity:1} 100%{transform:scale(.12);opacity:0} }
+  .rays { left:50%; top:45%; width:180vmax; height:180vmax; margin:-90vmax 0 0 -90vmax; border-radius:50%; mix-blend-mode:screen;
+    background:repeating-conic-gradient(var(--c) 0 4deg, transparent 4deg 18deg);
+    -webkit-mask:radial-gradient(circle, #000 0 10%, transparent 60%); mask:radial-gradient(circle, #000 0 10%, transparent 60%);
+    animation:rays .9s ease-out forwards; }
+  @keyframes rays { from{transform:rotate(0) scale(.3);opacity:1} to{transform:rotate(40deg) scale(1.2);opacity:0} }
+  .dim { inset:0; background:#000; animation:dim 1.1s ease-in-out forwards; }
+  @keyframes dim { 0%{opacity:0} 35%{opacity:.92} 70%{opacity:.92} 100%{opacity:0} }
+  .vignette { inset:0; background:radial-gradient(ellipse at center, transparent 35%, var(--c) 100%); animation:flash .6s ease-out forwards; }
+
+  /* アイテムの一覧 */
+  #sheet { position:absolute; z-index:70; left:0; right:0; bottom:0; transform:translateY(105%); transition:transform .25s ease-out;
+    background:rgba(16,12,20,.97); border-top:1px solid rgba(233,214,166,.4); border-radius:18px 18px 0 0;
+    padding:14px max(14px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-bottom)); box-shadow:0 -10px 30px rgba(0,0,0,.6); }
+  #sheet.open { transform:translateY(0); }
+  #sheet h3 { margin:0 0 10px; font-size:17px; display:flex; justify-content:space-between; align-items:center; max-width:720px; margin-inline:auto; }
+  #sheet h3 button { font:600 13px/1 sans-serif; padding:8px 12px; border-radius:999px; background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,.25); cursor:pointer; }
+  .items { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; max-width:720px; margin:0 auto; }
+  .itembtn img { float:left; width:44px; height:44px; border-radius:10px; margin:0 10px 0 0; object-fit:cover; }
+  .itembtn { text-align:left; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.18);
+    color:var(--ink); font-family:inherit; cursor:pointer; }
+  .itembtn b { display:block; font-size:15px; } .itembtn small { color:var(--muted); font-size:12px; }
+  .itembtn .n { float:right; font:700 14px/1.4 ui-monospace,monospace; color:#ffe2a0; }
+  .itembtn:disabled { opacity:.35; cursor:default; }
+  @media (max-width:520px) {
+    .items { grid-template-columns:1fr; gap:6px; }
+    .itembtn { padding:8px 10px; }
+    .itembtn img { width:38px; height:38px; }
+  }
+  #banner.long .t { font-size:clamp(34px,10vw,90px); white-space:nowrap; }
+  .note { max-width:720px; margin:8px auto 0; color:var(--muted); font-size:12px; }
+
+  /* 状態異常の演出 */
+  #dark { position:absolute; inset:0; z-index:32; pointer-events:none; display:none;
+    background:radial-gradient(ellipse 60% 55% at 50% 45%, rgba(0,0,0,.35), rgba(0,0,0,.88) 100%); }
+  #dark.on { display:block; animation:darkIn .6s ease-out; }
+  @keyframes darkIn { from{opacity:0} to{opacity:1} }
+  #stun { position:absolute; inset:0; z-index:33; pointer-events:none; display:none;
+    box-shadow:inset 0 0 60px rgba(255,230,80,.55); background:rgba(255,230,80,.06); }
+  #stun.on { display:block; animation:stun .3s steps(2) infinite; }
+  @keyframes stun { 50% { box-shadow:inset 0 0 34px rgba(255,255,160,.85); } }
+  #warn { position:absolute; z-index:46; left:50%; transform:translateX(-50%); top:calc(max(10px, env(safe-area-inset-top)) + 84px);
+    padding:7px 14px; border-radius:999px; font-weight:800; font-size:15px; white-space:nowrap; display:none; pointer-events:none;
+    background:rgba(60,10,0,.88); color:#ffb070; border:1px solid #ff7a3a; text-shadow:0 1px 2px #000; }
+  #warn.on { display:block; animation:warn .9s ease-in-out infinite; }
+  @keyframes warn { 50% { box-shadow:0 0 18px #ff7a3a; } }
+  .btn.end { background:linear-gradient(#e6d9ff,#9d86d6); display:none; }
+  .btn.end.on { display:block; }
+  .pop.info { color:#ffe28a; font-size:24px; }
+  .pop.dot { color:#d48cff; font-size:28px; }
+
+  /* やめる確認 */
+  #confirm { position:absolute; inset:0; z-index:80; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); }
+  #confirm > div { width:min(88vw,380px); background:#161119; border:1px solid rgba(233,214,166,.4); border-radius:16px; padding:18px; text-align:center; }
+  #confirm p { margin:0 0 14px; line-height:1.6; }
+  #confirm .buttons { margin:0; }
+  #confirm .btn { min-height:46px; font-size:16px; }
+  .btn.ghost { background:#2a2230; color:var(--ink); }
 </style>
 <style id="sceneCss"></style>
 </head>
 <body>
 <div id="app">
-  <div class="stage-no" id="stageNo"></div>
-  <div class="bar-row">
-    <span class="label" id="enemyName"></span>
-    <div class="hpbar" id="enemyBar"><div class="lag"></div><div class="fill"></div></div>
-    <span class="num" id="enemyNum"></span>
-  </div>
-  <div class="charge" id="charge" title="敵の攻撃までの時間"><div></div></div>
   <div id="stage"></div>
-  <div class="bar-row" style="margin-top:10px">
-    <img class="icon" id="allyIcon" alt="">
-    <div class="ally-side">
-      <div class="label" id="allyName" style="margin-bottom:4px"></div>
-      <div class="bar-row">
-        <div class="hpbar" id="allyBar"><div class="lag"></div><div class="fill"></div></div>
-        <span class="num" id="allyNum"></span>
-      </div>
+  <div id="fx"></div>
+  <div id="dark"></div>
+  <div id="stun"></div>
+  <div id="tapzone"></div>
+  <div id="warn"></div>
+  <div id="timer"><div></div></div>
+  <div id="combo"><div class="c">0</div><div class="d"></div></div>
+  <div id="bubble"></div>
+  <div id="banner"><div class="t"></div><div class="s"></div></div>
+
+  <div class="hud top">
+    <div class="row"><span class="ename" id="enemyName"></span><span class="stageno" id="stageNo"></span></div>
+    <div class="row" style="margin-top:6px">
+      <div class="hpbar" id="enemyBar"><div class="lag"></div><div class="fill"></div></div>
+      <span class="num" id="enemyNum"></span>
     </div>
   </div>
-  <div id="statusRow"></div>
-  <div id="items"></div>
-  <div class="footer"><span id="tapInfo">ヒット 0</span><span id="timeInfo">0.0秒</span><button id="quit" type="button">🏳️ やめる</button></div>
-  <div class="hint" id="hint">敵をタップして攻撃！</div>
+  <button id="quit" type="button">やめる</button>
+
+  <div class="hud bottom">
+    <div class="row">
+      <img class="icon" id="allyIcon" alt="" draggable="false">
+      <div style="flex:1;min-width:0">
+        <div class="row" style="margin:0"><span class="aname" id="allyName"></span><span class="num" id="allyNum" style="margin-left:auto"></span></div>
+        <div class="hpbar" id="allyBar" style="margin-top:6px"><div class="lag"></div><div class="fill"></div></div>
+      </div>
+    </div>
+    <div class="badges" id="badges"></div>
+    <div class="buttons">
+      <button class="btn attack" id="btnAttack" type="button" disabled>⚔️ 攻撃</button>
+      <button class="btn end" id="btnEnd" type="button">⏭️ ターンを終える</button>
+      <button class="btn item" id="btnItem" type="button" disabled>🧪 アイテム</button>
+    </div>
+    <div class="note" id="hint" style="text-align:center;min-height:1.2em"></div>
+  </div>
+
+  <div id="sheet">
+    <h3><span>アイテム（1ターンに1つ）</span><button type="button" id="sheetClose">とじる</button></h3>
+    <div class="items" id="itemList"></div>
+    <div class="note" id="itemNote"></div>
+  </div>
+
+  <div id="confirm"><div>
+    <p>ホームに戻ります。<br>次に遊ぶときは、このステージの最初から続けられます。</p>
+    <div class="buttons">
+      <button class="btn ghost" id="cancelQuit" type="button">つづける</button>
+      <button class="btn attack" id="doQuit" type="button">やめる</button>
+    </div>
+  </div></div>
 </div>
 <script>
 "use strict";
@@ -126,202 +259,116 @@
 const Streamlit = {
   send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data), "*"); },
   ready() { this.send("streamlit:componentReady", { apiVersion: 1 }); },
-  setHeight() { this.send("streamlit:setFrameHeight", { height: Math.ceil(document.documentElement.getBoundingClientRect().height) }); },
+  setHeight(h) { this.send("streamlit:setFrameHeight", { height: h }); },
   setValue(value) { this.send("streamlit:setComponentValue", { value, dataType: "json" }); },
 };
 window.addEventListener("message", (ev) => {
   const d = ev.data;
-  if (d && d.type === "streamlit:render") {
-    const a = d.args;
-    start(a.config, a.scene_html, a.scene_css, a.hit_mask, a.ally_icon);
-  }
+  if (d && d.type === "streamlit:render") start(d.args);
 });
-new ResizeObserver(() => Streamlit.setHeight()).observe(document.body);
 
-// ---------------------------------------------------------------------------
-// 戦闘
-//   数字（ダメージ・回復量など）は Python（story_logic.py）で計算したものを使い、ここでは計算しない。
-// ---------------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
-const DOTS = ["poison", "fire", "black_flame"];   // 毎ターンダメージを受ける状態異常
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+function displayHp(hp) { return hp <= 0 ? 0 : Math.max(1, Math.round(hp)); }
+function fmt(v) { return v < 10 ? (Math.round(v * 10) / 10).toString() : Math.round(v).toLocaleString(); }
+
 let G = null;   // いまの戦闘の状態
 
-function displayHp(hp) { return hp <= 0 ? 0 : Math.max(1, Math.round(hp)); }
-function fmtDamage(v) { return v < 10 ? v.toFixed(1).replace(/\.0$/, "") : String(Math.round(v)); }
-function randInt(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
-
-function start(config, sceneHtml, sceneCss, hitMask, allyIcon) {
-  if (G && G.round === config.round) return;          // 同じ戦闘の再描画は無視（途中から始め直さない）
-  $("sceneCss").textContent = sceneCss;
-  $("stage").innerHTML = sceneHtml +
-    '<div class="stun" id="stun"></div><div class="flash" id="flash"></div><div class="banner" id="banner"></div>';
+// ---------------------------------------------------------------------------
+// 開始
+// ---------------------------------------------------------------------------
+function start(args) {
+  const c = args.config;
+  if (G && G.round === c.round) return;          // 同じ戦闘の再描画は無視（途中から始め直さない）
+  $("sceneCss").textContent = args.scene_css;
+  $("stage").innerHTML = args.scene_html;
   G = {
-    round: config.round, cfg: config,
-    enemyHp: config.enemy.max_hp, allyHp: config.ally.hp,
-    phase: "countdown", startAt: 0, lastAttack: 0, pausedAt: 0,
-    taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, enemyAttacks: 0,
-    hitMask: null,
-    status: { poison: 0, fire: 0, black_flame: 0, thunder: 0 },   // 残りターン
-    guard: 0,                                                      // 防御アップの残りターン
-    meteorPending: false, meteorUsed: false,
-    items: Object.fromEntries(config.items.map((i) => [i.id, i.count])), used: {},
+    round: c.round, cfg: c, enemyHp: c.enemy.max_hp, allyHp: c.ally.hp,
+    phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0,
+    bag: Object.fromEntries(c.items.map((i) => [i.id, i.count])), used: {},
+    taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, startAt: performance.now(), hitMask: null,
+    tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {},
+    status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0 },   // 残りターン
+    meteorPending: false, meteorUsed: false, enemyAttacks: 0,
   };
-  $("stageNo").textContent = `ステージ ${config.stage} / ${config.stage_count}`;
-  $("enemyName").textContent = `Lv.${config.enemy.lv} ${config.enemy.name}`;
-  $("allyName").textContent = config.ally.name.split("、").pop();
-  $("allyIcon").src = allyIcon || "";
-  $("hint").textContent = "敵をタップして攻撃！";
-  prepareHitMask(hitMask);
-  bindTaps();
-  bindQuit();
-  renderItems();
-  renderStatus();
-  updateBars();
-  Streamlit.setHeight();
-  countdown(config.countdown);
+  $("enemyName").textContent = `Lv.${c.enemy.lv} ${c.enemy.name}`;
+  $("stageNo").textContent = c.extra ? "EXTRA" : `ステージ ${c.stage} / ${c.stage_count}`;
+  $("quit").textContent = c.extra ? "にげる" : "やめる";
+  $("allyName").textContent = c.ally.name.split("、").pop();
+  if (args.ally_icon) $("allyIcon").src = args.ally_icon; else $("allyIcon").style.display = "none";
+  $("allyIcon").classList.remove("down", "low");
+  $("warn").classList.remove("on"); $("dark").classList.remove("on"); $("stun").classList.remove("on");
+  $("btnEnd").classList.remove("on"); $("hint").textContent = "";
+  prepareHitMask(args.hit_mask);
+  updateBars(); updateBadges();
+  Streamlit.setHeight(Math.max(480, window.innerHeight));
+  intro();
 }
 
-// 当たり判定：敵の形をした白黒の「当たりマスク」画像を使う（白い部分だけが当たり）。
-// 背景つきの画像（Lv.5〜8・10）でも、背景をタップしたらノーヒットになる。
-function prepareHitMask(maskUri) {
-  if (!maskUri) return;
+async function intro() {
+  if (G.cfg.extra) await banner("EXTRA STAGE", G.cfg.enemy.title ? `${G.cfg.enemy.title}が現れた！` : "", 1600);
+  if (G.cfg.final) await banner("FINAL STAGE", `Lv.${G.cfg.enemy.lv} ${G.cfg.enemy.name}`, 1600);
+  await banner("たたかえ！", "", 900);
+  playerTurn();
+}
+
+// ---------------------------------------------------------------------------
+// 当たり判定：敵の形をした白黒の「当たりマスク」（白い部分だけが当たり）
+// ---------------------------------------------------------------------------
+function prepareHitMask(uri) {
+  if (!uri) return;
   const m = new Image();
   m.onload = () => {
-    const c = document.createElement("canvas"); c.width = m.naturalWidth; c.height = m.naturalHeight;
-    const ctx = c.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(m, 0, 0);
-    G.hitMask = { w: c.width, h: c.height, data: ctx.getImageData(0, 0, c.width, c.height).data };
+    const cv = document.createElement("canvas"); cv.width = m.naturalWidth; cv.height = m.naturalHeight;
+    const ctx = cv.getContext("2d", { willReadFrequently: true }); ctx.drawImage(m, 0, 0);
+    const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    // 重心（白い部分の中心）。陰のとき、ここを基準に当たる範囲を縮める
+    let sx = 0, sy = 0, n = 0;
+    for (let y = 0; y < cv.height; y += 2) for (let x = 0; x < cv.width; x += 2) {
+      if (data[(y * cv.width + x) * 4] > 127) { sx += x; sy += y; n++; }
+    }
+    G.hitMask = { w: cv.width, h: cv.height, data, cx: n ? sx / n / cv.width : 0.5, cy: n ? sy / n / cv.height : 0.5 };
   };
-  m.src = maskUri;
+  m.src = uri;
 }
-
-function isOnEnemy(img, clientX, clientY) {
-  if (!G.hitMask) return true;                     // マスクがまだ読めていないときは画像全体を当たりにする
-  const r = img.getBoundingClientRect();
-  const nw = img.naturalWidth, nh = img.naturalHeight;
-  // 実際に絵が描かれている範囲（敵だけの画像は contain + 下寄せ、背景つきの画像は cover + 中央）
-  const cover = img.classList.contains("st-photo");
-  const scale = cover ? Math.max(r.width / nw, r.height / nh) : Math.min(r.width / nw, r.height / nh);
-  const dw = nw * scale, dh = nh * scale;
-  const ox = r.left + (r.width - dw) / 2, oy = cover ? r.top + (r.height - dh) / 2 : r.top + (r.height - dh);
-  const u = (clientX - ox) / dw, v = (clientY - oy) / dh;
+function isOnEnemy(x, y) {
+  const img = document.querySelector("#stage .st-target");
+  if (!img) return false;
+  const r = img.getBoundingClientRect(), nw = img.naturalWidth, nh = img.naturalHeight;
+  if (!nw || !G.hitMask) return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  const cs = getComputedStyle(img);
+  const cover = cs.objectFit === "cover";
+  const s = cover ? Math.max(r.width / nw, r.height / nh) : Math.min(r.width / nw, r.height / nh);
+  const dw = nw * s, dh = nh * s;
+  // object-position（例 "64% 50%"）。敵だけの画像は下寄せ、それ以外は指定どおり
+  const pos = cs.objectPosition.split(" ").map((v) => v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
+  const fy = img.classList.contains("st-enemy") ? 1 : pos[1];
+  const ox = r.left + (r.width - dw) * pos[0];
+  const oy = r.top + (r.height - dh) * fy;
+  let u = (x - ox) / dw, v = (y - oy) / dh;
+  const m = G.hitMask;
+  if (G.status.darkness > 0) {           // 陰：重心を中心に、当たる範囲を縦横 hit_scale 倍に縮める
+    const k = G.cfg.status.darkness.hit_scale;
+    u = m.cx + (u - m.cx) / k; v = m.cy + (v - m.cy) / k;
+  }
   if (u < 0 || u >= 1 || v < 0 || v >= 1) return false;
-  const m = G.hitMask, x = Math.floor(u * m.w), y = Math.floor(v * m.h);
-  // 指の太さぶん、周り（±1マス）に敵がいれば当たりにする
+  const px = Math.floor(u * m.w), py = Math.floor(v * m.h);
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-    const xx = x + dx, yy = y + dy;
+    const xx = px + dx, yy = py + dy;
     if (xx >= 0 && yy >= 0 && xx < m.w && yy < m.h && m.data[(yy * m.w + xx) * 4] > 127) return true;
   }
   return false;
 }
-
-function bindTaps() {
-  const stage = $("stage");
-  stage.onpointerdown = (ev) => {
-    ev.preventDefault();
-    if (!G || G.phase !== "fight") return;
-    if (G.status.thunder > 0) {                         // 雷：しびれてタップできない
-      popNumber(ev.clientX, ev.clientY, "しびれて動けない！", "info");
-      return;
-    }
-    G.taps++;
-    const img = stage.querySelector(".st-target");
-    const onEnemy = ev.target === img && isOnEnemy(img, ev.clientX, ev.clientY);
-    if (!onEnemy) { G.misses++; updateBars(); return; }  // 敵以外はノーヒット
-    const dmg = Math.min(G.cfg.ally.tap_damage, G.enemyHp);
-    G.enemyHp -= dmg; G.dealt += dmg; G.hits++;
-    popNumber(ev.clientX, ev.clientY, fmtDamage(G.cfg.ally.tap_damage), "");
-    img.classList.add("hit"); clearTimeout(img._t); img._t = setTimeout(() => img.classList.remove("hit"), 70);
-    updateBars();
-    if (G.enemyHp <= 1e-9) { finish("win"); return; }
-    // メテオ：HPが半分を切ったら予告を出し、次の攻撃をメテオにする（1回だけ）
-    if (G.cfg.enemy.meteor && !G.meteorUsed && !G.meteorPending &&
-        G.enemyHp < G.cfg.enemy.max_hp * G.cfg.meteor.trigger_rate) {
-      G.meteorPending = true;
-      $("banner").textContent = "☄️ メテオの詠唱… 次の攻撃に備えよう！";
-      $("banner").classList.add("on");
-    }
-  };
-  stage.oncontextmenu = (ev) => ev.preventDefault();
-}
-
-// やめる：2回押すとやめる（1回目は確認）。負けと同じ扱い
-function bindQuit() {
-  const b = $("quit");
-  b.classList.remove("armed"); b.textContent = "🏳️ やめる";
-  b.onclick = () => {
-    if (!G || G.phase === "end") return;
-    if (!b.classList.contains("armed")) {
-      b.classList.add("armed"); b.textContent = "もう一度押すと やめる（負けと同じ）";
-      clearTimeout(b._t); b._t = setTimeout(() => { b.classList.remove("armed"); b.textContent = "🏳️ やめる"; }, 3000);
-      return;
-    }
-    finish("quit");
-  };
+function enemyCenter() {
+  const img = document.querySelector("#stage .st-target");
+  const r = img.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height * 0.45 };
 }
 
 // ---------------------------------------------------------------------------
-// アイテム（雷でタップできない間も使える）
+// 表示
 // ---------------------------------------------------------------------------
-function renderItems() {
-  const box = $("items");
-  box.innerHTML = "";
-  for (const item of G.cfg.items) {
-    if (!G.items[item.id] && !G.used[item.id]) continue;   // 持っていない物は出さない
-    const b = document.createElement("button");
-    b.type = "button";
-    b.disabled = G.phase !== "fight" || !G.items[item.id];
-    b.innerHTML = `${item.icon} ${item.name}<span class="cnt">のこり ${G.items[item.id]}</span>`;
-    b.onclick = () => useItem(item);
-    box.appendChild(b);
-  }
-  Streamlit.setHeight();
-}
-
-function useItem(item) {
-  if (G.phase !== "fight" || !G.items[item.id]) return;
-  G.items[item.id]--; G.used[item.id] = (G.used[item.id] || 0) + 1;
-  const r = $("stage").getBoundingClientRect();
-  if (item.heal > 0) {
-    G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + item.heal);
-    popNumber(r.left + r.width / 2, r.top + r.height * 0.75, "+" + fmtDamage(item.heal), "heal");
-  }
-  if (item.cure) { for (const k in G.status) G.status[k] = 0; }
-  if (item.guard > 0) {
-    G.guard = item.guard;
-    popNumber(r.left + r.width / 2, r.top + r.height * 0.62, "🛡️ 防御アップ！", "info");
-  }
-  renderItems(); renderStatus(); updateBars();
-}
-
-function renderStatus() {
-  const row = $("statusRow");
-  row.innerHTML = "";
-  const chip = (icon, name, turns, cls) => {
-    const el = document.createElement("span");
-    el.className = "chip " + cls;
-    el.innerHTML = `${icon} ${name} <span class="pips">${"<i></i>".repeat(Math.max(0, turns))}</span>`;
-    row.appendChild(el);
-  };
-  for (const id of ["thunder", ...DOTS]) {
-    if (G.status[id] > 0) chip(G.cfg.status[id].icon, G.cfg.status[id].name, G.status[id], "bad");
-  }
-  if (G.guard > 0) chip("🛡️", "防御アップ", G.guard, "good");
-  $("stun").classList.toggle("on", G.status.thunder > 0);
-  $("hint").textContent = G.phase !== "fight" ? $("hint").textContent
-    : G.status.thunder > 0 ? "⚡ しびれて動けない！ アイテムは使えるよ" : "敵をタップして攻撃！";
-}
-
-function popNumber(clientX, clientY, text, cls) {
-  const s = $("stage").getBoundingClientRect();
-  const el = document.createElement("div");
-  el.className = "pop " + cls; el.textContent = text;
-  el.style.left = (clientX - s.left + (Math.random() - .5) * 18) + "px";
-  el.style.top = (clientY - s.top) + "px";
-  $("stage").appendChild(el);
-  setTimeout(() => el.remove(), 720);
-}
-
 function updateBars() {
   const e = G.cfg.enemy, a = G.cfg.ally;
   const ep = Math.max(0, G.enemyHp / e.max_hp) * 100, ap = Math.max(0, G.allyHp / a.max_hp) * 100;
@@ -330,140 +377,354 @@ function updateBars() {
     $(id).querySelector(".lag").style.width = p + "%";
   }
   $("allyBar").classList.toggle("low", ap <= 30);
+  $("allyIcon").classList.toggle("low", ap <= 30 && ap > 0);
   $("enemyNum").textContent = `${displayHp(G.enemyHp).toLocaleString()} / ${Math.round(e.max_hp).toLocaleString()}`;
   $("allyNum").textContent = `${displayHp(G.allyHp)} / ${Math.round(a.max_hp)}`;
-  $("tapInfo").textContent = `ヒット ${G.hits}` + (G.misses ? `（ミス ${G.misses}）` : "");
 }
 
-function overlay(html, cls) {
-  let o = $("overlay");
-  if (!o) { o = document.createElement("div"); o.id = "overlay"; $("stage").appendChild(o); }
-  o.className = "overlay " + (cls || ""); o.innerHTML = html;
-  o.style.display = html ? "flex" : "none";
+// 効果があるあいだ、状態アイコンを表示する。
+//   G.status = { 状態異常のID: 残りターン }
+//   攻撃力アップ・防御アップは、アイテムの絵で表示する
+function updateBadges() {
+  const prev = G.shownStatus || {};
+  const now = {};
+  const html = [];
+  const add = (key, src, name, turns, cls) => {
+    if (!src || !(turns > 0)) return;
+    now[key] = true;
+    html.push(`<div class="st-icon ${cls}${prev[key] ? "" : " new"}" title="${name} あと${turns}ターン">` +
+              `<img src="${src}" alt="${name}"><span class="t">${turns}</span></div>`);
+  };
+  for (const [id, turns] of Object.entries(G.status)) add(id, G.statusIcons[id], (G.cfg.status[id] || {}).name || id, turns, "bad");
+  add("atk_up", G.icons.atk_up, "攻撃力アップ", G.atkTurns, "buff");
+  add("guard_up", G.icons.guard_up, "防御アップ", G.guardTurns, "buff");
+  $("badges").innerHTML = html.join("");
+  G.shownStatus = now;
+  $("dark").classList.toggle("on", G.status.darkness > 0);
+  $("stun").classList.toggle("on", G.status.thunder > 0);
 }
-
-function countdown(n) {
-  overlay(`<div class="big">${n}</div>`, "dim");
-  if (n > 0) { setTimeout(() => countdown(n - 1), 1000); return; }
-  overlay(`<div class="msg">たたかえ！</div>`, "");
-  setTimeout(() => overlay(""), 600);
-  G.phase = "fight";
-  G.startAt = G.lastAttack = performance.now();
-  renderItems();
-  requestAnimationFrame(tick);
+// 雷のあいだは攻撃できない（アイテムは使える）。代わりに「ターンを終える」を出す
+function setButtons(on) {
+  const stunned = G.status.thunder > 0;
+  $("btnAttack").disabled = !on || stunned;
+  $("btnAttack").style.display = on && stunned ? "none" : "";
+  $("btnEnd").classList.toggle("on", on && stunned);
+  $("btnItem").disabled = !on || G.usedItem || !Object.values(G.bag).some((n) => n > 0);
+  $("hint").textContent = on && stunned ? "⚡ しびれて攻撃できない！ アイテムは使えるよ"
+    : on && G.status.darkness > 0 ? "🌘 陰：敵の当たる範囲が狭まっている"
+    : on && G.status.shadow > 0 ? "👤 影：攻撃がかわされることがある" : "";
 }
+async function banner(text, sub, ms, cls) {
+  const b = $("banner");
+  b.className = (cls || "") + (text.length > 8 ? " long" : ""); b.querySelector(".t").textContent = text; b.querySelector(".s").textContent = sub || "";
+  b.style.display = "flex";
+  const t = b.querySelector(".t"); t.style.animation = "none"; void t.offsetWidth; t.style.animation = "";
+  if (ms) { await sleep(ms); b.style.display = "none"; }
+}
+function popAt(x, y, text, cls) {
+  const el = document.createElement("div");
+  el.className = "pop " + (cls || ""); el.textContent = text;
+  el.style.left = x + "px"; el.style.top = y + "px";
+  $("app").appendChild(el); setTimeout(() => el.remove(), 1400);
+}
+function shake() { const s = $("stage"); s.classList.remove("shake"); void s.offsetWidth; s.classList.add("shake"); }
 
-// 画面が隠れている間（別のタブなど）は時間を止める
-document.addEventListener("visibilitychange", () => {
-  if (!G || G.phase !== "fight") return;
-  if (document.hidden) G.pausedAt = performance.now();
-  else if (G.pausedAt) { const d = performance.now() - G.pausedAt; G.startAt += d; G.lastAttack += d; G.pausedAt = 0; }
-});
-
-function tick(now) {
-  if (!G || G.phase !== "fight") return;
-  if (G.pausedAt) { requestAnimationFrame(tick); return; }
-  const turn = G.cfg.turn_ms;
-  const since = now - G.lastAttack;
-  $("charge").firstElementChild.style.width = Math.min(100, since / turn * 100) + "%";
-  $("charge").classList.toggle("hot", since > turn * 0.8);
-  $("timeInfo").textContent = ((now - G.startAt) / 1000).toFixed(1) + "秒";
-  if (since >= turn) {
-    G.lastAttack += turn;
-    enemyTurn();
-    if (G.phase !== "fight") return;
+// ---------------------------------------------------------------------------
+// エフェクト（種類ごとに、#fx に一時的な要素を足す）
+// ---------------------------------------------------------------------------
+function fxEl(cls, style) {
+  const el = document.createElement("div"); el.className = "fx " + cls;
+  for (const [k, v] of Object.entries(style || {})) {
+    if (k.startsWith("--")) el.style.setProperty(k, v); else el.style[k] = v;   // CSS変数は setProperty でないと入らない
   }
-  requestAnimationFrame(tick);
+  $("fx").appendChild(el); setTimeout(() => el.remove(), 1600); return el;
+}
+function fxSvg(inner) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  el.setAttribute("class", "fx svgfx"); el.setAttribute("viewBox", "0 0 100 100"); el.setAttribute("preserveAspectRatio", "none");
+  el.innerHTML = inner; $("fx").appendChild(el); setTimeout(() => el.remove(), 1600); return el;
+}
+function particles(c, n, spread) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, d = (0.3 + Math.random() * 0.7) * spread;
+    fxEl("particle", { "--c": c, "--dx": Math.cos(a) * d + "vmin", "--dy": Math.sin(a) * d + "vmin" });
+  }
+}
+function slashes(c, n, delay) {
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => fxEl("slash", { "--c": c, "--r": (-35 + (i % 2 ? 70 : 0) + (Math.random() * 20 - 10)) + "deg",
+      "--o": `0, ${(Math.random() * 16 - 8)}vmin` }), i * (delay || 70));
+  }
+}
+const EFFECTS = {
+  claw:   (c) => { slashes(c, 3, 60); fxEl("vignette", { "--c": "rgba(120,0,0,.6)" }); },
+  slash:  (c) => { slashes(c, 1); fxEl("flash", { background: "rgba(255,255,255,.35)" }); fxEl("vignette", { "--c": "rgba(120,0,0,.55)" }); },
+  ghost:  (c) => { fxEl("mist", { "--c": c }); setTimeout(() => slashes(c, 2, 90), 350); },
+  magic:  (c) => { fxEl("burst", { "--c": c }); fxEl("ring", { "--c": c, "--s": 30 }); particles(c, 18, 45); },
+  whip:   (c) => { fxSvg(`<path class="whip" style="--c:${c}" d="M-5 20 Q 40 80 105 35"/><path class="whip" style="--c:${c};animation-delay:.15s" d="M105 15 Q 55 90 -5 60"/>`);
+                   fxEl("vignette", { "--c": "rgba(120,0,0,.55)" }); },
+  fire:   (c) => { for (let i = 0; i < 5; i++) setTimeout(() => fxEl("flame", { "--c": c, left: (i * 20 - 5) + "vw" }), i * 70);
+                   fxEl("vignette", { "--c": "rgba(255,90,0,.55)" }); },
+  thunder:(c) => { fxSvg(`<polyline class="bolt" style="--c:${c}" points="55,-2 45,30 58,34 40,70 52,72 38,102"/><polyline class="bolt" style="--c:${c};animation-delay:.12s;stroke-width:3" points="30,-2 36,25 26,28 34,55"/>`);
+                   fxEl("flash", { background: "rgba(255,240,170,.6)" }); },
+  void:   (c) => { fxEl("implode"); setTimeout(() => { fxEl("ring", { "--c": c, "--s": 50 }); particles(c, 14, 40); }, 450); },
+  cosmic: (c) => { fxEl("burst", { "--c": c }); particles("#fff", 26, 70); particles(c, 16, 55); fxEl("ring", { "--c": c, "--s": 60 }); },
+  radiance:(c) => { fxEl("rays", { "--c": c }); fxEl("ring", { "--c": c, "--s": 45 }); setTimeout(() => fxEl("ring", { "--c": c, "--s": 70 }), 180);
+                   fxEl("flash", { background: "rgba(255,230,160,.45)" }); },
+  silence:(c) => { fxEl("dim"); setTimeout(() => { fxEl("ring", { "--c": c, "--s": 80 }); fxEl("flash", { background: "rgba(120,140,255,.25)" }); }, 600); },
+};
+// 自分の攻撃：当たった回数が多いほど、斬撃が増える
+function playerAttackFx(hits) {
+  const n = Math.min(7, 2 + Math.floor(hits / 8));
+  slashes("#ffd36a", n, 55);
+  setTimeout(() => { fxEl("burst", { "--c": "#ffb347" }); particles("#ffe9a8", 22, 50); fxEl("flash", { background: "rgba(255,255,255,.5)" }); }, n * 55);
 }
 
-function hurt(amount) {
-  G.allyHp -= amount; G.taken += amount;
-  const icon = $("allyIcon");
-  icon.classList.remove("hurt"); void icon.offsetWidth; icon.classList.add("hurt");
+// ---------------------------------------------------------------------------
+// 自分のターン
+// ---------------------------------------------------------------------------
+function playerTurn() {
+  if (!G || G.phase === "end") return;
+  G.phase = "player"; G.usedItem = false; G.turn++;
+  setButtons(true);
 }
 
-// 1ターンの処理： 持続ダメージ → 敵の攻撃 → 新しい状態異常の抽選
-function enemyTurn() {
-  const r = $("stage").getBoundingClientRect();
+$("btnAttack").onclick = () => { if (G && G.phase === "player" && !(G.status.thunder > 0)) attack(); };
+$("btnEnd").onclick = async () => {
+  if (!G || G.phase !== "player") return;
+  G.phase = "pass"; setButtons(false); $("sheet").classList.remove("open");
+  await sleep(G.cfg.pause_ms);
+  enemyTurn();
+};
+$("btnItem").onclick = () => { if (G && G.phase === "player" && !G.usedItem) openSheet(); };
+$("sheetClose").onclick = () => $("sheet").classList.remove("open");
+
+async function attack() {
+  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open");
+  await banner("よーい……", "", 700);
+  await banner("スタート！", "", 450);
+  // 連打の受付
+  G.phase = "tapping"; G.tapHits = 0; G.tapDamage = 0;
+  const perTap = G.atkTurns > 0 ? G.cfg.ally.tap_damage_up : G.cfg.ally.tap_damage;
+  $("tapzone").classList.add("on"); $("timer").style.display = "block"; $("combo").style.display = "block";
+  $("combo").querySelector(".c").textContent = "0"; $("combo").querySelector(".d").textContent = "";
+  const t0 = performance.now(), dur = G.cfg.attack_ms;
+  $("tapzone").onpointerdown = (ev) => {
+    ev.preventDefault();
+    if (G.phase !== "tapping") return;
+    G.taps++;
+    const hit = isOnEnemy(ev.clientX, ev.clientY);
+    const sp = document.createElement("div"); sp.className = "spark" + (hit ? "" : " miss");
+    sp.style.left = ev.clientX + "px"; sp.style.top = ev.clientY + "px"; $("app").appendChild(sp); setTimeout(() => sp.remove(), 380);
+    if (!hit) { G.misses++; return; }                   // 敵以外はノーヒット
+    G.hits++; G.tapHits++; G.tapDamage += perTap;
+    $("combo").querySelector(".c").textContent = G.tapHits;
+    $("combo").querySelector(".d").textContent = fmt(G.tapDamage) + " ダメージ";
+    const img = document.querySelector("#stage .st-target");
+    img.classList.add("hit"); clearTimeout(img._t); img._t = setTimeout(() => img.classList.remove("hit"), 60);
+    if (navigator.vibrate) navigator.vibrate(8);
+  };
+  await new Promise((resolve) => {
+    const tick = () => {
+      const p = Math.min(1, (performance.now() - t0) / dur);
+      $("timer").firstElementChild.style.width = (1 - p) * 100 + "%";
+      if (p < 1) requestAnimationFrame(tick); else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+  G.phase = "strike";
+  $("tapzone").classList.remove("on"); $("timer").style.display = "none";
+  // 合計ダメージで一気に攻撃
+  const total = Math.min(G.tapDamage, G.enemyHp);
+  await sleep(150);
+  $("combo").style.display = "none";
+  const evaded = G.tapHits > 0 && G.status.shadow > 0 && Math.random() < G.cfg.status.shadow.evade_rate;
+  if (G.tapHits === 0) {
+    await banner("ミス！", "敵に当たらなかった", 900);
+  } else if (evaded) {                                       // 影：攻撃が丸ごとかわされる
+    await banner("回避された！", "影に攻撃をかわされた", 1000, "lose");
+  } else {
+    await banner("アタック！", "", 500);
+    playerAttackFx(G.tapHits);
+    await sleep(240);
+    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    shake();
+    const c = enemyCenter(); popAt(c.x, c.y, fmt(G.tapDamage), "big");
+    G.enemyHp -= total; G.dealt += total; updateBars();
+    if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+  }
+  // 攻撃力アップ・陰・影は、実際に攻撃した回数で減る（かわされた攻撃も数える）
+  if (G.atkTurns > 0) G.atkTurns--;
+  if (G.status.darkness > 0) G.status.darkness--;
+  if (G.status.shadow > 0) G.status.shadow--;
+  updateBadges();
+  await sleep(1100);
+  if (G.enemyHp <= 1e-9) return finish("win");
+  // メテオ：敵のHPが半分を切ったら予告を出し、次の敵のターンの攻撃をメテオにする（1回だけ）
+  if (G.cfg.enemy.meteor && !G.meteorUsed && !G.meteorPending && G.enemyHp < G.cfg.enemy.max_hp * G.cfg.meteor.trigger_rate) {
+    G.meteorPending = true;
+    $("warn").textContent = "☄️ メテオの詠唱… 回復して備えよう！"; $("warn").classList.add("on");
+    await banner("メテオの詠唱", "次の敵の攻撃はメテオになる", 1300, "lose");
+  }
+  await sleep(G.cfg.pause_ms);
+  enemyTurn();
+}
+
+// ---------------------------------------------------------------------------
+// アイテム
+// ---------------------------------------------------------------------------
+function openSheet() {
+  const list = $("itemList"); list.innerHTML = "";
+  for (const it of G.cfg.items) {
+    const n = G.bag[it.id] || 0;
+    const rate = it.heal / G.cfg.ally.max_hp;
+    const desc = [rate >= 0.999 ? "HP全回復" : rate > 0 ? `HP${Math.round(rate * 100)}%回復` : "",
+                  it.guard ? `防御2倍（${it.guard}ターン）` : "", it.atk_turns ? `攻撃力+3（${it.atk_turns}ターン）` : "",
+                  it.cure ? "状態異常を治す" : ""].filter(Boolean).join("・");
+    const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0;
+    const icon = G.icons[it.id] ? `<img src="${G.icons[it.id]}" alt="">` : "";
+    b.innerHTML = `${icon}<span class="n">×${n}</span><b>${it.name}</b><small>${desc}</small>`;
+    b.onclick = () => useItem(it);
+    list.appendChild(b);
+  }
+  $("itemNote").textContent = "使ったあとも、このターンに攻撃できます。";
+  $("sheet").classList.add("open");
+}
+function useItem(it) {
+  if (G.phase !== "player" || G.usedItem || !(G.bag[it.id] > 0)) return;
+  G.bag[it.id]--; G.used[it.id] = (G.used[it.id] || 0) + 1; G.usedItem = true;
+  $("sheet").classList.remove("open");
+  const icon = $("allyIcon").getBoundingClientRect();
+  if (it.heal > 0) {
+    const before = G.allyHp;
+    G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + it.heal);
+    popAt(icon.left + icon.width / 2 + 60, icon.top, "+" + fmt(G.allyHp - before), "heal");
+    fxEl("flash", { background: "rgba(120,255,170,.25)" });
+  }
+  if (it.cure) {                          // ポーション類：毒・雷・火・黒炎を治す（陰・影は治らない）
+    for (const id of ["poison", "fire", "black_flame", "thunder"]) G.status[id] = 0;
+  }
+  if (it.guard) { G.guardTurns = it.guard; fxEl("flash", { background: "rgba(120,180,255,.25)" }); }
+  if (it.atk_turns) { G.atkTurns = it.atk_turns; fxEl("flash", { background: "rgba(255,180,80,.25)" }); }
+  updateBars(); updateBadges(); setButtons(true);
+}
+
+// ---------------------------------------------------------------------------
+// 敵のターン：持続ダメージ → 雷を1減らす → 敵の攻撃（メテオ） → 新しい状態異常の抽選 → 防御アップを1減らす
+// ---------------------------------------------------------------------------
+const DOTS = ["poison", "fire", "black_flame"];   // 敵のターンのはじめにダメージを受ける状態異常
+
+function hurt(amount, x, y, cls) {
+  const dmg = Math.min(amount, G.allyHp);
+  G.allyHp -= dmg; G.taken += dmg;
+  const ic = $("allyIcon"); ic.classList.remove("hurt"); void ic.offsetWidth; ic.classList.add("hurt");
+  popAt(x, y, "-" + fmt(amount), cls || "hurt");
+  updateBars();
+}
+
+async function enemyTurn() {
+  if (G.phase === "end") return;
+  G.phase = "enemy";
+  const e = G.cfg.enemy, bub = $("bubble"), r = $("allyIcon").getBoundingClientRect();
   // 1. 持続ダメージ（付けられたターンには入らず、次のターンから入る）
-  let dotTotal = 0;
+  let dot = 0;
   for (const id of DOTS) {
-    if (G.status[id] <= 0) continue;
+    if (!(G.status[id] > 0)) continue;
     const st = G.cfg.status[id];
-    dotTotal += G.guard > 0 ? st.damage_guard : st.damage;
+    dot += G.guardTurns > 0 ? st.damage_guard : st.damage;
     G.status[id]--;
   }
-  if (dotTotal > 0) {
-    hurt(dotTotal);
-    popNumber(r.left + r.width * 0.3, r.top + r.height * 0.86, "-" + fmtDamage(dotTotal), "dot");
-    updateBars();
-    if (G.allyHp <= 1e-9) { renderStatus(); finish("lose"); return; }
+  if (dot > 0) {
+    fxEl("vignette", { "--c": "rgba(150,60,220,.55)" });
+    hurt(dot, r.left + r.width / 2 + 70, r.top - 10, "dot");
+    updateBadges();
+    await sleep(800);
+    if (G.allyHp <= 1e-9) return finish("lose");
   }
-  if (G.status.thunder > 0) G.status.thunder--;     // 雷はターンが過ぎるたびに減る
+  if (G.status.thunder > 0) G.status.thunder--;     // 雷は敵のターンごとに減る
 
-  // 2. 敵の攻撃（メテオの予告が出ていればメテオに変わる）
+  // 2. 敵の攻撃（予告が出ていればメテオに変わる）
+  bub.style.setProperty("--bubble", e.effect.color);
+  bub.textContent = G.meteorPending ? "……星よ、堕ちよ" : pick(e.lines); bub.style.display = "block";
+  await sleep(1100);
   G.enemyAttacks++;
-  const s = $("stage"), f = $("flash");
-  s.classList.remove("shake"); void s.offsetWidth; s.classList.add("shake");
-  f.classList.remove("on", "meteor"); void f.offsetWidth;
+  let newStatus = null;
   if (G.meteorPending) {
-    const dmg = G.allyHp * G.cfg.meteor.current_hp_rate;
-    hurt(dmg);
-    G.meteorPending = false; G.meteorUsed = true;
-    $("banner").classList.remove("on");
-    G.status.black_flame = G.cfg.status.black_flame.turns;
-    f.classList.add("meteor", "on");
-    popNumber(r.left + r.width / 2, r.top + r.height * 0.5, "☄️ メテオ！ -" + fmtDamage(dmg), "player");
+    G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on");
+    EFFECTS.cosmic("#ff9a3a"); fxEl("vignette", { "--c": "rgba(255,90,0,.7)" });
+    await sleep(380);
+    shake();
+    hurt(G.allyHp * G.cfg.meteor.current_hp_rate, r.left + r.width / 2 + 70, r.top - 10);
+    G.status.black_flame = G.cfg.status.black_flame.turns;    // メテオのあとは黒炎
+    newStatus = "black_flame";
   } else {
-    const dmg = G.guard > 0 ? G.cfg.enemy.hit_damage_guard : G.cfg.enemy.hit_damage;
-    hurt(dmg);
-    f.classList.add("on");
-    popNumber(r.left + r.width / 2, r.top + r.height * 0.82, "-" + fmtDamage(dmg), "player");
-    // 3. 新しい状態異常の抽選（敵が持つ状態異常から1つ）
-    const g = G.cfg.enemy.gimmicks;
-    if (g.length && Math.random() < G.cfg.status_chance) inflict(g[randInt(0, g.length - 1)], r);
+    (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color);
+    await sleep(380);
+    shake();
+    hurt(G.guardTurns > 0 ? e.hit_damage_guard : e.hit_damage, r.left + r.width / 2 + 70, r.top - 10);
+    // 3. 新しい状態異常の抽選（敵が持つ状態異常から1つ）。同じ物は重ならず、残りターンが最初に戻る
+    if (e.gimmicks.length && Math.random() < G.cfg.status_chance) newStatus = inflict(pick(e.gimmicks));
   }
-  if (G.guard > 0) G.guard--;
-  if (navigator.vibrate) navigator.vibrate(60);
-  renderStatus();
-  updateBars();
-  if (G.allyHp <= 1e-9) finish("lose");
+  if (navigator.vibrate) navigator.vibrate(90);
+  if (G.guardTurns > 0) G.guardTurns--;
+  updateBadges();
+  if (newStatus && G.allyHp > 1e-9) {
+    const st = G.cfg.status[newStatus];
+    await sleep(350);
+    popAt(window.innerWidth / 2, window.innerHeight * 0.55, `${st.icon} ${st.name}！`, "info");
+  }
+  await sleep(700);
+  bub.style.display = "none";
+  if (G.allyHp <= 1e-9) return finish("lose");
+  await sleep(G.cfg.pause_ms);
+  playerTurn();
 }
 
-// 状態異常を付ける。同じ物は重ならず、残りターンが最初に戻る
-function inflict(id, r) {
+function inflict(id) {
   const st = G.cfg.status[id];
   let turns = st.turns;
   if (id === "thunder") {
-    turns = randInt(st.turns_min, st.turns_max);
-    if (st.halve) turns = Math.ceil(turns / 2);       // 雷よけの指輪：ターン数を半分（切り上げ）
+    turns = st.turns_min + Math.floor(Math.random() * (st.turns_max - st.turns_min + 1));
+    if (st.halve) turns = Math.ceil(turns / 2);      // 雷よけの指輪：ターン数を半分（切り上げ）
   }
   G.status[id] = turns;
-  popNumber(r.left + r.width / 2, r.top + r.height * 0.68, `${st.icon} ${st.name}！`, "info");
+  return id;
 }
 
-function finish(result) {
-  G.phase = "end";
-  $("banner").classList.remove("on");
-  $("stun").classList.remove("on");
+// ---------------------------------------------------------------------------
+// やめる
+// ---------------------------------------------------------------------------
+$("quit").onclick = () => {
+  if (!G || G.phase === "end") return;
+  // エクストラステージは、確認なしで逃げられる（負けにならない）
+  if (G.cfg.extra) { if (G.phase === "player") finish("escape"); return; }
+  if (G.phase !== "player") return;                // 連打中・敵のターン中は押せない
+  $("confirm").style.display = "flex";
+};
+$("cancelQuit").onclick = () => { $("confirm").style.display = "none"; };
+$("doQuit").onclick = () => { $("confirm").style.display = "none"; finish("quit"); };
+
+// ---------------------------------------------------------------------------
+// 終わり
+// ---------------------------------------------------------------------------
+async function finish(result) {
+  if (G.phase === "end") return;
+  G.phase = "end"; setButtons(false); $("sheet").classList.remove("open");
+  $("tapzone").classList.remove("on"); $("timer").style.display = "none"; $("combo").style.display = "none"; $("bubble").style.display = "none";
+  $("warn").classList.remove("on"); $("stun").classList.remove("on"); $("dark").classList.remove("on"); $("btnEnd").classList.remove("on");
   $("hint").textContent = "";
-  renderItems();
-  const elapsed = G.startAt ? performance.now() - G.startAt : 0;
-  $("charge").firstElementChild.style.width = "0%";
-  const html = result === "win"
-    ? `<div class="msg">撃破！</div><div class="sub">${(elapsed / 1000).toFixed(1)}秒 ／ ${G.hits}ヒット</div>`
-    : result === "lose"
-      ? `<div class="msg">やられた…</div><div class="sub">敵の残りHP ${displayHp(G.enemyHp).toLocaleString()}</div>`
-      : `<div class="msg">撤退…</div>`;
-  overlay(html, "dim " + (result === "win" ? "win" : "lose"));
+  if (result === "lose") $("allyIcon").classList.add("down");
+  const elapsed = performance.now() - G.startAt;
+  if (result === "win") await banner("撃破！", `${G.turn}ターン ／ ${G.hits}ヒット`, 0, "win");
+  else if (result === "escape") await banner("にげた！", "先へ進もう", 0, "");
+  else if (result === "lose") await banner("やられた…", `敵の残りHP ${displayHp(G.enemyHp).toLocaleString()}`, 0, "lose");
   const value = {
     round: G.round, result,
-    ally_hp: Math.max(0, G.allyHp), enemy_hp: Math.max(0, G.enemyHp),
-    taps: G.taps, hits: G.hits, misses: G.misses,
-    damage_dealt: G.dealt, damage_taken: G.taken, enemy_attacks: G.enemyAttacks,
-    elapsed_ms: Math.round(elapsed), used: G.used,
+    ally_hp: Math.max(0, G.allyHp), enemy_hp: Math.max(0, G.enemyHp), turns: G.turn,
+    taps: G.taps, hits: G.hits, misses: G.misses, damage_dealt: G.dealt, damage_taken: G.taken,
+    enemy_attacks: G.enemyAttacks, used: G.used, elapsed_ms: Math.round(elapsed),
   };
-  setTimeout(() => Streamlit.setValue(value), result === "quit" ? 500 : 1400);   // 結果の表示を少し見せてから Python に返す
+  setTimeout(() => Streamlit.setValue(value), result === "quit" ? 0 : result === "escape" ? 1000 : 1600);   // 結果を少し見せてから Python に返す
 }
 
 Streamlit.ready();

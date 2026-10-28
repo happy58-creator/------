@@ -6,7 +6,11 @@
   松明のゆらぎ・霧・魔法陣の光・星のまたたきは CSS で動かす。
 - それ以外は画像そのものを背景として使う。
 
-stage_html(lv) が返す HTML は、戦闘コンポーネント（段階2）でもそのまま使う。
+- 敵の絵（切り抜いていないもの）は、絵をまるごと見せ（contain）、余った部分は同じ絵をぼかして埋める。
+  横長の絵（エクストラ）は fit="cover" で画面を埋め、focus の位置を中心に見せる。
+- アイテム・装備・状態異常のアイコンは items/ equipment/ status/ にある（ファイル名はIDと同じ）。
+
+stage_html(enemy) が返す HTML を、戦闘コンポーネントの背景として使う。
 """
 import base64
 from functools import lru_cache
@@ -25,8 +29,11 @@ def image_uri(relative_path):
     return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
 
 
-def get_enemy(lv):
-    return next(enemy for enemy in story_data.ENEMIES if enemy["lv"] == lv)
+def get_enemy(enemy):
+    """敵のデータ。Lv の数字を渡したときは、その Lv の最初の敵（Lv.11 は難易度で違うので、dict を渡すこと）"""
+    if isinstance(enemy, dict):
+        return enemy
+    return next(e for e in story_data.ENEMIES if e["lv"] == enemy)
 
 
 def ally_image_path(lv):
@@ -39,9 +46,35 @@ def ally_icon_uri(lv):
     return image_uri(f"ally_icons/{story_data.ALLIES[lv - 1]['image']}")
 
 
-def hit_mask_uri(lv):
-    """敵の当たりマスク（白＝敵、黒＝背景）。画像と同じファイル名の .png"""
-    name = Path(get_enemy(lv)["image"]).with_suffix(".png").name
+def item_icon_uri(item_id):
+    return image_uri(f"items/{item_id}.webp")
+
+
+def item_icon_path(item_id):
+    return ASSET_DIR / "items" / f"{item_id}.webp"
+
+
+def equipment_icon_uri(equipment_id):
+    return image_uri(f"equipment/{equipment_id}.webp")
+
+
+def equipment_icon_path(equipment_id):
+    return ASSET_DIR / "equipment" / f"{equipment_id}.webp"
+
+
+def enemy_image_path(enemy):
+    return ASSET_DIR / "enemies" / get_enemy(enemy)["image"]
+
+
+def status_icon_uri(status_id):
+    """状態異常のアイコン。メテオは一瞬なのでアイコンなし（そのあとの黒炎で表示する）"""
+    path = ASSET_DIR / "status" / f"{status_id}.webp"
+    return image_uri(f"status/{status_id}.webp") if path.exists() else None
+
+
+def hit_mask_uri(enemy):
+    """敵の当たりマスク（白＝敵、黒＝背景）。画像と同じファイル名の .png。enemy は敵のデータ"""
+    name = Path(get_enemy(enemy)["image"]).with_suffix(".png").name
     return image_uri(f"hitmasks/{name}")
 
 
@@ -62,7 +95,9 @@ SCENE_CSS = """
   content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none;
   background: radial-gradient(ellipse 78% 72% at 50% 48%, transparent 58%, rgba(0,0,0,.55) 100%);
 }
-.st-bg, .st-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+.st-bg, .st-photo, .st-photo-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; }
+.st-photo { object-fit: contain; z-index: 1; }
+.st-photo-bg { filter: blur(22px) brightness(.5) saturate(1.1); transform: scale(1.15); }
 
 /* 透過した敵（Lv.1〜4・9） */
 .st-enemy {
@@ -145,20 +180,25 @@ _SCENE_LAYERS = {
 }
 
 
-def stage_html(lv):
-    """Lv の敵1体分の画面（背景＋敵）の HTML。CSS は SCENE_CSS を別に読み込むこと。"""
-    enemy = get_enemy(lv)
+def stage_html(enemy):
+    """敵1体分の画面（背景＋敵）の HTML。enemy は敵のデータ。CSS は SCENE_CSS を別に読み込むこと。"""
+    enemy = get_enemy(enemy)
     uri = image_uri(f"enemies/{enemy['image']}")
     scene = enemy["scene"]
     layers = "".join(f'<div class="st-layer {name}"></div>' for name in _SCENE_LAYERS[scene])
     if not enemy["cutout"]:
-        body = f'<img class="st-photo st-target" src="{uri}" alt="{enemy["name"]}" draggable="false">'
+        # 絵をまるごと見せ（contain）、余った部分は同じ絵をぼかして埋める
+        layers = f'<img class="st-photo-bg" src="{uri}" alt="" draggable="false">' + layers
+        fit = ""
+        if enemy.get("fit") == "cover":   # 横長の絵などは、画面を埋めるように拡大して focus の位置を見せる
+            fit = f' style="object-fit:cover;object-position:{enemy.get("focus", "50% 50%")}"'
+        body = f'<img class="st-photo st-target" src="{uri}" alt="{enemy["name"]}" draggable="false"{fit}>'
     else:
         layers = f'<img class="st-bg" src="{image_uri(f"backgrounds/bg_{scene}.webp")}" alt="" draggable="false">' + layers
         shadow = "" if enemy["floating"] else '<div class="st-shadow"></div>'
         floating = " floating" if enemy["floating"] else ""
         body = f'{shadow}<img class="st-enemy st-target{floating}" src="{uri}" alt="{enemy["name"]}" draggable="false">'
-    return f'<div class="st-scene {scene}" data-lv="{lv}">{layers}{body}</div>'
+    return f'<div class="st-scene {scene}" data-enemy="{Path(enemy["image"]).stem}">{layers}{body}</div>'
 
 
 # ---------------------------------------------------------------------------
