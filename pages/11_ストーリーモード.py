@@ -308,7 +308,7 @@ def ally_panel_html(lv):
             f"<div style='width:30%;flex:none'>{left}</div><div style='flex:1;min-width:0'>{right}</div></div>")
 
 
-def ally_panel_parts(lv):
+def ally_panel_parts(lv, split=False):
     """キャラの表示を、左（画像・属性・装備のアイコン）と右（名前・ステータス・必殺技・アビリティ）に分けて返す"""
     ally = L.get_ally(lv)
     points = L.ability_points(profile, lv)
@@ -351,12 +351,14 @@ def ally_panel_parts(lv):
     resist = now["resist"]
     resist_html = ("<div style='font-size:12px;color:#b9ab90;margin-top:4px'>たいせい："
                    + "・".join(story_data.STATUS_EFFECTS[r]["name"] for r in resist) + "</div>") if resist else ""
-    left = (f"<div style='position:relative'>"
-            f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:12px;display:block'>{overlay_html}</div>"
-            f"<div style='margin-top:2px'>{icons}</div>")
+    pic = (f"<div style='position:relative'>"
+           f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:12px;display:block'>{overlay_html}</div>")
+    left = pic + f"<div style='margin-top:2px'>{icons}</div>"
     right = (f"<div style='font-weight:700;font-size:17px'>{ally['name']}"
              f"<span style='margin-left:8px;color:#8fe0ff'>Lv.{level}</span></div>"
              f"<div style='font-size:14px;margin-top:4px;line-height:1.6'>{''.join(f'<div>{x}</div>' for x in stats)}</div>{resist_html}{exp}{skill_html}{''.join(gauges)}")
+    if split:      # ホーム用：画像・装備品の行・アクセサリの行を別々に（それぞれ押せるようにする）
+        return pic, icon_row(gear, story_data.MAX_GEAR_SLOTS), icon_row(acc, story_data.MAX_ACCESSORY_SLOTS), right
     return left, right
 
 
@@ -414,7 +416,7 @@ def view_ally_detail():
 
     def back():
         st.session_state.story_detail = None
-        go("ally_picker")
+        go(st.session_state.get("story_detail_back") or "ally_picker")
 
     with st.container(key="story_detail_btns"):              # ボタンは上（説明は下の箱の中でスクロール）
         col_back, col_pick = st.columns(2)
@@ -461,6 +463,7 @@ def view_ally_picker():
                                 unsafe_allow_html=True)
                     if st.button("くわしく", key=f"_story_detail_{lv}"):
                         st.session_state.story_detail = lv
+                        st.session_state.story_detail_back = "ally_picker"
                         go("ally_detail")
                 col.markdown(f"<div style='text-align:center;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;"
                              f"text-overflow:ellipsis'>{name}<br>"
@@ -503,8 +506,8 @@ header[data-testid="stHeader"] { display: none !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(1) { min-width: 92px !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(2), .st-key-story_menu [data-testid="stColumn"]:nth-child(3) { min-width: 64px !important; }
 /* 画像（と装備のアイコン）の下：「装備」は少し離し、「装備」「アクセサリ」「アイテム」のあいだはつめる */
-.st-key-story_panel .st-key-_story_inv_equip { margin-top: 10px !important; }
-.st-key-story_panel .st-key-_story_inv_acc, .st-key-story_panel .st-key-_story_inv_item { margin-top: -10px !important; }
+.st-key-story_panel .st-key-_story_inv_equip { margin-top: 8px !important; }
+.st-key-story_panel .st-key-_story_inv_acc, .st-key-story_panel .st-key-_story_inv_item { margin-top: 2px !important; }
 /* 「キャラクター変更」はアビリティから少し離す */
 .st-key-story_panel .st-key-_story_change { margin-top: 12px !important; }
 .st-key-story_panel .st-key-_story_inv_equip button, .st-key-story_panel .st-key-_story_inv_acc button, .st-key-story_panel .st-key-_story_inv_item button {
@@ -525,6 +528,14 @@ header[data-testid="stHeader"] { display: none !important; }
 .st-key-story_picker [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
 .st-key-story_detail_btns button { min-height: 40px !important; padding: 4px 6px !important; }
 .st-key-story_panel button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
+/* ホーム：キャラの画像・装備品の行・アクセサリの行を押せるように（透明なボタンを重ねる） */
+.st-key-story_tap_pic, .st-key-story_tap_gear, .st-key-story_tap_acc { position: relative !important; gap: 0 !important; cursor: pointer; }
+.st-key-story_panel [data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 4px !important; }
+[class*="st-key-_story_tap_"] { position: absolute !important; inset: 0 !important; z-index: 3; margin: 0 !important; }
+[class*="st-key-_story_tap_"] > div, [class*="st-key-_story_tap_"] .stButton, [class*="st-key-_story_tap_"] button {
+  width: 100% !important; height: 100% !important; min-height: 0 !important; }
+[class*="st-key-_story_tap_"] button { opacity: 0 !important; padding: 0 !important; cursor: pointer !important; }
+.st-key-story_tap_pic:hover img, .st-key-story_tap_gear:hover, .st-key-story_tap_acc:hover { filter: brightness(1.12); }
 /* 準備画面：装備・アクセサリ・アイテムのボタン */
 .st-key-story_ready { max-width: 560px; margin: 0 auto; width: 100%; }
 .st-key-story_ready button { min-height: 48px !important; font-size: 15px !important; }
@@ -588,17 +599,38 @@ def view_home():
     lv = st.session_state.story_ally
 
     with st.container(border=True, key="story_panel"):
-        left, right = ally_panel_parts(lv)
+        pic, gear_row, acc_row, right = ally_panel_parts(lv, split=True)
         col_pic, col_info = st.columns([3, 7])
-        col_pic.markdown(left, unsafe_allow_html=True)
+        with col_pic:
+            # 画像・装備品の行・アクセサリの行の上に、透明なボタンを重ねる（押すと、くわしい説明・装備・アクセサリの画面）
+            with st.container(key="story_tap_pic"):
+                st.markdown(pic, unsafe_allow_html=True)
+                if st.button("くわしく", key="_story_tap_pic"):
+                    st.session_state.story_detail = lv
+                    st.session_state.story_detail_back = "home"
+                    go("ally_detail")
+            with st.container(key="story_tap_gear"):
+                st.markdown(gear_row, unsafe_allow_html=True)
+                if st.button("装備", key="_story_tap_gear"):
+                    open_inventory("equip", "home")
+            with st.container(key="story_tap_acc"):
+                st.markdown(acc_row, unsafe_allow_html=True)
+                if st.button("アクセサリ", key="_story_tap_acc"):
+                    open_inventory("acc", "home")
         with col_pic:                                # 画像の下：装備・アクセサリ・アイテム（縦に並べる）
             loadout_buttons("home", "_story_inv")
         col_info.markdown(right, unsafe_allow_html=True)
         if run:
             st.caption(f"📌 挑戦中：{L.get_difficulty(run['difficulty'])['name']} {stage_label(run)}"
                        "（「クエスト」から続きを遊べるよ。挑戦中はキャラを変えられないよ）")
+            if not st.session_state.story_confirm_new:
+                if st.button("⏹ クエストを中断", key="_story_home_abandon", width="stretch"):
+                    st.session_state.story_confirm_new = True
+                    st.rerun()
         elif st.button("🔄 キャラクター変更", key="_story_change", width="stretch"):
             go("ally_picker")
+    if run and st.session_state.story_confirm_new:
+        confirm_abandon(run, "今の挑戦を中断して終わらせますか？（負け扱い。ここまでのアビリティはもらえて、アイテムはすべて倉庫に戻ります）")
 
 
 def show_notice():
@@ -701,13 +733,18 @@ def view_continue(run):
             st.session_state.story_confirm_new = True
             st.rerun()
         return
+    confirm_abandon(run, "今の挑戦を終わらせて新しく始めますか？（負け扱い。アイテムはすべてホームに戻ります）")
+
+
+def confirm_abandon(run, text):
+    """挑戦を終わらせる確認（クエスト画面の「新規にプレイ」と、ホームの「クエストを中断」で使う）"""
     with st.container(border=True):
-        st.warning("今の挑戦を終わらせて新しく始めますか？（負け扱い。アイテムはすべてホームに戻ります）")
+        st.warning(text)
         col_no, col_yes = st.columns(2)
-        if col_no.button("やめておく", width="stretch"):
+        if col_no.button("やめておく", key="_story_abandon_no", width="stretch"):
             st.session_state.story_confirm_new = False
             st.rerun()
-        if col_yes.button("終わらせる", type="primary", width="stretch"):
+        if col_yes.button("終わらせる", key="_story_abandon_yes", type="primary", width="stretch"):
             st.session_state.story_confirm_new = False
             run_id = run["id"]
             summary = L.abandon_run(profile)
