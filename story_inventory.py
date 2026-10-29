@@ -8,6 +8,7 @@
      "store": {アイテムID: 個数}, "pack": {アイテムID: 個数},
      "gear": [uid, ...], "acc": [uid, ...], "deleted": [uid, ...], "locked": [uid, ...]}
 
+「使う」（白龍の鱗など）は、上と同じ中身に "action": "use", "use": アイテムID をつけて返す（並べ替えも一緒に保存する）。
 「もどる」は {"round": 番号, "action": "cancel"}。画面を開いているあいだは None。
 """
 from pathlib import Path
@@ -44,7 +45,8 @@ def inventory_config(profile, ally_lv, round_id):
     pack = L.pack_counts(profile)
     items = [
         {"id": i["id"], "name": i["name"], "icon": story_assets.item_thumb(i["id"]),
-         "effect": item_effect(i), "store": store.get(i["id"], 0), "pack": pack.get(i["id"], 0)}
+         "effect": item_effect(i), "store": store.get(i["id"], 0), "pack": pack.get(i["id"], 0),
+         "home_use": bool(i.get("home_use"))}     # 白龍の鱗：倉庫から「使う」
         for i in story_data.ITEMS
     ]
     owners = {u: int(lv) for lv, uids in profile["equipped"].items() for u in uids}
@@ -80,5 +82,7 @@ def inventory_config(profile, ally_lv, round_id):
     }
 
 
-def inventory(profile, ally_lv, round_id, key):
-    return _component(config=inventory_config(profile, ally_lv, round_id), key=key, default=None)
+def inventory(profile, ally_lv, round_id, key, notice=None):
+    config = inventory_config(profile, ally_lv, round_id)
+    config["notice"] = notice or ""          # 開いたときに上に出す知らせ（アイテムを使った結果など）
+    return _component(config=config, key=key, default=None)

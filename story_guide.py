@@ -234,7 +234,9 @@ def section_equipment():
     for item in story_data.ITEMS:
         effect = [L.item_effect_text(item)]
         where = item.get("where")
-        if where:
+        if item.get("special"):
+            how = "まれに空から現れる者の援護を受け、そのステージをクリアすると手に入る（2種類のどちらか）"
+        elif where:
             cond = "・".join(f"{L.get_difficulty(d)['name']}{n}" for d, n in where.items())
             how = f"宝箱から（{cond} 以上のステージ）。{nuance_weight(item['weight'])}出る"
         else:

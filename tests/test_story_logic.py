@@ -60,7 +60,7 @@ def test_data_tables_consistent():
         assert (root / "enemies" / e["image"]).exists()
         assert (root / "hitmasks" / f"{L.enemy_key(e)}.png").exists()
         assert len(e["lines"]) == 3
-    pending = set()   # 画像待ちのID（届くまでは絵文字のアイコンで表示する）
+    pending = {"white_scale", "spirit_feather"}   # 画像待ちのID（届くまでは絵文字のアイコンで表示する）
     for i in story_data.ITEMS:
         assert i["id"] in pending or (root / "items" / f"{i['id']}.webp").exists()
     for eq in story_data.EQUIPMENT:
@@ -224,7 +224,7 @@ def test_finish_run_returns_everything_and_adds_ability():
 
 def test_new_profile_has_starter_items():
     p = L.new_profile()
-    assert p["items"] == {i["id"]: 10 for i in story_data.ITEMS if not i.get("where")}
+    assert p["items"] == {i["id"]: 10 for i in story_data.ITEMS if not i.get("where") and not i.get("special")}
 
 
 def test_clear_stage_heals_rolls_and_saves_rewards():
@@ -586,6 +586,49 @@ def test_extra_awaken():
     assert math.isclose(aw["tap_damage"], L.damage(c["ally"]["atk"], st["def"]))
     assert math.isclose(aw["skill_damage"], L.damage(c["skill"]["damage_break"], st["def"]))
     assert L.battle_config(1, 3, "easy", 1)["awaken"] is None              # ふつうのステージでは覚醒しない
+
+
+def test_astel_assist():
+    import random as _r
+    c = L.battle_config(1, 3, "easy", 1)
+    a = c["assist"]
+    assert a["random"] and a["chance"] == 0.01 and a["break_turns"] == 2
+    st = L.base_stats(11, 10)
+    atk = st["atk"] + sum(ab["value"] for ab in story_data.ALLIES[10]["abilities"] if ab["stat"] == "atk")
+    assert math.isclose(a["damage"], atk * 140)                              # Lv.10 とアビリティ、防御無視
+    assert set(a["immune"]) == {"poison", "thunder", "fire"}
+    assert not L.battle_config(1, L.EXTRA, "easy", 1)["assist"]["random"]     # エクストラでは来ない
+    assert not L.battle_config(1, 3, "easy", 11)["assist"]["random"]          # アステル自身のときも来ない
+    assert "white_scale" not in [i["id"] for i in c["items"]]                 # 鱗はホームで使う
+    assert next(i for i in c["items"] if i["id"] == "spirit_feather")["assist"]
+    # 特別なアイテムは、宝箱・ログインボーナス・最初の配布には出ない
+    for item_id in ("white_scale", "spirit_feather"):
+        assert not L.item_available(L.get_item(item_id), 10, "very_hard") and item_id not in L.initial_items()
+    rng = _r.Random(1)
+    assert all(L.daily_bonus({"bonus_day": "", "items": {}}, "d", rng) not in ("white_scale", "spirit_feather") for _ in range(300))
+    # たまたまの援護で勝つと、どちらかが必ず手に入る。精霊の羽で呼んだときは出ない
+    for kind, expect in (("random", True), ("feather", False)):
+        p = L.new_profile()
+        L.start_run(p, 1, "easy", {})
+        L.apply_battle(p, {"result": "win", "ally_hp": 10, "assist": kind})
+        r = L.clear_stage(p, _r.Random(5))
+        assert bool(r.get("assist_drop")) == expect
+        if expect:
+            assert r["assist_drop"] in ("white_scale", "spirit_feather") and r["assist_where"] == "pack"
+            assert L.bag_counts(p["run"]["bag"]).get(r["assist_drop"]) == 1
+
+
+def test_white_scale_levels_up():
+    p = L.new_profile()
+    p["items"]["white_scale"] = 2
+    msg = L.use_home_item(p, 1, "white_scale")
+    assert L.ally_level(p, 1) == 2 and p["items"]["white_scale"] == 1 and "1 → 2" in msg
+    p["ability"]["1"] = L.level_points_max(1)
+    try:
+        L.use_home_item(p, 1, "white_scale"); assert False
+    except ValueError:
+        pass
+    assert p["items"]["white_scale"] == 1                                      # 最大のときは減らない
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):

@@ -48,6 +48,12 @@ def battle(config, key):
     """story_logic.battle_config() で作った設定で戦闘を始める"""
     enemy = story_logic.enemy_by_key(config["enemy"]["key"])
     awaken = {}
+    assist = config.get("assist")
+    has_feather = any(i["id"] == "spirit_feather" and i["count"] > 0 for i in config["items"])
+    if assist and (assist["random"] or has_feather):     # アステルの援護が起こりうるときだけ、絵を送る
+        a = story_data.ASSIST
+        awaken["assist_images"] = {"sky": story_assets.image_uri(f"skills/{a['image']}"),
+                                   "skill": story_assets.image_uri(f"skills/{a['skill_image']}")}
     skill_scene = (config.get("skill") or {}).get("scene")
     if skill_scene:
         awaken["skill_scene_image"] = story_assets.image_uri(f"skills/{skill_scene['image']}")

@@ -253,6 +253,14 @@ ITEMS = [
      "where": {"normal": 7, "hard": 5, "very_hard": 5}},
     {"id": "holy_circle",  "icon": "🔯", "name": "浄化の魔法陣",     "heal_rate": 0.0, "cure": ["poison", "thunder", "fire", "black_flame"], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 5,
      "where": {"easy": 10, "normal": 9, "hard": 8, "very_hard": 7}},
+    # アステルの援護のあとにだけ出る、特別なアイテム（宝箱・ログインボーナス・最初の配布には出ない）
+    #   special   : 特別なアイテム（宝箱などから出ない）
+    #   home_use  : ホーム（倉庫とリュックの画面）で使う。"level_up" はいまのキャラのレベルを1上げる
+    #   assist    : 戦闘で使うと、アステルの援護を呼ぶ（この戦闘のあいだ、精霊の加護も受けられる）
+    {"id": "white_scale",  "icon": "🐉", "name": "白龍の鱗",         "heal_rate": 0.0, "cure": [], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 0,
+     "special": True, "home_use": "level_up"},
+    {"id": "spirit_feather", "icon": "🪶", "name": "精霊の羽",       "heal_rate": 0.0, "cure": ["poison", "thunder", "fire", "black_flame", "darkness", "shadow"],
+     "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 0, "special": True, "assist": True},
 ]
 
 # ---------------------------------------------------------------------------
@@ -388,4 +396,16 @@ MODE_TITLES = {
 }
 EXTRA_TITLE = {"name": "宇宙龍を討ちし者", "badge": "title_extra.webp"}
 ALLY_TITLE_BADGE = "title_ally_{lv:02d}.webp"
+
+
+# ---------------------------------------------------------------------------
+# アステルの援護（たまたま通りかかったアステルが、必殺技で助けてくれる）
+#   chance : 敵の攻撃が終わるたびに、この確率で起こる（1回の戦闘で1度だけ）。
+#            エクストラ（宇宙龍）と、アステル自身で遊んでいるときは起こらない
+#   ally / level : 援護するキャラとレベル（Lv.10 のステータスとアビリティで、必殺技の効果ものる）
+#   image  : 空を見上げたときの絵（assets/story/skills/）
+#   drops  : 援護があったステージをクリアすると、このどちらかが必ず手に入る（精霊の羽で呼んだときは出ない）
+# ---------------------------------------------------------------------------
+ASSIST = {"chance": 0.01, "ally": 11, "level": 10, "image": "assist_sky.webp", "skill_image": "skill_astel_assist.webp",
+          "drops": ["white_scale", "spirit_feather"]}
 

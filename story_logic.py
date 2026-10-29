@@ -169,11 +169,13 @@ def new_profile():
 
 def initial_items():
     """最初にホームに持っているアイテム（いつでも出るアイテムを INITIAL_ITEM_COUNT 個ずつ）"""
-    return {item["id"]: story_data.INITIAL_ITEM_COUNT for item in story_data.ITEMS if not item.get("where")}
+    return {item["id"]: story_data.INITIAL_ITEM_COUNT for item in story_data.ITEMS if not item.get("where") and not item.get("special")}
 
 
 def item_available(item, stage, difficulty_id):
     """そのステージの宝箱から出るアイテムか（where の条件）"""
+    if item.get("special"):
+        return False
     where = item.get("where")
     return not where or (difficulty_id in where and stage >= where[difficulty_id])
 
@@ -204,6 +206,10 @@ def equip_effect_text(entry_or_id):
 
 
 def item_effect_text(item):
+    if item.get("home_use") == "level_up":
+        return "ホームの「倉庫とリュック」で使うと、いまのキャラのレベルが1上がる"
+    if item.get("assist"):
+        return "戦闘で使うとアステルが援護に来る。状態異常をすべて治し、その戦闘のあいだ精霊の加護（毒・雷・火にかからない）"
     parts = []
     if item["heal_rate"] >= 1:
         parts.append("HPを全回復")
@@ -655,6 +661,8 @@ def apply_battle(profile, result):
         except (ValueError, KeyError, TypeError):
             pass
     run["hp"] = max(0.0, float(result.get("ally_hp", run["hp"])))
+    if result.get("assist") == "random" and result.get("result") == "win":
+        run["assist_drop"] = True                  # アステルがたまたま援護した：クリアすると特別なアイテム
     if "charge" in result:                         # 必殺技のチャージはステージをまたいで残す
         cap = get_ally(run["ally"])["skill"]["charge"]
         run["charge"] = max(0, min(cap, int(result.get("charge") or 0)))
@@ -743,6 +751,10 @@ def clear_stage(profile, rng=random):
     run["hp"] = min(max_hp, run["hp"] + max(0.0, max_hp - run["hp"]) * story_data.STAGE_HEAL_RATE)
     rewards["healed"] = run["hp"] - healed_from
 
+    if run.pop("assist_drop", False):
+        drop = rng.choice(story_data.ASSIST["drops"])
+        rewards["assist_drop"] = drop
+        rewards["assist_where"] = "pack" if put_picked(profile, run["bag"], drop) else "store"
     treasure = roll_treasure(stage, run["difficulty"], rng)
     rewards["chests"] = len(treasure)
     for kind, thing_id, *extra in treasure:
@@ -856,6 +868,44 @@ def abandon_run(profile):
 # ---------------------------------------------------------------------------
 # 戦闘コンポーネントに渡す設定
 # ---------------------------------------------------------------------------
+def assist_config(ally_lv, enemy, extra):
+    """アステルの援護（たまたま来る・精霊の羽で呼ぶ）。Lv.10 とアビリティのステータスで、必殺技を撃つ"""
+    a = story_data.ASSIST
+    helper = get_ally(a["ally"])
+    stats = base_stats(a["ally"], a["level"])
+    for ability in helper["abilities"]:
+        stats[ability["stat"]] += ability["value"]
+    skill = helper["skill"]
+    raw = stats["atk"] * skill["power"]
+    return {
+        "random": not extra and ally_lv != a["ally"],     # たまたま来るのは、エクストラ以外・アステル以外のとき
+        "chance": a["chance"], "who": helper["name"], "name": skill["name"],
+        "damage": raw if skill.get("pierce") else damage(raw, enemy["def"]), "damage_break": raw,
+        "break_turns": skill.get("break", 0), "scene": skill.get("scene"),
+        "immune": [s for ab in helper["abilities"] for s in ab.get("immune", [])],   # 精霊の羽：精霊の加護
+    }
+
+
+def use_home_item(profile, ally_lv, item_id):
+    """倉庫のアイテムをホームで使う（白龍の鱗：キャラのレベルを1上げる）。うまくいけば知らせる文、だめなら ValueError"""
+    item = get_item(item_id)
+    if not item.get("home_use"):
+        raise ValueError("このアイテムは戦闘で使うよ。")
+    if profile["items"].get(item_id, 0) <= 0:
+        raise ValueError("倉庫にないよ。")
+    if item["home_use"] == "level_up":
+        level = ally_level(profile, ally_lv)
+        if level >= story_data.LEVEL_MAX:
+            raise ValueError(f"{short_name(ally_lv)} はもうレベルが最大だよ。")
+        key = str(ally_lv)
+        profile["ability"][key] = max(float(profile["ability"].get(key, 0)), level_threshold(ally_lv, level + 1))
+        profile["items"][item_id] -= 1
+        if profile["items"][item_id] <= 0:
+            del profile["items"][item_id]
+        return f"🐉 {item['name']}を使った！ {short_name(ally_lv)} のレベルが {level} → {level + 1} に上がった！"
+    raise ValueError("使えないアイテムだよ。")
+
+
 def awaken_stats():
     """覚醒した宇宙龍の攻撃力・防御力（ベリーハードの最後の敵の stat_rate 倍）"""
     aw = story_data.EXTRA_ENEMY["awaken"]
@@ -947,8 +997,10 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         {"id": i["id"], "name": i["name"], "icon": i["icon"], "count": counts.get(i["id"], 0),
          "heal": max_hp * i["heal_rate"], "cure": list(i["cure"]), "ward": i.get("ward", 0), "guard": i["guard"],
          "atk_turns": i["atk_turns"] if i["atk_bonus"] else 0}
-        for i in story_data.ITEMS
+        for i in story_data.ITEMS if not i.get("home_use")
     ]
+    for entry in items:                      # 精霊の羽：使うとアステルの援護
+        entry["assist"] = bool(get_item(entry["id"]).get("assist"))
     atk_up = max(i["atk_bonus"] for i in story_data.ITEMS)
     weapons = []
     if profile is not None:
@@ -1006,6 +1058,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "tap_damage_up_break": damage(ally["atk"] + atk_up, 0),
         },
         "skill": (skill := skill_config(ally_lv, ally, enemy, max_hp, charge)),
+        "assist": assist_config(ally_lv, enemy, extra),   # アステルの援護
         # エクストラ（宇宙龍）だけ：HPが半分を切ると覚醒する
         "awaken": awaken_config(ally, max_hp, skill) if extra else None,
         "status": status,
@@ -1097,7 +1150,7 @@ def daily_bonus(profile, today, rng=random):
     """today（"2026-10-28" など）にまだもらっていなければ、ランダムでアイテムを1つ倉庫に入れて、その ID を返す"""
     if profile.get("bonus_day") == today:
         return None
-    items = [i for i in story_data.ITEMS if not i.get("where")]
+    items = [i for i in story_data.ITEMS if not i.get("where") and not i.get("special")]
     item_id = rng.choices([i["id"] for i in items], [i["weight"] for i in items])[0]
     profile["items"][item_id] = profile["items"].get(item_id, 0) + 1
     profile["bonus_day"] = today

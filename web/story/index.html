@@ -344,6 +344,23 @@
   #grand.whiteout .g-white { opacity:1; transition:opacity .25s ease-in; }
   @keyframes gWhite { 0%{opacity:1} 100%{opacity:0} }
 
+
+  /* アステルの援護：空を見上げる */
+  #stage.lookup, #fx.lookup { transition:transform 1.1s cubic-bezier(.5,0,.3,1), filter 1.1s; transform:translateY(38%) scale(1.08); filter:brightness(1.6) blur(2px); }
+  #sky { position:absolute; inset:0; z-index:88; display:none; overflow:hidden; pointer-events:none; background:#cfe2ff; }
+  #sky.on { display:block; }
+  #sky img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:58% 35%; opacity:0; }
+  #sky.on img { animation:skyIn 2.8s ease-out forwards; }
+  @keyframes skyIn { 0%{opacity:0; transform:translateY(-12%) scale(1.25); filter:brightness(2.4)} 25%{opacity:1; filter:brightness(1.3)}
+                     100%{opacity:1; transform:translateY(0) scale(1.05); filter:brightness(1)} }
+  #sky .rays { position:absolute; inset:-30%; mix-blend-mode:screen; opacity:0;
+    background:repeating-conic-gradient(from 0deg at 50% 0%, rgba(255,250,220,.35) 0 3deg, transparent 3deg 11deg); }
+  #sky.on .rays { animation:skyRays 2.8s ease-out forwards; }
+  @keyframes skyRays { 0%{opacity:0} 30%{opacity:1} 100%{opacity:.4; transform:rotate(8deg)} }
+  #sky .msg { position:absolute; left:0; right:0; bottom:12%; text-align:center; font-weight:900; font-size:clamp(18px,5vw,40px); line-height:1.4;
+    color:#fff; text-shadow:0 0 8px #6aa8ff, 0 0 20px #b48cff, 0 2px 0 #1a2040; opacity:0; padding:0 6%; }
+  #sky.on .msg { animation:gUp .7s ease .7s forwards; }
+
   /* 状態異常の演出 */
   #dark { position:absolute; inset:0; z-index:32; pointer-events:none; display:none;
     background:radial-gradient(ellipse 60% 55% at 50% 45%, rgba(0,0,0,.35), rgba(0,0,0,.88) 100%); }
@@ -408,6 +425,7 @@
   <div id="timer"><div></div></div>
   <div id="combo"><div class="c">0</div><div class="d"></div></div>
   <div id="bubble"></div>
+  <div id="sky"><img alt=""><div class="rays"></div><div class="msg"></div></div>
   <div id="grand"><div class="g-black"></div><svg class="g-circle" viewBox="0 0 100 100"><circle class="d" cx="50" cy="50" r="46"/><circle class="d" cx="50" cy="50" r="40"/><circle class="d" cx="50" cy="50" r="22"/>
       <polygon class="d" points="50,6 88,72 12,72"/><polygon class="d" points="50,94 12,28 88,28"/><circle class="d" cx="50" cy="50" r="31"/></svg><div class="g-who"></div>
     <img class="g-img" alt=""><div class="g-shine"></div><div class="g-fx"></div>
@@ -526,6 +544,9 @@ function start(args) {
   };
   $("special").style.display = "none";
   if (args.awaken_special_image) { $("special").querySelector("img.main").src = args.awaken_special_image; $("special").querySelector("img.bg").src = args.awaken_special_image; }   // 先に読みこんでおく
+  G.assistImages = args.assist_images || null;           // アステルの援護の絵（空・必殺技）
+  G.assistRandom = false; G.assistFeather = false; G.blessing = false;
+  if (G.assistImages) for (const u of [G.assistImages.sky, G.assistImages.skill]) { const pre = new Image(); pre.src = u; }
   G.skillSceneImage = args.skill_scene_image || null;   // 必殺技の絵
   if (G.skillSceneImage) { const pre = new Image(); pre.src = G.skillSceneImage; }
   G.meteorScene = args.meteor_scene || null;            // メテオを撃つときの絵と技名
@@ -641,6 +662,7 @@ function updateBadges() {
   if (G.barrier > 0) html.push(`<span class="badge skill" data-tip="barrier">🔰 障壁 あと${G.barrier}回</span>`);
   if (G.eBreak > 0) html.push(`<span class="badge skill" data-tip="break">💥 敵の防御0 あと${G.eBreak}</span>`);
   if (G.ward > 0) html.push(`<span class="badge skill" data-tip="ward">📜 封炎 あと${G.ward}</span>`);
+  if (G.blessing) html.push(`<span class="badge skill" data-tip="blessing">✨ 精霊の加護</span>`);
   $("badges").innerHTML = html.join("");
   G.shownStatus = now;
   // 敵の状態（剣の属性でかかったもの）
@@ -887,11 +909,11 @@ async function cutin(name, color) {
 }
 
 // アステルの必殺技：暗転 → 星が集まって魔法陣 → 一枚絵 → 技名 → 光の咆哮 → 真っ白
-async function grandSkill(s, src) {
+async function grandSkill(s, src, who) {
   const g = $("grand"), sc = s.scene || {}, fx = g.querySelector(".g-fx");
   fx.innerHTML = ""; g.className = "on";
   g.querySelector(".g-img").src = src;
-  g.querySelector(".g-who").textContent = G.cfg.ally.name;
+  g.querySelector(".g-who").textContent = who || G.cfg.ally.name;
   g.querySelector(".g-reading").textContent = sc.reading || "";
   g.querySelector(".g-sub").textContent = sc.sub || "";
   g.querySelector(".g-name").innerHTML = [...s.name].map((ch, i) => `<span style="--i:${i}">${esc(ch)}</span>`).join("");
@@ -927,6 +949,44 @@ async function grandSkill(s, src) {
   await sleep(380);
   g.className = "";
   fxEl("flash", { background: "rgba(255,255,255,.95)" });
+}
+
+// アステルの援護：空を見上げる → アステルが飛んでくる → 必殺技 → 大ダメージ。勝てば true
+async function astelAssist(kind) {
+  const as = G.cfg.assist, im = G.assistImages || {};
+  if (!as) return false;
+  if (kind === "random") G.assistRandom = true; else G.assistFeather = true;
+  G.phase = "assist"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
+  // 1. 空を見上げる
+  await banner(kind === "random" ? "……空が、光った？" : "精霊の羽が、空へ舞い上がった……", "", 1100);
+  $("stage").classList.add("lookup"); $("fx").classList.add("lookup");
+  await sleep(900);
+  // 2. アステルが空を翔ける
+  const sky = $("sky");
+  if (im.sky) sky.querySelector("img").src = im.sky;
+  sky.querySelector(".msg").innerHTML = kind === "random"
+    ? `${esc(as.who)}が<br>たまたま通りかかった！` : `${esc(as.who)}が<br>呼びかけに応えた！`;
+  sky.classList.remove("on"); void sky.offsetWidth; sky.classList.add("on");
+  if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  await sleep(2900);
+  sky.classList.remove("on");
+  $("stage").classList.remove("lookup"); $("fx").classList.remove("lookup");
+  // 3. 必殺技（アステルの特別演出）
+  await grandSkill({ name: as.name, scene: as.scene || {} }, im.skill || G.skillSceneImage, as.who);
+  await SKILL_FX.astel.fx();
+  await sleep(250);
+  // 4. ダメージと、敵の防御崩壊
+  const c = enemyCenter();
+  const dmg = G.eBreak > 0 ? as.damage_break : as.damage, hit = Math.min(dmg, G.enemyHp);
+  const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+  shake(); popAt(c.x, c.y, fmt(dmg), "big");
+  hitEnemy(hit); updateBars();
+  if (as.break_turns) { G.eBreak = Math.max(G.eBreak, as.break_turns); popAt(c.x, c.y + 70, "💥 防御崩壊！", "proc"); }
+  popAt(window.innerWidth / 2, window.innerHeight * 0.3, "✨ アステルの援護！", "info");
+  updateBadges();
+  await sleep(1100);
+  if (G.enemyHp <= 1e-9) { finish("win"); return true; }
+  return false;
 }
 async function useSkill() {
   const s = G.cfg.skill, look = SKILL_FX[s.anim] || SKILL_FX.kou;
@@ -1025,6 +1085,7 @@ const TIPS = {
   barrier: ["魔法障壁", "敵の攻撃を無効にする"],
   break: ["概念崩し", "敵の防御が0になっている"],
   ward: ["封炎", "新しく黒炎にかからない（かかっている黒炎は続く）"],
+  blessing: ["精霊の加護", "この戦闘のあいだ、毒・雷・火にかからない"],
   foe_poison: ["敵：毒", "剣の毒で、敵が毎ターンダメージを受けている"],
   foe_fire: ["敵：火", "剣の火で、敵が毎ターンダメージを受けている"],
   foe_black_flame: ["敵：黒炎", "剣の黒炎で、敵が毎ターンダメージを受けている"],
@@ -1057,7 +1118,7 @@ function openSheet() {
   for (const it of G.cfg.items) {
     const n = G.bag[it.id] || 0;
     const rate = it.heal / G.cfg.ally.max_hp;
-    const desc = [rate >= 0.999 ? "HP全回復" : rate > 0 ? `HP${Math.round(rate * 100)}%回復` : "",
+    const desc = it.assist ? "アステルが援護に来る・状態異常を全部治す・精霊の加護" : [rate >= 0.999 ? "HP全回復" : rate > 0 ? `HP${Math.round(rate * 100)}%回復` : "",
                   it.guard ? `防御2倍（${it.guard}ターン）` : "", it.atk_turns ? `攻撃力+3（${it.atk_turns}ターン）` : "",
                   it.ward ? `${it.ward}ターン黒炎にかからない` : "",
                   it.cure && it.cure.length ? it.cure.map((s) => (G.cfg.status[s] || {}).name || s).join("・") + "を治す" : ""].filter(Boolean).join("・");
@@ -1086,6 +1147,13 @@ function useItem(it) {
   if (it.ward) { G.ward = it.ward; fxEl("ring", { "--c": "#b48cff", "--s": 30 }); }   // 封炎の巻物
   if (it.guard) { G.guardTurns = it.guard; fxEl("flash", { background: "rgba(120,180,255,.25)" }); }
   if (it.atk_turns) { G.atkTurns = it.atk_turns; fxEl("flash", { background: "rgba(255,180,80,.25)" }); }
+  if (it.assist && G.cfg.assist) {          // 精霊の羽：状態異常を全部治し、この戦闘のあいだ精霊の加護。アステルを呼ぶ
+    G.blessing = true;
+    G.cfg.ally.immune = [...new Set([...(G.cfg.ally.immune || []), ...(G.cfg.assist.immune || [])])];
+    updateBars(); updateBadges();
+    astelAssist("feather").then((won) => { if (!won && G.phase === "assist") { G.phase = "player"; setButtons(true); updateSkill(); } });
+    return;
+  }
   updateBars(); updateBadges(); setButtons(true);
 }
 
@@ -1265,6 +1333,11 @@ async function enemyTurn() {
   await sleep(700);
   bub.style.display = "none";
   if (G.allyHp <= 1e-9) return finish("lose");
+  // アステルの援護：敵の攻撃のあと、まれに空からやってくる（1回の戦闘で1度だけ）
+  const as = G.cfg.assist;
+  if (as && as.random && !G.assistRandom && G.assistImages && Math.random() < as.chance) {
+    if (await astelAssist("random")) return;
+  }
   await sleep(G.cfg.pause_ms);
   playerTurn();
 }
@@ -1404,6 +1477,7 @@ async function finish(result) {
     ally_hp: Math.max(0, G.allyHp), enemy_hp: Math.max(0, G.enemyHp), turns: G.turn,
     taps: G.taps, hits: G.hits, misses: G.misses, damage_dealt: G.dealt, damage_taken: G.taken,
     enemy_attacks: G.enemyAttacks, used: G.used, elapsed_ms: Math.round(elapsed), charge: G.charge,
+    assist: G.assistRandom ? "random" : G.assistFeather ? "feather" : null,
   };
   setTimeout(() => Streamlit.setValue(value), result === "quit" ? 0 : result === "escape" ? 1000 : 1600);   // 結果を少し見せてから Python に返す
 }

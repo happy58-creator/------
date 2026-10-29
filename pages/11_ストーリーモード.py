@@ -246,6 +246,12 @@ def show_rewards(rewards):
     if not show_recruits(rewards):
         return False
     show_ultra(rewards)
+    if rewards.get("assist_drop"):            # アステルの援護のあとは、特別なアイテムが必ず手に入る
+        drop = rewards["assist_drop"]
+        where = "リュックへ" if rewards.get("assist_where") == "pack" else "リュックがいっぱいなので倉庫へ"
+        st.success(f"✨ アステルが {L.get_item(drop)['name']} を残していった！ → {where}")
+        st.markdown(f"{item_icon(drop)} <b>{L.get_item(drop)['name']}</b>：{L.item_effect_text(L.get_item(drop))}",
+                    unsafe_allow_html=True)
     if rewards.get("extra"):
         return True
     if not rewards["chests"]:
@@ -630,17 +636,24 @@ def view_inventory():
     lv = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
     round_id = st.session_state.story_round
     st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)    # 画面いっぱいに広げる
-    result = story_inventory.inventory(profile, lv, round_id, key=f"story_inventory_{round_id}")
+    notice = st.session_state.get("story_inventory_notice")
+    result = story_inventory.inventory(profile, lv, round_id, key=f"story_inventory_{round_id}", notice=notice)
     if not result or result.get("round") != round_id:
         return
-    if result.get("action") == "save":
+    st.session_state.story_inventory_notice = None
+    if result.get("action") in ("save", "use"):
         try:
             L.apply_inventory(profile, lv, result)
+            message = L.use_home_item(profile, lv, result["use"]) if result.get("action") == "use" else None
         except ValueError as e:
-            st.session_state.story_notice = f"保存できなかったよ：{e}"
+            st.session_state.story_inventory_notice = f"できなかったよ：{e}"
             st.session_state.story_round += 1
             go("inventory")
         save()
+        if message:                               # 使ったあとは、倉庫とリュックの画面にもどる
+            st.session_state.story_inventory_notice = message
+            st.session_state.story_round += 1
+            go("inventory")
         st.session_state.story_notice = "倉庫とリュックを保存したよ。"
     go("home")
 

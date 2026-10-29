@@ -125,7 +125,7 @@ function start(cfg) {
   S.items = Object.fromEntries(cfg.items.map((i) => [i.id, i]));
   S.equip = Object.fromEntries(cfg.equipment.map((e) => [e.uid, e]));
   $("who").textContent = `${cfg.ally} の装備` + (cfg.in_run ? "（挑戦中）" : "");
-  sel = null; render(); showDetail(); msg("");
+  sel = null; render(); showDetail(); msg(cfg.notice || "", cfg.notice ? "ok" : undefined);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,6 +182,7 @@ function showDetail() {
     const it = S.items[sel.id];
     d.innerHTML = `<div class="row"><img class="big" src="${it.icon}" alt=""><div><b>${it.name}</b>
       <div class="meta">倉庫 ${S.store[it.id]}こ ／ リュック ${S.pack[it.id]}こ</div><div class="eff">${it.effect}</div></div></div>`;
+    if (sel.from === "store" && it.home_use) acts.push(["使う", () => sendState("use", it.id)]);   // 白龍の鱗：いまのキャラのレベルを1上げる
     if (sel.from === "store") acts.push(["リュックへ", () => askMove("item", it.id, "store", "pack")]);
     else acts.push(["倉庫へ", () => askMove("item", it.id, "pack", "store")]);
     // アイテムは削除できない（装備だけ削除できる）
@@ -317,19 +318,20 @@ function select(el) {
 // ---------------------------------------------------------------------------
 // 決定・もどる
 // ---------------------------------------------------------------------------
-$("save").onclick = () => {
+function sendState(action, useId) {
   if (!S || S.done) return;
   S.done = true; $("save").disabled = true; $("cancel").disabled = true;
   const deleted = S.cfg.equipment.filter((e) => S.place[e.uid] === "deleted").map((e) => e.uid);
   Streamlit.setValue({
-    round: S.round, action: "save",
+    round: S.round, action, use: useId || null,
     store: Object.fromEntries(Object.entries(S.store).filter(([, n]) => n > 0)),
     pack: Object.fromEntries(Object.entries(S.pack).filter(([, n]) => n > 0)),
     gear: uidsAt("gear"), acc: uidsAt("acc"), deleted,
     locked: [...S.locked].filter((u) => S.place[u] !== "deleted"),
   });
-  msg("保存しています…", "ok");
-};
+  msg(action === "use" ? "使っています…" : "保存しています…", "ok");
+}
+$("save").onclick = () => sendState("save");
 $("cancel").onclick = () => {
   if (!S || S.done) return;
   S.done = true;
