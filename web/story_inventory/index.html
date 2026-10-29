@@ -25,7 +25,9 @@
   .grid3 > .tile, .grid3 > .slot { width:100%; }
   .grid5 { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:8px; }
   .grid3 { display:grid; grid-template-columns:repeat(3, minmax(0, 84px)); gap:10px; }
-  .mode-equip .only-item, .mode-item .only-equip { display:none !important; }
+  .mode-equip .only-item, .mode-item .only-equip, .mode-acc .only-item { display:none !important; }
+  /* 装備：装備品の行＋倉庫の装備品 ／ アクセサリ：アクセサリの行＋倉庫のアクセサリ */
+  .mode-equip #z-acc, .mode-acc #z-gear { display:none !important; }
   /* くわしい中身：画面の下からせり上がる（たくさんあっても必ず見える） */
   #detail { position:fixed; left:0; right:0; bottom:0; z-index:40; max-width:900px; margin:0 auto; transform:translateY(105%); transition:transform .2s ease-out;
     background:#1d1722; border:1px solid var(--line); border-radius:16px 16px 0 0; padding:12px 14px max(14px, env(safe-area-inset-bottom));
@@ -158,10 +160,11 @@ function start(cfg) {
   };
   S.items = Object.fromEntries(cfg.items.map((i) => [i.id, i]));
   S.equip = Object.fromEntries(cfg.equipment.map((e) => [e.uid, e]));
-  const mode = cfg.mode === "item" ? "item" : "equip";
+  const mode = ["item", "acc"].includes(cfg.mode) ? cfg.mode : "equip";
+  S.mode = mode;
   $("app").className = "mode-" + mode;
-  $("title").textContent = mode === "item" ? "🎒 アイテム" : "🛡️ 装備";
-  $("storeTitle").textContent = mode === "item" ? "倉庫のアイテム" : "倉庫の装備";
+  $("title").textContent = { item: "🎒 アイテム", acc: "💍 アクセサリ", equip: "🛡️ 装備" }[mode];
+  $("storeTitle").textContent = { item: "倉庫のアイテム", acc: "倉庫のアクセサリ", equip: "倉庫の装備品" }[mode];
   $("storeHint").textContent = "押すとくわしく";
   $("who").textContent = mode === "item" ? (cfg.in_run ? "挑戦中のかばん" : "") : `${cfg.ally} の装備` + (cfg.in_run ? "（挑戦中）" : "");
   sel = null; render(); showDetail(); msg(cfg.notice || "", cfg.notice ? "ok" : undefined);
@@ -203,7 +206,7 @@ function uidsAt(place) { return S.cfg.equipment.filter((e) => S.place[e.uid] ===
 function render() {
   const L = S.cfg.limits;
   fill("store-items", S.cfg.items.filter((i) => S.store[i.id] > 0).map((i) => tile("item", i.id, "store", S.store[i.id])));
-  fill("store-equip", uidsAt("store").map((u) => tile("equip", u, "store")));
+  fill("store-equip", uidsAt("store").filter((u) => S.mode === "acc" ? S.equip[u].accessory : !S.equip[u].accessory).map((u) => tile("equip", u, "store")));
   fill("pack", S.cfg.items.filter((i) => S.pack[i.id] > 0).map((i) => tile("item", i.id, "pack", S.pack[i.id])));
   fill("gear", uidsAt("gear").map((u) => tile("equip", u, "gear")), L.gear);
   fill("acc", uidsAt("acc").map((u) => tile("equip", u, "acc")), L.acc);

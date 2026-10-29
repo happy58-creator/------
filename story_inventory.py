@@ -73,7 +73,7 @@ def inventory_config(profile, ally_lv, round_id, mode="equip"):
         })
     return {
         "round": round_id,
-        "mode": mode,                         # "equip"（装備品・アクセサリ）/ "item"（リュック・倉庫のアイテム）
+        "mode": mode,                         # "equip"（装備品）/ "acc"（アクセサリ）/ "item"（リュック・倉庫のアイテム）
         "ally": L.short_name(ally_lv),
         "in_run": bool(profile["run"]),
         "items": items,

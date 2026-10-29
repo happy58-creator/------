@@ -324,8 +324,13 @@ def ally_panel_parts(lv):
                       f"<div style='height:100%;width:{gauge * 100:.0f}%;background:linear-gradient(90deg,#c9a24a,#ffe28a)'></div></div></div>")
     gear, acc = L.split_equipped(profile, lv)
     by_uid = L.equipment_by_uid(profile)
-    icons = "".join(icon_html(story_assets.equipment_thumb(by_uid[u]["id"]), L.get_equipment(by_uid[u]["id"])["name"], size=34)
-                    for u in gear + acc)
+    def icon_row(uids, slots):
+        """装備のアイコンを1行に3つ（空いているわくは点線）"""
+        cells = [f"<img src='{story_assets.equipment_thumb(by_uid[u]['id'])}' title='{L.get_equipment(by_uid[u]['id'])['name']}' "
+                 "style='width:100%;aspect-ratio:1;border-radius:7px;object-fit:cover;display:block'>" for u in uids[:slots]]
+        cells += ["<div style='aspect-ratio:1;border-radius:7px;border:1px dashed rgba(233,214,166,.3)'></div>"] * (slots - len(cells))
+        return f"<div style='display:grid;grid-template-columns:repeat({slots},1fr);gap:3px;margin-top:4px'>{''.join(cells)}</div>"
+    icons = icon_row(gear, story_data.MAX_GEAR_SLOTS) + icon_row(acc, story_data.MAX_ACCESSORY_SLOTS)
     # 剣の属性は、キャラの絵の下のほうに小さく重ねて出す
     attrs = [a for u in gear for a in (by_uid[u].get("attrs") or {})]
     overlay = "".join(
@@ -339,7 +344,7 @@ def ally_panel_parts(lv):
                    + "・".join(story_data.STATUS_EFFECTS[r]["name"] for r in resist) + "</div>") if resist else ""
     left = (f"<div style='position:relative'>"
             f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:12px;display:block'>{overlay_html}</div>"
-            f"<div style='margin-top:4px;line-height:0'>{icons or ''}</div>")
+            f"<div style='margin-top:2px'>{icons}</div>")
     right = (f"<div style='font-weight:700;font-size:17px'>{ally['name']}"
              f"<span style='margin-left:8px;color:#8fe0ff'>Lv.{level}</span></div>"
              f"<div style='font-size:14px;margin-top:4px'>{'　'.join(stats)}</div>{resist_html}{exp}{skill_html}{''.join(gauges)}")
@@ -488,14 +493,14 @@ header[data-testid="stHeader"] { display: none !important; }
 /* スマホでは10%だと字が入らないので、いちばん小さい幅を決めておく */
 .st-key-story_menu [data-testid="stColumn"]:nth-child(1) { min-width: 92px !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(2), .st-key-story_menu [data-testid="stColumn"]:nth-child(3) { min-width: 64px !important; }
-/* 画像（と装備のアイコン）の下：「装備」は少し離し、「装備」と「アイテム」のあいだはつめる */
+/* 画像（と装備のアイコン）の下：「装備」は少し離し、「装備」「アクセサリ」「アイテム」のあいだはつめる */
 .st-key-story_panel .st-key-_story_inv_equip { margin-top: 10px !important; }
-.st-key-story_panel .st-key-_story_inv_item { margin-top: -10px !important; }
+.st-key-story_panel .st-key-_story_inv_acc, .st-key-story_panel .st-key-_story_inv_item { margin-top: -10px !important; }
 /* 「キャラクター変更」はアビリティから少し離す */
 .st-key-story_panel .st-key-_story_change { margin-top: 12px !important; }
-.st-key-story_panel .st-key-_story_inv_equip button, .st-key-story_panel .st-key-_story_inv_item button {
+.st-key-story_panel .st-key-_story_inv_equip button, .st-key-story_panel .st-key-_story_inv_acc button, .st-key-story_panel .st-key-_story_inv_item button {
   white-space: nowrap !important; font-size: 12px !important; padding: 2px 2px !important; min-height: 34px !important; }
-.st-key-story_panel .st-key-_story_inv_equip p, .st-key-story_panel .st-key-_story_inv_item p { white-space: nowrap !important; font-size: 12px !important; }
+.st-key-story_panel .st-key-_story_inv_equip p, .st-key-story_panel .st-key-_story_inv_acc p, .st-key-story_panel .st-key-_story_inv_item p { white-space: nowrap !important; font-size: 12px !important; }
 .st-ctitle { margin: 0 0 6px; line-height: 1.35; }
 .st-ctitle b { font-size: 1.3rem; display: block; }
 .st-ctitle span { font-size: .9rem; opacity: .8; }
@@ -511,6 +516,10 @@ header[data-testid="stHeader"] { display: none !important; }
 .st-key-story_picker [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
 .st-key-story_detail_btns button { min-height: 40px !important; padding: 4px 6px !important; }
 .st-key-story_panel button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
+/* 準備画面：装備・アクセサリ・アイテムのボタン */
+.st-key-story_ready { max-width: 560px; margin: 0 auto; width: 100%; }
+.st-key-story_ready button { min-height: 48px !important; font-size: 15px !important; }
+.st-key-story_quests button { min-height: 52px !important; font-size: 15px !important; }
 </style>"""
 st.html(HOME_CSS)          # <style> だけの st.html は場所をとらない（上に余白ができない）
 
@@ -559,9 +568,7 @@ def view_home():
             go("titles")
         if col_guide.button("攻略", key="_story_guide", width="stretch"):
             go("guide")
-    notice = st.session_state.pop("story_notice", None)
-    if notice:
-        st.info(notice)
+    show_notice()
 
     run = profile["run"]
     owned = L.owned_allies(profile)
@@ -575,15 +582,8 @@ def view_home():
         left, right = ally_panel_parts(lv)
         col_pic, col_info = st.columns([3, 7])
         col_pic.markdown(left, unsafe_allow_html=True)
-        col_eq = col_it = col_pic                    # 画像の下：装備・アイテム（縦に並べる）
-        if col_eq.button("🛡️ 装備", key="_story_inv_equip", width="stretch"):
-            st.session_state.story_inv_mode = "equip"
-            st.session_state.story_round += 1
-            go("inventory")
-        if col_it.button("🎒 アイテム", key="_story_inv_item", width="stretch"):
-            st.session_state.story_inv_mode = "item"
-            st.session_state.story_round += 1
-            go("inventory")
+        with col_pic:                                # 画像の下：装備・アクセサリ・アイテム（縦に並べる）
+            loadout_buttons("home", "_story_inv")
         col_info.markdown(right, unsafe_allow_html=True)
         if run:
             st.caption(f"📌 挑戦中：{L.get_difficulty(run['difficulty'])['name']} {stage_label(run)}"
@@ -592,14 +592,80 @@ def view_home():
             go("ally_picker")
 
 
+def show_notice():
+    notice = st.session_state.pop("story_notice", None)
+    if notice:
+        st.info(notice)
+
+
+INV_BUTTONS = (("equip", "🛡️ 装備"), ("acc", "💍 アクセサリ"), ("item", "🎒 アイテム"))
+
+
+def open_inventory(mode, back):
+    """装備・アクセサリ・アイテムの画面を開く（閉じたら back の画面にもどる）"""
+    st.session_state.story_inv_mode = mode
+    st.session_state.story_inv_back = back
+    st.session_state.story_round += 1
+    go("inventory")
+
+
+def loadout_buttons(back, prefix, counts=False):
+    """装備・アクセサリ・アイテムの3つのボタン（ホームの画像の下と、出発前の準備画面で使う）"""
+    lv = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
+    gear, acc = L.split_equipped(profile, lv)
+    bag = L.bag_total(profile["run"]["bag"]) if profile["run"] else sum(L.pack_counts(profile).values())
+    nums = {"equip": f"{len(gear)} / {story_data.MAX_GEAR_SLOTS}", "acc": f"{len(acc)} / {story_data.MAX_ACCESSORY_SLOTS}",
+            "item": f"{bag} / {story_data.MAX_CARRY_ITEMS}"}
+    for mode, label in INV_BUTTONS:
+        if st.button(label + (f"（{nums[mode]}）" if counts else ""), key=f"{prefix}_{mode}", width="stretch"):
+            open_inventory(mode, back)
+
+
 def view_quest():
-    """クエスト：挑戦中なら「続きから」、そうでなければ難易度をえらんで「プレイする」"""
+    """クエスト：挑戦中なら「続きから」、そうでなければクエスト（難易度）の一覧。えらぶと準備画面へ"""
     story_header("🗺️ クエスト", ("◀ もどる", "home"))
+    show_notice()
     run = profile["run"]
     if run:
         view_continue(run)
     else:
-        view_prepare()
+        view_quest_list()
+
+
+def view_quest_list():
+    owned = L.owned_allies(profile)
+    if st.session_state.story_ally not in owned:
+        st.session_state.story_ally = 1
+    compact_title("クエスト一覧", "遊ぶクエストをえらんでね")
+    with st.container(key="story_quests"):
+        for diff in story_data.DIFFICULTIES:
+            label = f"{diff['name']}（{L.stage_count(diff['id'])}ステージ）"
+            if diff["id"] in profile["cleared_modes"]:
+                label += "　🏆クリア"
+            if st.button(label, key=f"_story_diff_{diff['id']}", width="stretch"):
+                st.session_state.story_difficulty = diff["id"]
+                go("ready")
+    st.caption("負けても、そのステージの最初から何度でもやり直せるよ。進み具合は自動で保存されるよ。")
+
+
+def view_ready():
+    """出発前の準備：装備・アクセサリ・アイテムを整えて「出発」"""
+    if profile["run"]:
+        go("quest")
+    story_header("🧭 出発の準備", ("◀ もどる", "quest"))
+    show_notice()
+    lv = st.session_state.story_ally
+    diff = L.get_difficulty(st.session_state.story_difficulty)
+    with st.container(key="story_ready"):
+        compact_title(f"{diff['name']}（{L.stage_count(diff['id'])}ステージ）",
+                      f"{L.get_ally(lv)['name']}（Lv.{L.ally_level(profile, lv)}）で挑戦するよ")
+        loadout_buttons("ready", "_story_ready", counts=True)
+        st.write("")
+        if st.button("⚔️ 出発", key="_story_go", type="primary", width="stretch"):
+            L.start_run(profile, lv, diff["id"])
+            new_rewards(None)
+            go_battle()
+        st.caption("キャラはホームの「キャラクター変更」で変えられるよ。")
 
 
 def view_continue(run):
@@ -614,7 +680,9 @@ def view_continue(run):
         hp_bar(run["hp"], max_hp)
         st.caption(f"クリアしたステージ：{run['cleared']} / {L.stage_count(run['difficulty'])}　"
                    f"リュック：{L.bag_total(run['bag'])} / {story_data.MAX_CARRY_ITEMS}こ　"
-                   "（挑戦中はキャラを変えられないよ。装備とリュックは、ホームの「装備」「アイテム」で変えられるよ）")
+                   "（挑戦中はキャラを変えられないよ）")
+        with st.container(key="story_ready"):
+            loadout_buttons("quest", "_story_cont", counts=True)
         if st.button("▶️ 続きから", type="primary", width="stretch"):
             st.session_state.story_confirm_new = False
             go_battle()
@@ -639,42 +707,6 @@ def view_continue(run):
             st.session_state.story_summary = summary
             new_rewards(None)
             go("end")
-
-
-def view_prepare():
-    """進行中の挑戦がないとき：キャラ・難易度をえらんで「プレイする」（装備とリュックは「倉庫とリュック」で）"""
-    owned = L.owned_allies(profile)
-    if st.session_state.story_ally not in owned:
-        st.session_state.story_ally = 1
-    lv = st.session_state.story_ally
-    st.caption(f"キャラ：{L.get_ally(lv)['name']}（Lv.{L.ally_level(profile, lv)}）　キャラはホームの「キャラクター変更」で変えられるよ。")
-
-    st.subheader("🎚️ 難易度")
-    ids = [d["id"] for d in story_data.DIFFICULTIES]
-    for row in (ids[:2], ids[2:]):
-        cols = st.columns(2)
-        for col, diff in zip(cols, row):
-            label = f"{L.get_difficulty(diff)['name']}（{L.stage_count(diff)}ステージ）"
-            if diff in profile["cleared_modes"]:
-                label += "　🏆クリア"
-            chosen = diff == st.session_state.story_difficulty
-            if col.button(("✔ " if chosen else "") + label, key=f"_story_diff_{diff}", width="stretch",
-                          type="primary" if chosen else "secondary"):
-                st.session_state.story_difficulty = diff
-                st.rerun()
-
-    pack = L.pack_counts(profile)
-    st.subheader("🎒 リュック")
-    if pack:
-        st.markdown("".join(item_icon(k, n) for k, n in pack.items()), unsafe_allow_html=True)
-    st.caption(f"{sum(pack.values())} / {story_data.MAX_CARRY_ITEMS}こ　持っていくアイテムは、ホームの「アイテム」でリュックに入れてね。")
-
-    st.divider()
-    if st.button("⚔️ プレイする", type="primary", width="stretch"):
-        L.start_run(profile, lv, st.session_state.story_difficulty)
-        new_rewards(None)
-        go_battle()
-    st.caption("負けても、そのステージの最初から何度でもやり直せるよ。進み具合は自動で保存されるよ。")
 
 
 # ---------------------------------------------------------------------------
@@ -704,7 +736,7 @@ def view_inventory():
             st.session_state.story_round += 1
             go("inventory")
         st.session_state.story_notice = "保存したよ。"
-    go("home")
+    go(st.session_state.get("story_inv_back") or "home")
 
 
 TITLE_CSS = """<style>
@@ -976,7 +1008,7 @@ def end_details(summary, name):
 
 
 {
-    "home": view_home, "quest": view_quest, "ally_detail": view_ally_detail, "ally_picker": view_ally_picker,
+    "home": view_home, "quest": view_quest, "ready": view_ready, "ally_detail": view_ally_detail, "ally_picker": view_ally_picker,
     "inventory": view_inventory, "guide": view_guide, "titles": view_titles,
     "battle": view_battle, "between": view_between, "retry": view_retry,
     "extra_lost": view_extra_lost, "end": view_end,
