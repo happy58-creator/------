@@ -996,7 +996,7 @@ async function useSkill() {
     await grandSkill(s, G.skillSceneImage);       // アステル：特別演出
     await look.fx();
   } else if (s.scene && G.skillSceneImage) {
-    await specialScene(s.name, G.skillSceneImage, s.scene.focus || "50% 45%");   // 絵のある必殺技
+    await specialScene(s.name, G.skillSceneImage, s.scene.focus || "50% 45%", look.color);   // 絵のある必殺技
     await look.fx();
   } else {
     await cutin(s.name, look.color);
@@ -1412,7 +1412,7 @@ async function awaken() {
   }
   G.specialNext = true;     // 覚醒して最初の攻撃は、必ず大技
 }
-async function specialScene(name, src, focus) {
+async function specialScene(name, src, focus, color) {
   const sp = $("special");
   sp.querySelector(".name").textContent = name;
   const img = sp.querySelector("img.main"), bg = sp.querySelector("img.bg");
@@ -1420,9 +1420,11 @@ async function specialScene(name, src, focus) {
   img.style.objectPosition = focus || "35% 50%"; img.style.transformOrigin = focus || "50% 50%";
   // 絵より画面がずっと縦長なら、切りすぎないよう全体を見せる
   const ratio = (img.naturalWidth || 16) / (img.naturalHeight || 9);
-  sp.classList.toggle("fit", ratio / (window.innerWidth / window.innerHeight) > 4.5);
+  const k = ratio / (window.innerWidth / window.innerHeight);   // 絵と画面の縦横の違い
+  sp.classList.toggle("fit", k > 4.5 || k < 0.6);
   img.style.animation = "none"; void img.offsetWidth; img.style.animation = "";
   const nm = sp.querySelector(".name"); nm.style.animation = "none"; void nm.offsetWidth; nm.style.animation = "";
+  nm.style.textShadow = color ? `0 0 10px ${color}, 0 0 26px ${color}, 0 0 44px rgba(0,0,0,.6), 0 3px 0 #000` : "";   // 味方の技は、その人の色で光らせる
   sp.style.display = "block";
   if (navigator.vibrate) navigator.vibrate([120, 60, 300]);
   await sleep(2200);
