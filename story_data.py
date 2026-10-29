@@ -406,6 +406,6 @@ ALLY_TITLE_BADGE = "title_ally_{lv:02d}.webp"
 #   image  : 空を見上げたときの絵（assets/story/skills/）
 #   drops  : 援護があったステージをクリアすると、このどちらかが必ず手に入る（精霊の羽で呼んだときは出ない）
 # ---------------------------------------------------------------------------
-ASSIST = {"chance": 0.01, "ally": 11, "level": 10, "image": "assist_sky.webp", "skill_image": "skill_astel_assist.webp",
+ASSIST = {"chance": 1.00, "ally": 11, "level": 10, "image": "assist_sky.webp", "skill_image": "skill_astel_assist.webp",
           "drops": ["white_scale", "spirit_feather"]}
 
