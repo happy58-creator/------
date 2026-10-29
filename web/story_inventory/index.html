@@ -69,6 +69,19 @@
   #detail .eff { font-size:14px; }
   #detail .attr { display:flex; gap:6px; align-items:center; font-size:12px; margin-top:4px; }
   #detail .attr img { width:20px; height:20px; border-radius:50%; }
+  /* 付け替え：相手の一覧 */
+  #detail .swaphead { font-size:13px; color:var(--gold); margin:10px 0 6px; font-weight:700; }
+  #detail .cands { display:flex; flex-direction:column; gap:6px; }
+  #detail .cand { display:flex; gap:10px; align-items:center; width:100%; text-align:left; padding:6px 8px; border-radius:10px;
+    background:#0f0c12; border:1px solid rgba(233,214,166,.28); color:var(--ink); }
+  #detail .cand:active { background:#2a2220; }
+  #detail .cand img.ic { width:44px; height:44px; border-radius:8px; flex:none; }
+  #detail .cand .t { flex:1; min-width:0; }
+  #detail .cand .t b { font-size:14px; }
+  #detail .cand .t div { font-size:12px; color:var(--muted); }
+  #detail .cand .ats { display:flex; gap:2px; flex:none; }
+  #detail .cand .ats img { width:18px; height:18px; border-radius:50%; border:1px solid rgba(120,200,255,.9); }
+  #detail .none { font-size:12px; color:var(--muted); }
   .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
   button { font-family:inherit; cursor:pointer; }
   .btn { min-height:38px; padding:0 12px; border-radius:10px; border:1px solid var(--line); background:#2a2230; color:var(--ink); font-size:14px; font-weight:700; }
@@ -221,8 +234,15 @@ function showDetail() {
       <div class="eff">${e.effect}</div>
       ${e.attrs.map((a) => `<div class="attr"><img src="${a.icon}" alt=""><span><b>${a.name}</b>（発動 ${a.chance}%）${a.text}</span></div>`).join("")}</div></div>`;
     if (!e.other) {
-      if (S.place[e.uid] === "store") acts.push([e.accessory ? "アクセサリに付ける" : "装備品に付ける", () => moveEquip(e.uid, e.accessory ? "acc" : "gear")]);
-      else acts.push(["外して倉庫へ", () => moveEquip(e.uid, "store")]);
+      const zone = e.accessory ? "acc" : "gear", inStore = S.place[e.uid] === "store";
+      const full = uidsAt(zone).length >= S.cfg.limits[zone];
+      if (inStore) {
+        if (!full) acts.push([e.accessory ? "アクセサリに付ける" : "装備品に付ける", () => moveEquip(e.uid, zone), "primary"]);
+        if (uidsAt(zone).length) acts.push(["付け替える", () => { sel.swap = true; showDetail(); }, full ? "primary" : ""]);
+      } else {
+        acts.push(["付け替える", () => { sel.swap = true; showDetail(); }, "primary"]);
+        acts.push(["外して倉庫へ", () => moveEquip(e.uid, "store")]);
+      }
       acts.push([S.locked.has(e.uid) ? "ロックを外す" : "ロック", () => { S.locked.has(e.uid) ? S.locked.delete(e.uid) : S.locked.add(e.uid); render(); showDetail(); }]);
       acts.push(["削除", () => deleteEquip(e.uid), "danger"]);
     }
@@ -232,6 +252,44 @@ function showDetail() {
     const b = document.createElement("button"); b.type = "button"; b.className = "btn " + (cls || ""); b.textContent = label; b.onclick = fn; box.appendChild(b);
   }
   d.appendChild(box);
+  if (sel.kind === "equip" && sel.swap) showSwap(d, S.equip[sel.id]);
+}
+// 付け替え：装備中なら倉庫の中から、倉庫のものなら いま付けているものから、入れ替えられる相手だけを出す
+function showSwap(d, e) {
+  const zone = e.accessory ? "acc" : "gear", inStore = S.place[e.uid] === "store";
+  const pool = inStore ? uidsAt(zone) : uidsAt("store").filter((u) => !!S.equip[u].accessory === !!e.accessory && !S.equip[u].other);
+  const ok = pool.filter((u) => (inStore ? !swapProblem(u, e.uid) : !swapProblem(e.uid, u)));
+  const h = document.createElement("div"); h.className = "swaphead";
+  h.textContent = inStore ? `どれと付け替える？（外したものは倉庫へ）` : `何に付け替える？（${e.name} は倉庫へ）`;
+  d.appendChild(h);
+  const list = document.createElement("div"); list.className = "cands";
+  if (!ok.length) list.innerHTML = `<div class="none">${pool.length ? "付け替えられるものがないよ（属性の剣は1本・同じアクセサリは1つまで）" : (inStore ? "付けているものがないよ" : "倉庫に付け替えられるものがないよ")}</div>`;
+  for (const u of ok) {
+    const c = S.equip[u];
+    const b = document.createElement("button"); b.type = "button"; b.className = "cand";
+    b.innerHTML = `<img class="ic" src="${c.icon}" alt=""><span class="t"><b>${c.ultra ? "🌟" : ""}${c.name}</b><div>${c.effect}</div></span>`
+      + (c.attrs.length ? `<span class="ats">${c.attrs.map((a) => `<img src="${a.icon}" alt="${a.name}">`).join("")}</span>` : "");
+    b.onclick = () => (inStore ? swapEquip(u, e.uid) : swapEquip(e.uid, u));
+    list.appendChild(b);
+  }
+  d.appendChild(list);
+  h.scrollIntoView({ block: "nearest" });
+}
+// outUid（いま付けている）を外して inUid（倉庫）を付けたとき、ルールに合うか
+function swapProblem(outUid, inUid) {
+  const e = S.equip[inUid], L = S.cfg.limits;
+  if (e.other) return `${e.other} が付けている装備は使えないよ`;
+  const zone = e.accessory ? "acc" : "gear";
+  const now = uidsAt(zone).filter((u) => u !== outUid && u !== inUid);
+  if (zone === "gear" && e.attrs.length && now.filter((u) => S.equip[u].attrs.length).length >= L.attr_weapons) return "属性の付いた剣は1本だけ付けられるよ";
+  if (zone === "acc" && now.some((u) => S.equip[u].id === e.id)) return "同じアクセサリは2つ付けられないよ";
+  return null;
+}
+function swapEquip(outUid, inUid) {
+  const why = swapProblem(outUid, inUid); if (why) return msg(why, "bad");
+  const zone = S.place[outUid];
+  S.place[outUid] = "store"; S.place[inUid] = zone;
+  sel = null; msg(`${S.equip[outUid].name} → ${S.equip[inUid].name} に付け替えたよ`, "ok"); render(); showDetail();
 }
 $("detailClose").onclick = () => { sel = null; render(); showDetail(); };
 
@@ -244,13 +302,13 @@ function canEquip(uid, zone) {
   if (zone === "gear") {
     if (e.accessory) return "アクセサリは アクセサリの箱に入れてね";
     const now = uidsAt("gear").filter((u) => u !== uid);
-    if (now.length >= L.gear) return `装備品は ${L.gear}つまでだよ`;
+    if (now.length >= L.gear) return `装備品は ${L.gear}つまでだよ（押して「付け替える」で入れ替えられるよ）`;
     if (e.attrs.length && now.filter((u) => S.equip[u].attrs.length).length >= L.attr_weapons) return "属性の付いた剣は1本だけ付けられるよ";
   }
   if (zone === "acc") {
     if (!e.accessory) return "装備品は 装備品の箱に入れてね";
     const now = uidsAt("acc").filter((u) => u !== uid);
-    if (now.length >= L.acc) return `アクセサリは ${L.acc}つまでだよ`;
+    if (now.length >= L.acc) return `アクセサリは ${L.acc}つまでだよ（押して「付け替える」で入れ替えられるよ）`;
     if (now.some((u) => S.equip[u].id === e.id)) return "同じアクセサリは2つ付けられないよ";
   }
   return null;
