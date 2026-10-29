@@ -404,7 +404,7 @@ def view_ally_detail():
 
     if st.button("◀ 一覧にもどる", key="_story_detail_back_top"):
         back()
-    with st.container(border=True, key="story_ally_detail"):
+    with st.container(height=BOX_H + 60, border=True, key="story_ally_detail"):
         st.markdown(DETAIL_CSS + ally_detail_html(lv), unsafe_allow_html=True)
         col_back, col_pick = st.columns(2)
         if col_back.button("◀ 一覧にもどる", key="_story_detail_back", width="stretch"):
@@ -432,7 +432,7 @@ def view_ally_picker():
 .st-key-story_picker [class*="st-key-_story_detail_"] button {
   width: 100% !important; height: 100% !important; min-height: 0 !important; opacity: 0 !important; cursor: zoom-in !important; }
 </style>""", unsafe_allow_html=True)
-    with st.container(border=True, key="story_picker"):
+    with st.container(height=BOX_H, border=True, key="story_picker"):
         st.markdown("**キャラクターを えらぶ**　<small>（画像を押すと、くわしく見られるよ）</small>", unsafe_allow_html=True)
         for row in range(0, len(story_data.ALLIES), 5):
             cols = st.columns(5)
@@ -486,9 +486,31 @@ HOME_CSS = """<style>
   .st-key-_story_inventory button p { font-size: 0 !important; }
   .st-key-_story_inventory button p::after { content: "装備"; font-size: 12px; }
 }
+.st-ctitle { margin: 0 0 6px; line-height: 1.35; }
+.st-ctitle b { font-size: 1.3rem; display: block; }
+.st-ctitle span { font-size: .9rem; opacity: .8; }
+/* ステージ間：左に次の敵、右にボタン（スマホでも横並び） */
+.st-key-story_next [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 10px !important; align-items: flex-start; }
+.st-key-story_next [data-testid="stColumn"] { min-width: 0 !important; }
+.st-key-story_next img { max-height: 210px; object-fit: contain; }
+.st-key-story_next button { min-height: 44px !important; }
 .st-key-story_panel button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
 </style>"""
 st.markdown(HOME_CSS, unsafe_allow_html=True)
+
+
+BOX_H = 430          # 中身が多いところは、この高さの箱の中だけでスクロールする（ページ全体は動かさない）
+
+
+def compact_title(title, sub=""):
+    """大きな見出し（hero）の代わりの、小さな1〜2行の見出し"""
+    st.markdown(f"<div class='st-ctitle'><b>{title}</b>" + (f"<span>{sub}</span>" if sub else "") + "</div>",
+                unsafe_allow_html=True)
+
+
+def box(height=BOX_H, key=None):
+    """中だけスクロールする箱"""
+    return st.container(height=height, border=True, key=key)
 
 
 def story_header(title="⚔️ ストーリーモード", back=None):
@@ -692,32 +714,30 @@ def title_cards(items):
 def view_titles():
     items = L.titles(profile)
     got = sum(t["earned"] for t in items)
-    common.hero("🏅 称号", f"手に入れた称号：{got} / {len(items)}")
+    compact_title("🏅 称号", f"手に入れた称号：{got} / {len(items)}")
     if st.button("🏠 ホームにもどる", key="_story_titles_back_top"):
         go("home")
-    st.subheader("モード全クリ・エクストラ")
-    st.markdown(TITLE_CSS + title_cards([t for t in items if t["kind"] != "ally"]), unsafe_allow_html=True)
-    st.subheader(f"キャラ Lv.{story_data.LEVEL_MAX}")
-    st.markdown(title_cards([t for t in items if t["kind"] == "ally"]), unsafe_allow_html=True)
-    if st.button("🏠 ホームにもどる", key="_story_titles_back"):
-        go("home")
+    with box(BOX_H + 60):
+        st.markdown("**モード全クリ・エクストラ**")
+        st.markdown(TITLE_CSS + title_cards([t for t in items if t["kind"] != "ally"]), unsafe_allow_html=True)
+        st.markdown(f"**キャラ Lv.{story_data.LEVEL_MAX}**")
+        st.markdown(title_cards([t for t in items if t["kind"] == "ally"]), unsafe_allow_html=True)
 
 
 def show_new_titles(new_titles):
     """挑戦の終わりに、新しく手に入れた称号を知らせる"""
     if not new_titles:
         return
-    st.subheader("🏅 新しい称号")
+    st.markdown("**🏅 新しい称号**")
     st.markdown(TITLE_CSS + title_cards(new_titles), unsafe_allow_html=True)
 
 
 def view_guide():
-    common.hero("📖 攻略", "味方・装備・敵のことと、攻略のコツ")
+    compact_title("📖 攻略", "味方・装備・敵のことと、攻略のコツ")
     if st.button("🏠 ホームにもどる", key="_story_guide_back_top"):
         go("home")
-    story_guide.render(profile)
-    if st.button("🏠 ホームにもどる", key="_story_guide_back"):
-        go("home")
+    with box(BOX_H + 60):
+        story_guide.render(profile)
 
 
 # ---------------------------------------------------------------------------
@@ -770,7 +790,7 @@ def view_battle():
 def view_retry():
     run = profile["run"]
     enemy = L.run_enemy(run)
-    common.hero("💀 やられてしまった…", f"{stage_label(run)}　Lv.{enemy['lv']} {enemy['name']}")
+    compact_title("💀 やられてしまった…", f"{stage_label(run)}　Lv.{enemy['lv']} {enemy['name']}")
     st.markdown("負けても大丈夫。このステージを始めたときの HP とかばんに もどして、もう一度 挑戦できるよ。")
     hp_bar(run["hp"], L.ally_stats(run["ally"], profile)["hp"])
     counts = L.bag_counts(run["bag"])
@@ -786,10 +806,13 @@ def view_extra_lost():
     """エクストラ（宇宙龍）に負けたとき：もう一度戦うか、先へ進むか（どちらも負けにはならない）"""
     run = profile["run"]
     enemy = story_data.EXTRA_ENEMY
-    common.hero("🐉 宇宙龍に やられてしまった…", f"Lv.{enemy['lv']} {enemy['name']} ― {enemy['title']}")
-    st.image(str(story_assets.enemy_image_path(enemy)), width="stretch")
-    st.markdown("負けにはならないよ。HP とかばんは、宇宙龍と戦い始めたときに もどったよ。")
-    hp_bar(run["hp"], L.ally_stats(run["ally"], profile)["hp"])
+    compact_title("🐉 宇宙龍に やられてしまった…", f"Lv.{enemy['lv']} {enemy['name']} ― {enemy['title']}")
+    with st.container(key="story_next"):
+        col_img, col_text = st.columns([2, 3])
+        col_img.image(str(story_assets.enemy_image_path(enemy)), width="stretch")
+        col_text.markdown("負けにはならないよ。HP は、宇宙龍と戦い始めたときに もどったよ。")
+        with col_text:
+            hp_bar(run["hp"], L.ally_stats(run["ally"], profile)["hp"])
     col_retry, col_skip = st.columns(2)
     if col_retry.button("🔥 もう一度戦う", type="primary", width="stretch"):
         go_battle()
@@ -806,71 +829,77 @@ def view_extra_lost():
 # ステージ間の画面
 # ---------------------------------------------------------------------------
 def view_between():
+    """ステージの間：左上に次の敵、右に「すすむ」。もらった物とかばんは、下の箱の中でスクロール"""
     run = profile["run"]
     rewards = st.session_state.story_rewards
     max_hp = L.ally_stats(run["ally"], profile)["hp"]
     notice = st.session_state.pop("story_notice", None)
     if rewards and rewards.get("extra"):
-        common.hero("🌟 EXTRA STAGE クリア！", f"{story_data.EXTRA_ENEMY['name']} を たおした！")
+        compact_title("🌟 EXTRA STAGE クリア！", f"{story_data.EXTRA_ENEMY['name']} を たおした！")
     elif rewards:
         enemy = L.enemy_by_key(rewards["enemy"])
-        common.hero(f"🎉 ステージ{rewards['stage']} クリア！", f"Lv.{enemy['lv']} {enemy['name']} を たおした！")
+        compact_title(f"🎉 ステージ{rewards['stage']} クリア！", f"Lv.{enemy['lv']} {enemy['name']} を たおした！")
     else:
-        common.hero(f"📌 {stage_label(run)} へ", f"{short_name(run['ally'])} ／ {L.get_difficulty(run['difficulty'])['name']}")
+        compact_title(f"📌 {stage_label(run)} へ", f"{short_name(run['ally'])} ／ {L.get_difficulty(run['difficulty'])['name']}")
     if notice:
         st.info(notice)
-    if rewards:
-        if not show_rewards(rewards):
-            return                                # 仲間入りのカードを見せ終わるまで、先へは進めない
-        if rewards["healed"] > 0:
-            st.caption(f"休けいして HPが {L.display_hp(rewards['healed'])} 回復したよ。")
+    if rewards and not show_recruits(rewards):
+        return                                # 仲間入りのカードを見せ終わるまで、先へは進めない
 
-    hp_bar(run["hp"], max_hp)
-
-    st.subheader("🎒 かばん")
-    counts = L.bag_counts(run["bag"])
-    if not counts:
-        st.caption("かばんは からっぽ。")
-    for item in story_data.ITEMS:
-        n = counts.get(item["id"], 0)
-        if not n:
-            continue
-        col_name, col_use = st.columns([5, 3])
-        col_name.markdown(f"{item_icon(item['id'], n, size=36)} {item['name']}", unsafe_allow_html=True)
-        if item["heal_rate"] > 0:
-            if col_use.button("つかう", key=f"_story_use_{item['id']}", width="stretch",
-                              disabled=run["hp"] >= max_hp):
-                L.take_from_bag(run["bag"], item["id"])
-                run["hp"] = L.heal(run["hp"], max_hp, item)
-                save()
-                st.rerun()
+    # 上：左に次の敵、右に「すすむ」
+    with st.container(key="story_next"):
+        col_img, col_text = st.columns([2, 3])
+        if run.get("extra"):
+            col_img.markdown(f"<img src='{story_assets.silhouette_uri(L.enemy_key(story_data.EXTRA_ENEMY))}' "
+                             "style='width:100%;border-radius:10px;filter:drop-shadow(0 0 12px #b48cff)'>", unsafe_allow_html=True)
+            with col_text:
+                st.markdown("**⚠️ EXTRA STAGE**　ただならぬ気配……**？？？** が 行く手をはばんでいる！")
+                st.caption("戦わずに「にげる」こともできるよ（負けにはならない）。")
+                hp_bar(run["hp"], max_hp)
+                if st.button("⚔️ 立ち向かう", type="primary", width="stretch"):
+                    go_battle()
         else:
-            col_use.caption("戦闘中に使えるよ")
-
-    st.divider()
-    if run.get("extra"):
-        with st.container(border=True):
-            st.markdown("### ⚠️ EXTRA STAGE")
-            st.markdown("ただならぬ気配がする…… **？？？** が 行く手をはばんでいる！")
-            st.caption("戦わずに「にげる」こともできるよ（負けにはならない）。")
-            if st.button("⚔️ 立ち向かう", type="primary", width="stretch"):
-                go_battle()
-    else:
-        enemy = L.run_enemy(run)
-        final = run["stage"] == L.stage_count(run["difficulty"])
-        col_img, col_text = st.columns([1, 3])
-        col_img.image(str(story_assets.enemy_image_path(enemy)), width="stretch")
-        with col_text:
+            enemy = L.run_enemy(run)
+            final = run["stage"] == L.stage_count(run["difficulty"])
             label = "FINAL STAGE" if final else f"ステージ{run['stage']}"
-            st.markdown(f"**次の敵**：{label}　Lv.{enemy['lv']} {enemy['name']}")
-            if enemy["gimmicks"]:
-                st.caption("とくちょう：" + "・".join(
-                    f"{story_data.STATUS_EFFECTS[g]['icon']}{story_data.STATUS_EFFECTS[g]['name']}" for g in enemy["gimmicks"]))
-            if st.button(f"⚔️ {label} へ すすむ", type="primary", width="stretch"):
-                go_battle()
+            col_img.image(str(story_assets.enemy_image_path(enemy)), width="stretch")
+            with col_text:
+                st.markdown(f"**次の敵**：{label}<br>Lv.{enemy['lv']} {enemy['name']}", unsafe_allow_html=True)
+                if enemy["gimmicks"]:
+                    st.caption("とくちょう：" + "・".join(
+                        f"{story_data.STATUS_EFFECTS[g]['icon']}{story_data.STATUS_EFFECTS[g]['name']}" for g in enemy["gimmicks"]))
+                hp_bar(run["hp"], max_hp)
+                if st.button(f"⚔️ {label} へ すすむ", type="primary", width="stretch"):
+                    go_battle()
+        with col_text:
+            if st.button("🏠 ホームへ（続きから遊べるよ）", width="stretch"):
+                go("home")
 
-    if st.button("🏠 ホームにもどる（続きから遊べるよ）", width="stretch"):
-        go("home")
+    # 下：もらった物・かばん（箱の中だけスクロール）
+    with box(BOX_H - 140):
+        if rewards:
+            if rewards["healed"] > 0:
+                st.caption(f"休けいして HPが {L.display_hp(rewards['healed'])} 回復したよ。")
+            show_rewards(rewards)
+        st.markdown("**🎒 かばん**")
+        counts = L.bag_counts(run["bag"])
+        if not counts:
+            st.caption("かばんは からっぽ。")
+        for item in story_data.ITEMS:
+            n = counts.get(item["id"], 0)
+            if not n:
+                continue
+            col_name, col_use = st.columns([5, 3])
+            col_name.markdown(f"{item_icon(item['id'], n, size=32)} {item['name']}", unsafe_allow_html=True)
+            if item["heal_rate"] > 0 and not item.get("assist"):
+                if col_use.button("つかう", key=f"_story_use_{item['id']}", width="stretch",
+                                  disabled=run["hp"] >= max_hp):
+                    L.take_from_bag(run["bag"], item["id"])
+                    run["hp"] = L.heal(run["hp"], max_hp, item)
+                    save()
+                    st.rerun()
+            else:
+                col_use.caption("戦闘中に使えるよ")
 
 
 # ---------------------------------------------------------------------------
@@ -884,9 +913,9 @@ def view_end():
     difficulty = L.get_difficulty(summary["difficulty"])["name"]
     if summary["outcome"] == "clear":
         boss = L.stages_for(summary["difficulty"])[-1]["name"]
-        common.hero("👑 全クリア！", f"{name} は {boss}を たおした！（{difficulty}）")
+        compact_title("👑 全クリア！", f"{name} は {boss}を たおした！（{difficulty}）")
     else:
-        common.hero("🏳️ 挑戦を 終えた", f"{name} ／ {difficulty} ／ ステージ{summary['cleared']}まで クリア")
+        compact_title("🏳️ 挑戦を 終えた", f"{name} ／ {difficulty} ／ ステージ{summary['cleared']}まで クリア")
 
     rewards = st.session_state.story_rewards
     if summary["outcome"] == "clear" and rewards:
@@ -895,9 +924,19 @@ def view_end():
         if not rewards["allies"]:
             st.balloons()
 
+    if st.button("🏠 ホームに もどる", type="primary", width="stretch", key="_story_end_home_top"):
+        st.session_state.story_summary = None
+        new_rewards(None)
+        go("home")
+    with box(BOX_H):
+        end_details(summary, name)
+
+
+def end_details(summary, name):
+    """挑戦の終わり：新しい称号・アビリティ・倉庫にもどった物（箱の中）"""
     show_new_titles(summary.get("new_titles"))
 
-    st.subheader("✨ アビリティ")
+    st.markdown("**✨ アビリティ**")
     if summary["ability_after"] > summary["ability_before"]:
         st.caption(f"{name} の アビリティが たまったよ！")
     level_before = L.level_of(summary["ally"], summary["ability_before"])
@@ -908,15 +947,10 @@ def view_end():
         st.success(f"🎊 新しいアビリティを {summary['new_abilities']}つ 解放した！")
     ability_gauges(summary["ally"], summary["ability_after"])
 
-    st.subheader("🎒 アイテム")
+    st.markdown("**🎒 アイテム**")
     returned = summary["returned"]
     st.markdown("倉庫にもどった物：" + ("".join(item_icon(k, n) for k, n in returned.items()) or "なし"),
                 unsafe_allow_html=True)
-
-    if st.button("🏠 ホームに もどる", type="primary", width="stretch"):
-        st.session_state.story_summary = None
-        new_rewards(None)
-        go("home")
 
 
 {
