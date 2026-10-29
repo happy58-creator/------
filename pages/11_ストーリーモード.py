@@ -471,6 +471,11 @@ HOME_CSS = """<style>
 /* スマホでは10%だと字が入らないので、いちばん小さい幅を決めておく */
 .st-key-story_menu [data-testid="stColumn"]:nth-child(1) { min-width: 92px !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(2), .st-key-story_menu [data-testid="stColumn"]:nth-child(3) { min-width: 64px !important; }
+/* 画像の下のボタン：狭い画面では「装備」、広い画面では「倉庫とリュック」 */
+@media (max-width: 640px) {
+  .st-key-_story_inventory button p { font-size: 0 !important; }
+  .st-key-_story_inventory button p::after { content: "装備"; font-size: 12px; }
+}
 .st-key-story_panel button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
 </style>"""
 st.markdown(HOME_CSS, unsafe_allow_html=True)
@@ -496,12 +501,12 @@ def view_home():
     # 上のメニュー：クエスト（画面の約20%）・称号・攻略（約10%ずつ）を横に並べる
     with st.container(key="story_menu"):
         col_quest, col_title, col_guide, _ = st.columns([2, 1, 1, 6])
-        if col_quest.button("🗺️ クエスト", key="_story_quest", type="primary", width="stretch"):
+        if col_quest.button("クエスト", key="_story_quest", type="primary", width="stretch"):
             st.session_state.story_confirm_new = False
             go("quest")
-        if col_title.button("🏅 称号", key="_story_titles", width="stretch"):
+        if col_title.button("称号", key="_story_titles", width="stretch"):
             go("titles")
-        if col_guide.button("📖 攻略", key="_story_guide", width="stretch"):
+        if col_guide.button("攻略", key="_story_guide", width="stretch"):
             go("guide")
     notice = st.session_state.pop("story_notice", None)
     if notice:
@@ -519,7 +524,7 @@ def view_home():
         left, right = ally_panel_parts(lv)
         col_pic, col_info = st.columns([3, 7])
         col_pic.markdown(left, unsafe_allow_html=True)
-        if col_pic.button("🎒 倉庫と リュック", key="_story_inventory", width="stretch"):
+        if col_pic.button("🎒 倉庫とリュック", key="_story_inventory", width="stretch"):
             st.session_state.story_round += 1
             go("inventory")
         col_info.markdown(right, unsafe_allow_html=True)
