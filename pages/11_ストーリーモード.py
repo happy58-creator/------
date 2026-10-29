@@ -531,6 +531,12 @@ header[data-testid="stHeader"] { display: none !important; }
 /* ホーム：キャラの画像・装備品の行・アクセサリの行を押せるように（透明なボタンを重ねる） */
 .st-key-story_tap_pic, .st-key-story_tap_gear, .st-key-story_tap_acc { position: relative !important; gap: 0 !important; cursor: pointer; }
 .st-key-story_panel [data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 4px !important; }
+/* Streamlit の文字のかたまりは下に -1rem の余白があり、すき間をつめると上の部品と重なるので 0 にする */
+.st-key-story_tap_pic [data-testid="stMarkdown"], .st-key-story_tap_gear [data-testid="stMarkdown"], .st-key-story_tap_acc [data-testid="stMarkdown"],
+.st-key-story_tap_pic [data-testid="stMarkdownContainer"], .st-key-story_tap_gear [data-testid="stMarkdownContainer"],
+.st-key-story_tap_acc [data-testid="stMarkdownContainer"] { margin: 0 !important; }
+.st-key-story_tap_pic [data-testid="stElementContainer"], .st-key-story_tap_gear [data-testid="stElementContainer"],
+.st-key-story_tap_acc [data-testid="stElementContainer"] { margin: 0 !important; }
 [class*="st-key-_story_tap_"] { position: absolute !important; inset: 0 !important; z-index: 3; margin: 0 !important; }
 [class*="st-key-_story_tap_"] > div, [class*="st-key-_story_tap_"] .stButton, [class*="st-key-_story_tap_"] button {
   width: 100% !important; height: 100% !important; min-height: 0 !important; }
