@@ -6,12 +6,26 @@
 <title>story inventory</title>
 <style>
   :root { --gold:#e9d6a6; --ink:#f4ecda; --muted:#b9ab90; --panel:#1b161f; --line:rgba(233,214,166,.28); --ok:#7fd8a0; --bad:#ff8a7a; }
-  html, body { margin:0; height:100%; overflow-y:auto; background:#121015; color:var(--ink); -webkit-overflow-scrolling:touch;
+  html, body { margin:0; height:100%; overflow:hidden; background:#121015; color:var(--ink);
     font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Noto Serif CJK JP",serif; }
   * { box-sizing:border-box; }
   /* 画面いっぱいに表示する（ページ側で iframe を全画面にしている） */
-  #app { min-height:100%; max-width:1100px; margin:0 auto; background:#121015; user-select:none; -webkit-user-select:none;
-    padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  #app { position:fixed; inset:0; max-width:900px; margin:0 auto; background:#121015; user-select:none; -webkit-user-select:none;
+    display:flex; flex-direction:column;
+    padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  /* 中身だけスクロール（ページ全体は動かさない） */
+  #main { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+    display:flex; flex-direction:column; gap:8px; padding-bottom:6px; }
+  .grid5 { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; }
+  .grid3 { display:grid; grid-template-columns:repeat(3, minmax(0, 92px)); gap:10px; }
+  .mode-equip .only-item, .mode-item .only-equip { display:none !important; }
+  /* くわしい中身：画面の下からせり上がる（たくさんあっても必ず見える） */
+  #detail { position:fixed; left:0; right:0; bottom:0; z-index:40; max-width:900px; margin:0 auto; transform:translateY(105%); transition:transform .2s ease-out;
+    background:#1d1722; border:1px solid var(--line); border-radius:16px 16px 0 0; padding:12px 14px max(14px, env(safe-area-inset-bottom));
+    box-shadow:0 -10px 30px rgba(0,0,0,.6); max-height:70%; overflow-y:auto; }
+  #detail.open { transform:translateY(0); }
+  #detail .close { position:absolute; right:10px; top:8px; font:600 13px sans-serif; padding:6px 10px; border-radius:999px; background:transparent;
+    color:var(--muted); border:1px solid rgba(255,255,255,.25); }
   @media (min-width:700px) { .grid { grid-template-columns:repeat(auto-fill, minmax(66px, 1fr)); } .cols { gap:12px; } }
   .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
   .head h2 { margin:0; font-size:17px; color:var(--gold); }
@@ -41,7 +55,6 @@
   .slot { aspect-ratio:1/1; border-radius:10px; border:1px dashed rgba(233,214,166,.25); }
   .empty { font-size:12px; color:var(--muted); padding:6px 2px; grid-column:1 / -1; }
 
-  #detail { margin-top:8px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; min-height:70px; }
   #detail .row { display:flex; gap:10px; align-items:flex-start; }
   #detail img.big { width:64px; height:64px; border-radius:10px; flex:none; }
   #detail b { font-size:15px; }
@@ -72,26 +85,27 @@
 </head>
 <body>
 <div id="app">
-  <div class="head"><h2>🎒 倉庫とリュック</h2><span class="who" id="who"></span></div>
-  <div class="cols">
+  <div class="head"><h2 id="title">🎒 倉庫とリュック</h2><span class="who" id="who"></span></div>
+  <div id="main">
+    <!-- 装備：装備品・アクセサリ・倉庫の装備 -->
+    <div class="box only-equip" id="z-gear" data-zone="gear"><h3>装備品 <small id="gearN"></small></h3><div class="grid3" id="gear"></div></div>
+    <div class="box only-equip" id="z-acc" data-zone="acc"><h3>アクセサリ <small id="accN"></small></h3><div class="grid3" id="acc"></div></div>
+    <!-- アイテム：リュック -->
+    <div class="box only-item" id="z-pack" data-zone="pack"><h3>リュック <small id="packN"></small></h3><div class="grid5" id="pack"></div></div>
+    <!-- 倉庫（装備の画面では装備、アイテムの画面ではアイテムだけ） -->
     <div class="box" id="z-store" data-zone="store">
-      <h3>倉庫</h3>
-      <div class="sub">アイテム</div><div class="grid" id="store-items"></div>
-      <div class="sub">装備</div><div class="grid" id="store-equip"></div>
-    </div>
-    <div class="right">
-      <div class="box" id="z-pack" data-zone="pack"><h3>リュック <small id="packN"></small></h3><div class="grid" id="pack"></div></div>
-      <div class="box" id="z-gear" data-zone="gear"><h3>装備品 <small id="gearN"></small></h3><div class="grid" id="gear"></div></div>
-      <div class="box" id="z-acc" data-zone="acc"><h3>アクセサリ <small id="accN"></small></h3><div class="grid" id="acc"></div></div>
+      <h3><span id="storeTitle">倉庫</span><small id="storeHint"></small></h3>
+      <div class="grid5 only-item" id="store-items"></div>
+      <div class="grid5 only-equip" id="store-equip"></div>
     </div>
   </div>
-  <div id="detail"><div class="empty">アイコンを押すと、ここに効果が出ます。ドラッグで入れ替えられます。</div></div>
   <div id="msg"></div>
   <div class="bar">
     <button class="btn" id="cancel" type="button">もどる</button>
     <button class="btn primary" id="save" type="button">決定</button>
   </div>
 </div>
+<div id="detail"><button class="close" type="button" id="detailClose">とじる</button><div id="detailBody"></div></div>
 <img id="ghost" alt="">
 <div id="dlg"><div>
   <p id="dlgText"></p>
@@ -103,11 +117,11 @@
 const Streamlit = {
   send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data), "*"); },
   ready() { this.send("streamlit:componentReady", { apiVersion: 1 }); },
-  setHeight() { this.send("streamlit:setFrameHeight", { height: Math.ceil(document.documentElement.getBoundingClientRect().height) + 4 }); },
+  setHeight() { this.send("streamlit:setFrameHeight", { height: Math.max(480, window.innerHeight) }); },
   setValue(value) { this.send("streamlit:setComponentValue", { value, dataType: "json" }); },
 };
 window.addEventListener("message", (ev) => { const d = ev.data; if (d && d.type === "streamlit:render") start(d.args.config); });
-new ResizeObserver(() => Streamlit.setHeight()).observe(document.body);
+window.addEventListener("resize", () => Streamlit.setHeight());
 
 const $ = (id) => document.getElementById(id);
 let S = null;        // 画面の状態
@@ -124,8 +138,14 @@ function start(cfg) {
   };
   S.items = Object.fromEntries(cfg.items.map((i) => [i.id, i]));
   S.equip = Object.fromEntries(cfg.equipment.map((e) => [e.uid, e]));
-  $("who").textContent = `${cfg.ally} の装備` + (cfg.in_run ? "（挑戦中）" : "");
+  const mode = cfg.mode === "item" ? "item" : "equip";
+  $("app").className = "mode-" + mode;
+  $("title").textContent = mode === "item" ? "🎒 アイテム" : "🛡️ 装備";
+  $("storeTitle").textContent = mode === "item" ? "倉庫のアイテム" : "倉庫の装備";
+  $("storeHint").textContent = "押すとくわしく・ドラッグで移動";
+  $("who").textContent = mode === "item" ? (cfg.in_run ? "挑戦中のかばん" : "") : `${cfg.ally} の装備` + (cfg.in_run ? "（挑戦中）" : "");
   sel = null; render(); showDetail(); msg(cfg.notice || "", cfg.notice ? "ok" : undefined);
+  Streamlit.setHeight();
 }
 
 // ---------------------------------------------------------------------------
@@ -170,13 +190,13 @@ function render() {
   $("packN").textContent = `${packTotal()} / ${L.pack}`;
   $("gearN").textContent = `${uidsAt("gear").length} / ${L.gear}`;
   $("accN").textContent = `${uidsAt("acc").length} / ${L.acc}`;
-  Streamlit.setHeight();
 }
 function msg(text, kind) { const m = $("msg"); m.textContent = text || ""; m.className = kind || ""; }
 
 function showDetail() {
-  const d = $("detail");
-  if (!sel) { d.innerHTML = `<div class="empty">アイコンを押すと、ここに効果が出ます。ドラッグで入れ替えられます。</div>`; Streamlit.setHeight(); return; }
+  const d = $("detailBody");
+  if (!sel) { $("detail").classList.remove("open"); d.innerHTML = ""; return; }
+  $("detail").classList.add("open");
   const acts = [];
   if (sel.kind === "item") {
     const it = S.items[sel.id];
@@ -205,8 +225,8 @@ function showDetail() {
     const b = document.createElement("button"); b.type = "button"; b.className = "btn " + (cls || ""); b.textContent = label; b.onclick = fn; box.appendChild(b);
   }
   d.appendChild(box);
-  Streamlit.setHeight();
 }
+$("detailClose").onclick = () => { sel = null; render(); showDetail(); };
 
 // ---------------------------------------------------------------------------
 // 移動・削除（ルールはここで確かめ、Python でももう一度確かめる）
@@ -231,7 +251,7 @@ function canEquip(uid, zone) {
 function moveEquip(uid, zone) {
   if (zone === "pack") return msg("リュックには アイテムだけ入れられるよ", "bad");
   if (zone !== "store") { const why = canEquip(uid, zone); if (why) return msg(why, "bad"); }
-  S.place[uid] = zone; sel = { kind: "equip", id: uid, from: zone }; msg(""); render(); showDetail();
+  S.place[uid] = zone; sel = null; msg(""); render(); showDetail();   // 動かしたら、くわしい中身は閉じる
 }
 function deleteEquip(uid) {
   const e = S.equip[uid];
@@ -248,7 +268,7 @@ function askMove(kind, id, from, to) {
   if (max <= 0) return msg(`リュックは ${S.cfg.limits.pack}こまでだよ`, "bad");
   ask(`${S.items[id].name} を${to === "pack" ? "リュック" : "倉庫"}へ いくつ入れる？`, max, (n) => {
     if (from === "store") { S.store[id] -= n; S.pack[id] += n; } else { S.pack[id] -= n; S.store[id] += n; }
-    sel = { kind: "item", id, from: to }; msg(""); render(); showDetail();
+    sel = null; msg(""); render(); showDetail();
   });
 }
 function askDelete(id, from) {

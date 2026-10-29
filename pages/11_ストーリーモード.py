@@ -1,6 +1,6 @@
 """ストーリーモード（イージー・ノーマルは10ステージ、ハードは11、ベリーハードは12ステージ）
 
-流れ： ホーム（キャラ・「倉庫とリュック」） → 「クエスト」（難易度・続きから） → 戦闘 → ステージ間の画面 → … → 終わり
+流れ： ホーム（キャラ・「装備」「アイテム」） → 「クエスト」（難易度・続きから） → 戦闘 → ステージ間の画面 → … → 終わり
 ホームの上に「クエスト」「称号」「攻略」。サイドバーは出さず、右上の「トップへ」でトップページに戻る。
 - 進み具合は各ステージの始めに自動で保存する（チェックポイント）。手動の中断セーブはない。
 - 負けたとき・「やめる」で戻ったときは、そのステージを始めたときのHPからやり直す（戦闘で使ったアイテムは戻らない）。
@@ -400,23 +400,25 @@ def view_ally_detail():
 
     def back():
         st.session_state.story_detail = None
-        go("home")
+        go("ally_picker")
 
-    if st.button("◀ 一覧にもどる", key="_story_detail_back_top"):
-        back()
-    with st.container(height=BOX_H + 60, border=True, key="story_ally_detail"):
-        st.markdown(DETAIL_CSS + ally_detail_html(lv), unsafe_allow_html=True)
+    with st.container(key="story_detail_btns"):              # ボタンは上（説明は下の箱の中でスクロール）
         col_back, col_pick = st.columns(2)
         if col_back.button("◀ 一覧にもどる", key="_story_detail_back", width="stretch"):
             back()
         if have and not in_run and col_pick.button("このキャラにする", key="_story_detail_pick", type="primary", width="stretch"):
             st.session_state.story_ally = lv
-            st.session_state.story_pick_char = False
-            back()
+            st.session_state.story_detail = None
+            go("home")
+    with box(BOX_H, key="story_ally_detail", offset=70):
+        st.markdown(DETAIL_CSS + ally_detail_html(lv), unsafe_allow_html=True)
 
 
 def view_ally_picker():
-    """キャラクター一覧（まだ仲間でないキャラはグレー）。画像を押すと、くわしい説明の画面に切りかえる"""
+    """キャラクター一覧（画面の上の真ん中に出す。まだ仲間でないキャラはグレー）。画像を押すと、くわしい説明の画面"""
+    if profile["run"]:
+        go("home")                                # 挑戦中はキャラを変えられない
+    compact_title("🔄 キャラクター変更", "画像を押すと、くわしく見られるよ")
     owned = L.owned_allies(profile)
     # スマホでも1行5体のまま並べる（Streamlit は狭い画面で列を縦に積むので、この箱の中だけ止める）
     # 画像の上に透明なボタンを重ねて、画像を押すと説明が開くようにする
@@ -432,8 +434,7 @@ def view_ally_picker():
 .st-key-story_picker [class*="st-key-_story_detail_"] button {
   width: 100% !important; height: 100% !important; min-height: 0 !important; opacity: 0 !important; cursor: zoom-in !important; }
 </style>""", unsafe_allow_html=True)
-    with st.container(height=BOX_H, border=True, key="story_picker"):
-        st.markdown("**キャラクターを えらぶ**　<small>（画像を押すと、くわしく見られるよ）</small>", unsafe_allow_html=True)
+    with box(BOX_H, key="story_picker", offset=110):
         for row in range(0, len(story_data.ALLIES), 5):
             cols = st.columns(5)
             for col, ally in zip(cols, story_data.ALLIES[row:row + 5]):
@@ -453,11 +454,9 @@ def view_ally_picker():
                 if have and col.button("えらぶ", key=f"_story_pick_{lv}", width="stretch",
                                        type="primary" if lv == st.session_state.story_ally else "secondary"):
                     st.session_state.story_ally = lv
-                    st.session_state.story_pick_char = False
-                    st.rerun()
-        if st.button("とじる", key="_story_pick_close"):
-            st.session_state.story_pick_char = False
-            st.rerun()
+                    go("home")
+    if st.button("◀ もどる", key="_story_pick_close", width="stretch"):
+        go("home")
 
 
 # ---------------------------------------------------------------------------
@@ -467,33 +466,34 @@ HOME_CSS = """<style>
 /* ストーリーモードではサイドバーを出さず、上の余白をつめる */
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"],
 [data-testid="stSidebarCollapseButton"] { display: none !important; }
-[data-testid="stMainBlockContainer"], .block-container { padding-top: 1.2rem !important; }
+header[data-testid="stHeader"] { display: none !important; }
+[data-testid="stMainBlockContainer"], .block-container { padding-top: .5rem !important; padding-bottom: .5rem !important; }
+[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] { gap: .55rem; }
 /* 横並びのまま（スマホでも縦に積まない） */
 .st-key-story_head [data-testid="stHorizontalBlock"], .st-key-story_menu [data-testid="stHorizontalBlock"],
 .st-key-story_panel [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; align-items: center; }
 .st-key-story_panel [data-testid="stHorizontalBlock"] { align-items: flex-start; }
 .st-key-story_head [data-testid="stColumn"], .st-key-story_menu [data-testid="stColumn"], .st-key-story_panel [data-testid="stColumn"] {
   min-width: 0 !important; }
-.st-key-story_head h3 { margin: 0 !important; padding: 0 !important; font-size: 1.35rem !important; white-space: nowrap; }
+.st-key-story_head h3 { margin: 0 !important; padding: 0 !important; font-size: 1.1rem !important; white-space: nowrap; }
+.st-key-story_head button { min-height: 32px !important; }
 .st-key-story_head button, .st-key-story_menu button { padding: 4px 6px !important; min-height: 38px !important; font-size: 13px !important;
   white-space: nowrap !important; }
 .st-key-story_menu button p, .st-key-story_head button p { white-space: nowrap !important; overflow: hidden; text-overflow: clip; }
 /* スマホでは10%だと字が入らないので、いちばん小さい幅を決めておく */
 .st-key-story_menu [data-testid="stColumn"]:nth-child(1) { min-width: 92px !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(2), .st-key-story_menu [data-testid="stColumn"]:nth-child(3) { min-width: 64px !important; }
-/* 画像の下のボタン：狭い画面では「装備」、広い画面では「倉庫とリュック」 */
-@media (max-width: 640px) {
-  .st-key-_story_inventory button p { font-size: 0 !important; }
-  .st-key-_story_inventory button p::after { content: "装備"; font-size: 12px; }
-}
+.st-key-story_panel [data-testid="stColumn"] [data-testid="stHorizontalBlock"] { gap: 4px !important; }
 .st-ctitle { margin: 0 0 6px; line-height: 1.35; }
-.st-ctitle b { font-size: 1.3rem; display: block; }
+.st-ctitle b { font-size: 1.1rem; display: block; }
 .st-ctitle span { font-size: .9rem; opacity: .8; }
 /* ステージ間：左に次の敵、右にボタン（スマホでも横並び） */
 .st-key-story_next [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 10px !important; align-items: flex-start; }
 .st-key-story_next [data-testid="stColumn"] { min-width: 0 !important; }
 .st-key-story_next img { max-height: 210px; object-fit: contain; }
 .st-key-story_next button { min-height: 44px !important; }
+.st-key-story_picker, .st-key-story_ally_detail, .st-key-story_detail_btns { max-width: 640px; margin: 0 auto; width: 100%; }
+.st-key-story_detail_btns [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
 .st-key-story_panel button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
 </style>"""
 st.markdown(HOME_CSS, unsafe_allow_html=True)
@@ -508,8 +508,12 @@ def compact_title(title, sub=""):
                 unsafe_allow_html=True)
 
 
-def box(height=BOX_H, key=None):
-    """中だけスクロールする箱"""
+def box(height=BOX_H, key=None, offset=None):
+    """中だけスクロールする箱。offset を渡すと、画面の高さ − offset(px) にそろえる（画面からはみ出さない）"""
+    if offset is not None:
+        key = key or f"sbox_{offset}"
+        st.markdown(f"<style>.st-key-{key} {{ height: max(220px, calc(100dvh - {offset}px)) !important; }}</style>",
+                    unsafe_allow_html=True)
     return st.container(height=height, border=True, key=key)
 
 
@@ -556,7 +560,13 @@ def view_home():
         left, right = ally_panel_parts(lv)
         col_pic, col_info = st.columns([3, 7])
         col_pic.markdown(left, unsafe_allow_html=True)
-        if col_pic.button("🎒 倉庫とリュック", key="_story_inventory", width="stretch"):
+        col_eq, col_it = col_pic.columns(2)          # 画像の下：装備・アイテム
+        if col_eq.button("装備", key="_story_inv_equip", width="stretch"):
+            st.session_state.story_inv_mode = "equip"
+            st.session_state.story_round += 1
+            go("inventory")
+        if col_it.button("アイテム", key="_story_inv_item", width="stretch"):
+            st.session_state.story_inv_mode = "item"
             st.session_state.story_round += 1
             go("inventory")
         col_info.markdown(right, unsafe_allow_html=True)
@@ -564,10 +574,7 @@ def view_home():
             st.caption(f"📌 挑戦中：{L.get_difficulty(run['difficulty'])['name']} {stage_label(run)}"
                        "（「クエスト」から続きを遊べるよ。挑戦中はキャラを変えられないよ）")
         elif st.button("🔄 キャラクター変更", key="_story_change", width="stretch"):
-            st.session_state.story_pick_char = not st.session_state.get("story_pick_char", False)
-            st.rerun()
-    if not run and st.session_state.get("story_pick_char"):
-        view_ally_picker()
+            go("ally_picker")
 
 
 def view_quest():
@@ -592,7 +599,7 @@ def view_continue(run):
         hp_bar(run["hp"], max_hp)
         st.caption(f"クリアしたステージ：{run['cleared']} / {L.stage_count(run['difficulty'])}　"
                    f"リュック：{L.bag_total(run['bag'])} / {story_data.MAX_CARRY_ITEMS}こ　"
-                   "（挑戦中はキャラを変えられないよ。装備とリュックは、ホームの「倉庫とリュック」で変えられるよ）")
+                   "（挑戦中はキャラを変えられないよ。装備とリュックは、ホームの「装備」「アイテム」で変えられるよ）")
         if st.button("▶️ 続きから", type="primary", width="stretch"):
             st.session_state.story_confirm_new = False
             go_battle()
@@ -645,7 +652,7 @@ def view_prepare():
     st.subheader("🎒 リュック")
     if pack:
         st.markdown("".join(item_icon(k, n) for k, n in pack.items()), unsafe_allow_html=True)
-    st.caption(f"{sum(pack.values())} / {story_data.MAX_CARRY_ITEMS}こ　持っていくアイテムは、ホームの「🎒 倉庫とリュック」で入れてね。")
+    st.caption(f"{sum(pack.values())} / {story_data.MAX_CARRY_ITEMS}こ　持っていくアイテムは、ホームの「アイテム」でリュックに入れてね。")
 
     st.divider()
     if st.button("⚔️ プレイする", type="primary", width="stretch"):
@@ -663,7 +670,8 @@ def view_inventory():
     round_id = st.session_state.story_round
     st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)    # 画面いっぱいに広げる
     notice = st.session_state.get("story_inventory_notice")
-    result = story_inventory.inventory(profile, lv, round_id, key=f"story_inventory_{round_id}", notice=notice)
+    result = story_inventory.inventory(profile, lv, round_id, key=f"story_inventory_{round_id}", notice=notice,
+                                       mode=st.session_state.get("story_inv_mode", "equip"))
     if not result or result.get("round") != round_id:
         return
     st.session_state.story_inventory_notice = None
@@ -680,7 +688,7 @@ def view_inventory():
             st.session_state.story_inventory_notice = message
             st.session_state.story_round += 1
             go("inventory")
-        st.session_state.story_notice = "倉庫とリュックを保存したよ。"
+        st.session_state.story_notice = "保存したよ。"
     go("home")
 
 
@@ -717,7 +725,7 @@ def view_titles():
     compact_title("🏅 称号", f"手に入れた称号：{got} / {len(items)}")
     if st.button("🏠 ホームにもどる", key="_story_titles_back_top"):
         go("home")
-    with box(BOX_H + 60):
+    with box(BOX_H, key="sbox_titles", offset=150):
         st.markdown("**モード全クリ・エクストラ**")
         st.markdown(TITLE_CSS + title_cards([t for t in items if t["kind"] != "ally"]), unsafe_allow_html=True)
         st.markdown(f"**キャラ Lv.{story_data.LEVEL_MAX}**")
@@ -736,7 +744,7 @@ def view_guide():
     compact_title("📖 攻略", "味方・装備・敵のことと、攻略のコツ")
     if st.button("🏠 ホームにもどる", key="_story_guide_back_top"):
         go("home")
-    with box(BOX_H + 60):
+    with box(BOX_H, key="sbox_guide", offset=150):
         story_guide.render(profile)
 
 
@@ -876,7 +884,7 @@ def view_between():
                 go("home")
 
     # 下：もらった物・かばん（箱の中だけスクロール）
-    with box(BOX_H - 140):
+    with box(BOX_H - 140, key="sbox_between", offset=340):
         if rewards:
             if rewards["healed"] > 0:
                 st.caption(f"休けいして HPが {L.display_hp(rewards['healed'])} 回復したよ。")
@@ -928,7 +936,7 @@ def view_end():
         st.session_state.story_summary = None
         new_rewards(None)
         go("home")
-    with box(BOX_H):
+    with box(BOX_H, key="sbox_end", offset=150):
         end_details(summary, name)
 
 
@@ -954,7 +962,7 @@ def end_details(summary, name):
 
 
 {
-    "home": view_home, "quest": view_quest, "ally_detail": view_ally_detail,
+    "home": view_home, "quest": view_quest, "ally_detail": view_ally_detail, "ally_picker": view_ally_picker,
     "inventory": view_inventory, "guide": view_guide, "titles": view_titles,
     "battle": view_battle, "between": view_between, "retry": view_retry,
     "extra_lost": view_extra_lost, "end": view_end,

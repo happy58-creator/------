@@ -39,7 +39,7 @@ def item_effect(item):
     return L.item_effect_text(item)
 
 
-def inventory_config(profile, ally_lv, round_id):
+def inventory_config(profile, ally_lv, round_id, mode="equip"):
     """コンポーネントに渡す設定"""
     store = {k: int(v) for k, v in profile["items"].items() if int(v) > 0}
     pack = L.pack_counts(profile)
@@ -73,6 +73,7 @@ def inventory_config(profile, ally_lv, round_id):
         })
     return {
         "round": round_id,
+        "mode": mode,                         # "equip"（装備品・アクセサリ）/ "item"（リュック・倉庫のアイテム）
         "ally": L.short_name(ally_lv),
         "in_run": bool(profile["run"]),
         "items": items,
@@ -82,7 +83,7 @@ def inventory_config(profile, ally_lv, round_id):
     }
 
 
-def inventory(profile, ally_lv, round_id, key, notice=None):
-    config = inventory_config(profile, ally_lv, round_id)
+def inventory(profile, ally_lv, round_id, key, notice=None, mode="equip"):
+    config = inventory_config(profile, ally_lv, round_id, mode)
     config["notice"] = notice or ""          # 開いたときに上に出す知らせ（アイテムを使った結果など）
     return _component(config=config, key=key, default=None)

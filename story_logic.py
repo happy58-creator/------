@@ -208,7 +208,7 @@ def equip_effect_text(entry_or_id):
 
 def item_effect_text(item):
     if item.get("home_use") == "level_up":
-        return "ホームの「倉庫とリュック」で使うと、いまのキャラのレベルが1上がる"
+        return "ホームの「アイテム」の画面（倉庫）で使うと、いまのキャラのレベルが1上がる"
     if item.get("assist"):
         return ("戦闘で使うとHP全回復・状態異常をすべて治し、その戦闘のあいだ精霊の加護（毒・雷・火にかからない）。"
                 "さらにアステルが援護に来る。倒れそうになったときにも使える")
