@@ -347,7 +347,7 @@ def ally_panel_parts(lv):
             f"<div style='margin-top:2px'>{icons}</div>")
     right = (f"<div style='font-weight:700;font-size:17px'>{ally['name']}"
              f"<span style='margin-left:8px;color:#8fe0ff'>Lv.{level}</span></div>"
-             f"<div style='font-size:14px;margin-top:4px'>{'　'.join(stats)}</div>{resist_html}{exp}{skill_html}{''.join(gauges)}")
+             f"<div style='font-size:14px;margin-top:4px;line-height:1.6'>{''.join(f'<div>{x}</div>' for x in stats)}</div>{resist_html}{exp}{skill_html}{''.join(gauges)}")
     return left, right
 
 
