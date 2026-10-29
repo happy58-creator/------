@@ -488,7 +488,11 @@ header[data-testid="stHeader"] { display: none !important; }
 /* スマホでは10%だと字が入らないので、いちばん小さい幅を決めておく */
 .st-key-story_menu [data-testid="stColumn"]:nth-child(1) { min-width: 92px !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(2), .st-key-story_menu [data-testid="stColumn"]:nth-child(3) { min-width: 64px !important; }
-.st-key-story_panel .st-key-_story_inv_equip, .st-key-story_panel .st-key-_story_inv_item { margin-top: -4px; }
+/* 画像（と装備のアイコン）の下：「装備」は少し離し、「装備」と「アイテム」のあいだはつめる */
+.st-key-story_panel .st-key-_story_inv_equip { margin-top: 10px !important; }
+.st-key-story_panel .st-key-_story_inv_item { margin-top: -10px !important; }
+/* 「キャラクター変更」はアビリティから少し離す */
+.st-key-story_panel .st-key-_story_change { margin-top: 12px !important; }
 .st-key-story_panel .st-key-_story_inv_equip button, .st-key-story_panel .st-key-_story_inv_item button {
   white-space: nowrap !important; font-size: 12px !important; padding: 2px 2px !important; min-height: 34px !important; }
 .st-key-story_panel .st-key-_story_inv_equip p, .st-key-story_panel .st-key-_story_inv_item p { white-space: nowrap !important; font-size: 12px !important; }
