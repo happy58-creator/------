@@ -287,13 +287,16 @@ def section_tips():
     st.markdown(CSS + "".join(parts), unsafe_allow_html=True)
 
 
-def render(profile):
+def render(profile, box=None):
+    """攻略ページ。box を渡すと、タブの中身をその箱（中だけスクロール）に入れる。タブ自体は箱の上に出る"""
+    from contextlib import nullcontext
+    wrap = box or (lambda i: nullcontext())
     tab_ally, tab_equip, tab_enemy, tab_tips = st.tabs(["味方", "装備・アイテム", "敵", "攻略のコツ"])
-    with tab_ally:
+    with tab_ally, wrap(0):
         section_allies(profile)
-    with tab_equip:
+    with tab_equip, wrap(1):
         section_equipment()
-    with tab_enemy:
+    with tab_enemy, wrap(2):
         section_enemies(profile)
-    with tab_tips:
+    with tab_tips, wrap(3):
         section_tips()

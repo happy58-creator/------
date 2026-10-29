@@ -422,7 +422,7 @@ def view_ally_picker():
     owned = L.owned_allies(profile)
     # スマホでも1行5体のまま並べる（Streamlit は狭い画面で列を縦に積むので、この箱の中だけ止める）
     # 画像の上に透明なボタンを重ねて、画像を押すと説明が開くようにする
-    st.markdown("""<style>
+    st.html("""<style>
 .st-key-story_picker [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 6px !important; }
 .st-key-story_picker [data-testid="stColumn"], .st-key-story_picker [data-testid="column"] {
   min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
@@ -433,7 +433,7 @@ def view_ally_picker():
   width: 100% !important; height: 100% !important; }
 .st-key-story_picker [class*="st-key-_story_detail_"] button {
   width: 100% !important; height: 100% !important; min-height: 0 !important; opacity: 0 !important; cursor: zoom-in !important; }
-</style>""", unsafe_allow_html=True)
+</style>""")
     with box(BOX_H, key="story_picker", offset=110):
         for row in range(0, len(story_data.ALLIES), 5):
             cols = st.columns(5)
@@ -467,15 +467,20 @@ HOME_CSS = """<style>
 [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"],
 [data-testid="stSidebarCollapseButton"] { display: none !important; }
 header[data-testid="stHeader"] { display: none !important; }
+/* 中身のない部品（CSS だけ・スクリプトだけ・高さ0の部品）が、ページの上に余白を作らないようにする（動きはそのまま） */
+[data-testid="stElementContainer"]:has([data-testid="stMarkdownContainer"] > style:only-child),
+[data-testid="stElementContainer"]:has([data-testid="stMarkdownContainer"] > div > style:only-child),
+[data-testid="stElementContainer"]:has(> [data-testid="stHtml"]:empty),
+[data-testid="stElementContainer"]:has(iframe[height="0"]) {
+  position: absolute !important; width: 0 !important; height: 0 !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; }
 [data-testid="stMainBlockContainer"], .block-container { padding-top: .5rem !important; padding-bottom: .5rem !important; }
-[data-testid="stMainBlockContainer"] [data-testid="stVerticalBlock"] { gap: .55rem; }
 /* 横並びのまま（スマホでも縦に積まない） */
 .st-key-story_head [data-testid="stHorizontalBlock"], .st-key-story_menu [data-testid="stHorizontalBlock"],
 .st-key-story_panel [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; align-items: center; }
 .st-key-story_panel [data-testid="stHorizontalBlock"] { align-items: flex-start; }
 .st-key-story_head [data-testid="stColumn"], .st-key-story_menu [data-testid="stColumn"], .st-key-story_panel [data-testid="stColumn"] {
   min-width: 0 !important; }
-.st-key-story_head h3 { margin: 0 !important; padding: 0 !important; font-size: 1.1rem !important; white-space: nowrap; }
+.st-key-story_head h3 { margin: 0 !important; padding: 0 !important; font-size: 1.35rem !important; white-space: nowrap; }
 .st-key-story_head button { min-height: 32px !important; }
 .st-key-story_head button, .st-key-story_menu button { padding: 4px 6px !important; min-height: 38px !important; font-size: 13px !important;
   white-space: nowrap !important; }
@@ -483,9 +488,12 @@ header[data-testid="stHeader"] { display: none !important; }
 /* スマホでは10%だと字が入らないので、いちばん小さい幅を決めておく */
 .st-key-story_menu [data-testid="stColumn"]:nth-child(1) { min-width: 92px !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(2), .st-key-story_menu [data-testid="stColumn"]:nth-child(3) { min-width: 64px !important; }
-.st-key-story_panel [data-testid="stColumn"] [data-testid="stHorizontalBlock"] { gap: 4px !important; }
+.st-key-story_panel .st-key-_story_inv_equip, .st-key-story_panel .st-key-_story_inv_item { margin-top: -4px; }
+.st-key-story_panel .st-key-_story_inv_equip button, .st-key-story_panel .st-key-_story_inv_item button {
+  white-space: nowrap !important; font-size: 12px !important; padding: 2px 2px !important; min-height: 34px !important; }
+.st-key-story_panel .st-key-_story_inv_equip p, .st-key-story_panel .st-key-_story_inv_item p { white-space: nowrap !important; font-size: 12px !important; }
 .st-ctitle { margin: 0 0 6px; line-height: 1.35; }
-.st-ctitle b { font-size: 1.1rem; display: block; }
+.st-ctitle b { font-size: 1.3rem; display: block; }
 .st-ctitle span { font-size: .9rem; opacity: .8; }
 /* ステージ間：左に次の敵、右にボタン（スマホでも横並び） */
 .st-key-story_next [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 10px !important; align-items: flex-start; }
@@ -493,10 +501,14 @@ header[data-testid="stHeader"] { display: none !important; }
 .st-key-story_next img { max-height: 210px; object-fit: contain; }
 .st-key-story_next button { min-height: 44px !important; }
 .st-key-story_picker, .st-key-story_ally_detail, .st-key-story_detail_btns { max-width: 640px; margin: 0 auto; width: 100%; }
-.st-key-story_detail_btns [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
+.st-key-story_detail_btns [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; }
+/* スマホでは列が1つずつ100%幅になり、横に並べると右にはみ出すので、等分にする */
+.st-key-story_detail_btns [data-testid="stHorizontalBlock"] > div,
+.st-key-story_picker [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
+.st-key-story_detail_btns button { min-height: 40px !important; padding: 4px 6px !important; }
 .st-key-story_panel button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
 </style>"""
-st.markdown(HOME_CSS, unsafe_allow_html=True)
+st.html(HOME_CSS)          # <style> だけの st.html は場所をとらない（上に余白ができない）
 
 
 BOX_H = 430          # 中身が多いところは、この高さの箱の中だけでスクロールする（ページ全体は動かさない）
@@ -512,8 +524,7 @@ def box(height=BOX_H, key=None, offset=None):
     """中だけスクロールする箱。offset を渡すと、画面の高さ − offset(px) にそろえる（画面からはみ出さない）"""
     if offset is not None:
         key = key or f"sbox_{offset}"
-        st.markdown(f"<style>.st-key-{key} {{ height: max(220px, calc(100dvh - {offset}px)) !important; }}</style>",
-                    unsafe_allow_html=True)
+        st.html(f"<style>.st-key-{key} {{ height: max(220px, calc(100dvh - {offset}px)) !important; }}</style>")
     return st.container(height=height, border=True, key=key)
 
 
@@ -560,12 +571,12 @@ def view_home():
         left, right = ally_panel_parts(lv)
         col_pic, col_info = st.columns([3, 7])
         col_pic.markdown(left, unsafe_allow_html=True)
-        col_eq, col_it = col_pic.columns(2)          # 画像の下：装備・アイテム
-        if col_eq.button("装備", key="_story_inv_equip", width="stretch"):
+        col_eq = col_it = col_pic                    # 画像の下：装備・アイテム（縦に並べる）
+        if col_eq.button("🛡️ 装備", key="_story_inv_equip", width="stretch"):
             st.session_state.story_inv_mode = "equip"
             st.session_state.story_round += 1
             go("inventory")
-        if col_it.button("アイテム", key="_story_inv_item", width="stretch"):
+        if col_it.button("🎒 アイテム", key="_story_inv_item", width="stretch"):
             st.session_state.story_inv_mode = "item"
             st.session_state.story_round += 1
             go("inventory")
@@ -744,8 +755,7 @@ def view_guide():
     compact_title("📖 攻略", "味方・装備・敵のことと、攻略のコツ")
     if st.button("🏠 ホームにもどる", key="_story_guide_back_top"):
         go("home")
-    with box(BOX_H, key="sbox_guide", offset=150):
-        story_guide.render(profile)
+    story_guide.render(profile, lambda i: box(BOX_H, key=f"sbox_guide{i}", offset=195))   # タブは箱の上
 
 
 # ---------------------------------------------------------------------------
