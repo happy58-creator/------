@@ -189,11 +189,15 @@ def show_stats(lv):
 
 def show_ultra(rewards):
     """超激レア装備（特別な敵を倒したときに必ずもらえる）"""
-    for equip_id in rewards.get("ultra", []):
+    by_uid = L.equipment_by_uid(profile)
+    uids = rewards.get("ultra_uids") or [None] * len(rewards.get("ultra", []))
+    for equip_id, uid in zip(rewards.get("ultra", []), uids):
         equip = L.get_equipment(equip_id)
+        attrs = attr_text((by_uid.get(uid) or {}).get("attrs"))      # 沈黙の魔剣は属性が付くことがある
         col_icon, col_text = st.columns([1, 4])
         col_icon.image(str(story_assets.equipment_icon_path(equip_id)), width=72)
-        col_text.success(f"🌟 超激レア装備 **{equip['name']}** を 手に入れた！（{equip_text(equip)}）→ 倉庫へ")
+        col_text.success(f"🌟 超激レア装備 **{equip['name']}** を 手に入れた！（{equip_text(equip)}）"
+                         + (f"【属性 {attrs}】" if attrs else "") + " → 倉庫へ")
 
 
 def show_recruits(rewards):

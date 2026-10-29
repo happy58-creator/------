@@ -308,7 +308,7 @@ def test_final_stage_gives_ultra_and_clears():
         run = L.start_run(p, 1, diff, {})
         run["stage"], run["cleared"] = last, last - 1
         assert L.battle_config(1, last, diff, 1)["final"]
-        rewards = L.clear_stage(p, FixedRng([0.9]))
+        rewards = L.clear_stage(p, FixedRng([0.99, 0.9] if ultra == "silence_blade" else [0.9]))   # 魔剣は属性の抽選が先
         assert rewards["ultra"] == [ultra] and rewards["finished"]["outcome"] == "clear"
         assert rewards["finished"]["cleared"] == last and p["run"] is None
     # ベリーハードのステージ11は混沌の初源（最後ではない）。倒すと初源の聖衣
@@ -338,25 +338,36 @@ def test_old_profile_migrates():
 
 def test_weapon_attrs_roll():
     assert L.roll_weapon_attrs("leather_shield", "very_hard", FixedRng([0.0])) is None   # 剣でなければ付かない
-    assert L.roll_weapon_attrs("wood_sword", "easy", FixedRng([0.5])) is None           # イージーは40%
-    a = L.roll_weapon_attrs("wood_sword", "easy", FixedRng([0.3]))
-    assert a == {"poison": 0.23}                                                       # 毒・火・雷の発動率は5〜40%
+    # 付く確率：難易度ごとの下限〜上限を、ステージの後半ほど曲線で上げる
+    assert math.isclose(L.weapon_attr_chance("easy", 1), 0.10) and math.isclose(L.weapon_attr_chance("easy", 10), 0.20)
+    assert math.isclose(L.weapon_attr_chance("very_hard", 12), 0.70)
+    mid = L.weapon_attr_chance("easy", 5)
+    assert 0.10 < mid < 0.10 + (0.20 - 0.10) * 4 / 9                                 # 曲線なので、前半はゆっくり上がる
+    assert L.roll_weapon_attrs("wood_sword", "easy", FixedRng([0.15]), stage=1) is None
+    a = L.roll_weapon_attrs("wood_sword", "easy", FixedRng([0.05, 0.5]), stage=1)
+    assert a == {"poison": 0.03}                                                       # 1〜10% の 0.4×0.5 の位置
     assert L.attr_pool("normal") == ["poison", "fire", "thunder"]                       # 黒炎・陰・影はハード以上
     assert L.attr_pool("hard")[-3:] == ["black_flame", "darkness", "shadow"]
     import random
     rng = random.Random(5)
     counts = {1: 0, 2: 0, 3: 0}
+    first, last = [], []
     for _ in range(3000):
-        a = L.roll_weapon_attrs("steel_sword", "very_hard", rng)
+        a = L.roll_weapon_attrs("steel_sword", "very_hard", rng, stage=12)
         if not a:
             continue
         counts[len(a)] += 1
         group = {v for k, v in a.items() if k in story_data.ATTR_GROUP}
-        assert len(group) <= 1 and all(0.05 <= v <= 0.40 for v in group)              # 毒・火・雷は同じ発動率
-        assert all(0.01 <= v <= 0.20 for k, v in a.items() if k in story_data.ATTR_SOLO)
+        assert len(group) <= 1 and all(0.20 <= v <= 0.30 for v in group)              # 毒・火・雷は同じ発動率
+        assert all(0.05 <= v <= 0.15 for k, v in a.items() if k in story_data.ATTR_SOLO)
+        last += list(group)
+    for _ in range(3000):
+        a = L.roll_weapon_attrs("steel_sword", "very_hard", rng, stage=1)
+        first += [v for k, v in (a or {}).items() if k in story_data.ATTR_GROUP]
     total = sum(counts.values())
-    assert 0.92 < total / 3000 < 0.98                                                   # ベリーハードは95%
-    assert abs(counts[3] / total - 0.20) < 0.03
+    assert 0.66 < total / 3000 < 0.74                                                   # 最後のステージは70%
+    assert abs(counts[3] / total - 0.40) < 0.04                                         # 後半は 25/35/40
+    assert sum(last) / len(last) > sum(first) / len(first) + 0.03                      # 後半ほど発動率が高い
 
 
 def test_weapon_attrs_reach_battle_config():
@@ -646,6 +657,21 @@ def test_first_rescue_and_feather_heal():
     assert p["rescue_used"] and not L.battle_config(1, 1, "easy", 1, profile=p)["assist"]["rescue"]
     feather = next(i for i in L.battle_config(1, 1, "easy", 1)["items"] if i["id"] == "spirit_feather")
     assert math.isclose(feather["heal"], L.battle_config(1, 1, "easy", 1)["ally"]["max_hp"])   # 羽は全回復
+
+
+def test_silence_blade_rolls_attrs():
+    import random as _r
+    got = []
+    for seed in range(60):
+        p = L.new_profile()
+        run = L.start_run(p, 1, "very_hard", {})
+        run["stage"] = 12; run["cleared"] = 11
+        L.clear_stage(p, _r.Random(seed))
+        blade = next(e for e in p["equipment"] if e["id"] == "silence_blade")
+        got.append(blade.get("attrs") or {})
+    with_attrs = [a for a in got if a]
+    assert 30 <= len(with_attrs) <= 54                              # ベリーハードの最後のステージと同じ 70%
+    assert any(len(a) == 3 for a in with_attrs) and any(a.keys() & {"black_flame", "darkness", "shadow"} for a in with_attrs)
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):

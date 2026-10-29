@@ -401,13 +401,36 @@ def attr_pool(difficulty_id):
     ]
 
 
-def roll_weapon_attrs(equip_id, difficulty_id, rng=random):
-    """宝箱から出た装備に付く属性 {属性ID: 発動率}。剣でなければ、または付かなければ None"""
-    if equip_id not in story_data.SWORDS:
+def attr_curve_t(stage, difficulty_id):
+    """ステージの進み具合（0〜1）を曲線にした値。stage が None なら最後のステージ（1.0）"""
+    if stage is None:
+        return 1.0
+    t = (stage - 1) / max(1, stage_count(difficulty_id) - 1)
+    return min(1.0, max(0.0, t)) ** story_data.ATTR_CURVE
+
+
+def weapon_attr_chance(difficulty_id, stage=None):
+    """剣に属性が付く確率（難易度の下限〜上限を、ステージの後半ほど曲線で上げる）"""
+    lo, hi = story_data.WEAPON_ATTR_CHANCE[difficulty_id]
+    return lo + (hi - lo) * attr_curve_t(stage, difficulty_id)
+
+
+def roll_weapon_attrs(equip_id, difficulty_id, rng=random, stage=None):
+    """宝箱から出た装備に付く属性 {属性ID: 発動率}。剣でなければ、または付かなければ None。
+    stage はそのステージ番号（後半ほど付きやすく、発動率も高めに出る）。None なら最後のステージとして扱う"""
+    if equip_id not in story_data.SWORDS and equip_id not in story_data.ULTRA_ATTR_SWORDS:
         return None
-    if rng.random() >= story_data.WEAPON_ATTR_CHANCE[difficulty_id]:
+    if rng.random() >= weapon_attr_chance(difficulty_id, stage):
         return None
-    count = rng.choices([1, 2, 3], story_data.WEAPON_ATTR_COUNTS[difficulty_id])[0]
+    t = attr_curve_t(stage, difficulty_id)
+
+    def rate(lo_hi):
+        lo, hi = lo_hi
+        return round(lo + (hi - lo) * (0.6 * t + 0.4 * rng.random()), 2)
+
+    early, late = story_data.WEAPON_ATTR_COUNTS[difficulty_id]
+    weights = [e + (l - e) * t for e, l in zip(early, late)]    # 序盤 → 後半へ、曲線で移る
+    count = rng.choices([1, 2, 3], weights)[0]
     pool = attr_pool(difficulty_id)
     chosen = []
     while len(chosen) < min(count, len(pool)):
@@ -416,12 +439,12 @@ def roll_weapon_attrs(equip_id, difficulty_id, rng=random):
     attrs = {}
     group = [a for a in chosen if a in story_data.ATTR_GROUP]
     if group:
-        chance = round(rng.uniform(*story_data.ATTR_GROUP_CHANCE), 2)
+        chance = rate(story_data.ATTR_GROUP_CHANCE[difficulty_id])
         for a in group:
             attrs[a] = chance
     for a in chosen:
         if a in story_data.ATTR_SOLO:
-            attrs[a] = round(rng.uniform(*story_data.ATTR_SOLO_CHANCE), 2)
+            attrs[a] = rate(story_data.ATTR_SOLO_CHANCE[difficulty_id])
     return {a: attrs[a] for a in story_data.ATTR_GROUP + story_data.ATTR_SOLO if a in attrs}
 
 
@@ -745,8 +768,10 @@ def clear_stage(profile, rng=random):
         profile["defeated"].append(enemy_key(enemy))
     ultra = story_data.ULTRA_REWARDS.get(enemy_key(enemy))
     if ultra:
-        add_equipment(profile, ultra)
+        attr_diff = story_data.ULTRA_ATTR_SWORDS.get(ultra)          # 沈黙の魔剣：属性を抽選
+        uid = add_equipment(profile, ultra, roll_weapon_attrs(ultra, attr_diff, rng, None) if attr_diff else None)   # 最後のステージとして
         rewards["ultra"].append(ultra)
+        rewards["ultra_uids"] = rewards.get("ultra_uids", []) + [uid]
     if run.get("extra"):
         run["extra"] = False
         run["extra_won"] = True
@@ -777,7 +802,7 @@ def clear_stage(profile, rng=random):
             (rewards["items"] if put_picked(profile, run["bag"], thing_id) else rewards["sent_home"]).append(thing_id)
         else:
             bonus = extra[0] if extra else None
-            uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng), bonus)
+            uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng, stage), bonus)
             rewards["equipment"].append(thing_id)
             rewards["equipment_uids"].append(uid)
     for lv in roll_unlocks(profile, stage, run["difficulty"], rng):
