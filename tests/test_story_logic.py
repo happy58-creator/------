@@ -60,7 +60,7 @@ def test_data_tables_consistent():
         assert (root / "enemies" / e["image"]).exists()
         assert (root / "hitmasks" / f"{L.enemy_key(e)}.png").exists()
         assert len(e["lines"]) == 3
-    pending = {"white_scale", "spirit_feather"}   # 画像待ちのID（届くまでは絵文字のアイコンで表示する）
+    pending = set()   # 画像待ちのID（届くまでは絵文字のアイコンで表示する）
     for i in story_data.ITEMS:
         assert i["id"] in pending or (root / "items" / f"{i['id']}.webp").exists()
     for eq in story_data.EQUIPMENT:
