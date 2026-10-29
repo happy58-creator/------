@@ -368,6 +368,16 @@
   #sky .talk .who { font:800 clamp(13px,3.4vw,18px)/1 sans-serif; color:#ffe7a8; letter-spacing:.2em; margin-bottom:8px; }
   #sky .talk .say { font:700 clamp(17px,4.8vw,30px)/1.5 serif; color:#fff; }
 
+
+  /* 倒れそうなとき：精霊の羽を使うか聞く */
+  #revive { position:absolute; inset:0; z-index:95; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.72); }
+  #revive.on { display:flex; }
+  #revive > div { width:min(90vw,400px); background:#161119; border:1px solid rgba(233,214,166,.6); border-radius:16px; padding:18px; text-align:center;
+    box-shadow:0 0 30px rgba(180,140,255,.4); }
+  #revive .ricon { width:72px; height:72px; border-radius:14px; object-fit:cover; box-shadow:0 0 18px rgba(255,240,200,.6); }
+  #revive p { margin:10px 0 14px; line-height:1.6; } #revive small { color:var(--muted); }
+  #revive .buttons { margin:0; } #revive .btn { min-height:48px; font-size:16px; }
+
   /* 状態異常の演出 */
   #dark { position:absolute; inset:0; z-index:32; pointer-events:none; display:none;
     background:radial-gradient(ellipse 60% 55% at 50% 45%, rgba(0,0,0,.35), rgba(0,0,0,.88) 100%); }
@@ -484,8 +494,16 @@
     <div class="scroll"><div id="gearList"></div></div>
   </div>
 
+  <div id="revive" class="dialog"><div>
+    <img class="ricon" alt="">
+    <p><b>このままでは倒れてしまう……！</b><br>精霊の羽を使いますか？<br><small>HP全回復・状態異常を全部治す・精霊の加護、そしてアステルが援護に来る</small></p>
+    <div class="buttons">
+      <button class="btn ghost" id="reviveNo" type="button">使わない</button>
+      <button class="btn attack" id="reviveYes" type="button">🪶 使う</button>
+    </div>
+  </div></div>
   <div id="confirm"><div>
-    <p>ホームに戻ります。<br>次に遊ぶときは、このステージの最初から続けられます。</p>
+    <p>ホームに戻ります。<br>次に遊ぶときは、このステージの最初から続けられます。<br><small>この戦闘で使ったアイテムは戻りません。</small></p>
     <div class="buttons">
       <button class="btn ghost" id="cancelQuit" type="button">つづける</button>
       <button class="btn attack" id="doQuit" type="button">やめる</button>
@@ -553,7 +571,7 @@ function start(args) {
   $("special").style.display = "none";
   if (args.awaken_special_image) { $("special").querySelector("img.main").src = args.awaken_special_image; $("special").querySelector("img.bg").src = args.awaken_special_image; }   // 先に読みこんでおく
   G.assistImages = args.assist_images || null;           // アステルの援護の絵（空・必殺技）
-  G.assistRandom = false; G.assistFeather = false; G.blessing = false;
+  G.assistRandom = false; G.assistFeather = false; G.assistRescue = false; G.rescued = false; G.blessing = false;
   if (G.assistImages) for (const u of [G.assistImages.sky, G.assistImages.skill]) { const pre = new Image(); pre.src = u; }
   G.skillSceneImage = args.skill_scene_image || null;   // 必殺技の絵
   if (G.skillSceneImage) { const pre = new Image(); pre.src = G.skillSceneImage; }
@@ -960,22 +978,57 @@ async function grandSkill(s, src, who) {
 }
 
 // アステルの援護：空を見上げる → アステルが飛んでくる → 必殺技 → 大ダメージ。勝てば true
+// 倒れそうなとき（HPが0になった）："won"（援護で勝った）/ "saved"（助かった）/ "" （負け）
+async function saveFromDown() {
+  const as = G.cfg.assist;
+  if (!as || G.phase === "end") return "";
+  // はじめての人：最初に倒れそうになったとき、アステルが必ず助けに来る（HP1で踏みとどまる）
+  if (as.rescue && !G.rescued) {
+    G.rescued = true; G.allyHp = 1; updateBars();
+    $("allyIcon").classList.remove("down");
+    return (await astelAssist("rescue")) ? "won" : "saved";
+  }
+  // 精霊の羽を持っていれば、使うか聞く
+  const feather = G.cfg.items.find((i) => i.assist);
+  if (feather && G.bag[feather.id] > 0) {
+    $("revive").querySelector(".ricon").src = G.icons[feather.id] || "";
+    $("revive").classList.add("on");
+    const yes = await new Promise((res) => { $("reviveYes").onclick = () => res(true); $("reviveNo").onclick = () => res(false); });
+    $("revive").classList.remove("on");
+    if (!yes) return "";
+    G.bag[feather.id]--; G.used[feather.id] = (G.used[feather.id] || 0) + 1;
+    G.allyHp = G.cfg.ally.max_hp;                         // 全回復
+    for (const id of feather.cure || []) G.status[id] = 0;
+    G.blessing = true;
+    G.cfg.ally.immune = [...new Set([...(G.cfg.ally.immune || []), ...(as.immune || [])])];
+    $("allyIcon").classList.remove("down");
+    const ic = $("allyIcon").getBoundingClientRect();
+    popAt(ic.left + ic.width / 2 + 60, ic.top, "全回復！", "heal"); fxEl("flash", { background: "rgba(255,250,220,.5)" });
+    updateBars(); updateBadges();
+    await sleep(600);
+    return (await astelAssist("feather")) ? "won" : "saved";
+  }
+  return "";
+}
+
 async function astelAssist(kind) {
   const as = G.cfg.assist, im = G.assistImages || {};
   if (!as) return false;
-  if (kind === "random") G.assistRandom = true; else G.assistFeather = true;
+  if (kind === "random" || kind === "rescue") G.assistRandom = true; else G.assistFeather = true;
+  if (kind === "rescue") G.assistRescue = true;
   G.phase = "assist"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
   // 1. 空を見上げる
-  await banner(kind === "random" ? "……空が、光った？" : "精霊の羽が、空へ舞い上がった……", "", 1300);
+  await banner(kind === "rescue" ? "……もう、だめか……" : kind === "random" ? "……空が、光った？" : "精霊の羽が、空へ舞い上がった……", "", 1300);
+  if (kind === "rescue") await banner("……空が、光った？", "", 1100);
   $("stage").classList.add("lookup"); $("fx").classList.add("lookup");
   await sleep(900);
   // 2. アステルが空を翔ける
   const sky = $("sky");
   if (im.sky) sky.querySelector("img").src = im.sky;
   // この世界ではアステルは知られていないので、名前は本人のせりふで初めて出す
-  sky.querySelector(".narr").textContent = kind === "random" ? "……龍？　……女神？" : "……また、あの光が……";
+  sky.querySelector(".narr").textContent = kind === "feather" ? "……また、あの光が……" : "……龍？　……女神？";
   sky.querySelector(".who").textContent = as.speaker || "アステル";
-  sky.querySelector(".say").textContent = kind === "random" ? "大丈夫？　あとは、わたしに任せて" : "呼んでくれたのね。あとは、わたしに任せて";
+  sky.querySelector(".say").textContent = kind === "feather" ? "呼んでくれたのね。あとは、わたしに任せて" : "大丈夫？　あとは、わたしに任せて";
   sky.classList.remove("on"); void sky.offsetWidth; sky.classList.add("on");
   if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
   await sleep(4400);
@@ -1128,7 +1181,7 @@ function openSheet() {
   for (const it of G.cfg.items) {
     const n = G.bag[it.id] || 0;
     const rate = it.heal / G.cfg.ally.max_hp;
-    const desc = it.assist ? "アステルが援護に来る・状態異常を全部治す・精霊の加護" : [rate >= 0.999 ? "HP全回復" : rate > 0 ? `HP${Math.round(rate * 100)}%回復` : "",
+    const desc = it.assist ? "HP全回復・状態異常を全部治す・精霊の加護・アステルが援護に来る" : [rate >= 0.999 ? "HP全回復" : rate > 0 ? `HP${Math.round(rate * 100)}%回復` : "",
                   it.guard ? `防御2倍（${it.guard}ターン）` : "", it.atk_turns ? `攻撃力+3（${it.atk_turns}ターン）` : "",
                   it.ward ? `${it.ward}ターン黒炎にかからない` : "",
                   it.cure && it.cure.length ? it.cure.map((s) => (G.cfg.status[s] || {}).name || s).join("・") + "を治す" : ""].filter(Boolean).join("・");
@@ -1248,7 +1301,7 @@ async function enemyTurn() {
     hurt(dot, r.left + r.width / 2 + 70, r.top - 10, "dot");
     updateBadges();
     await sleep(800);
-    if (G.allyHp <= 1e-9) return finish("lose");
+    if (G.allyHp <= 1e-9) { const r = await saveFromDown(); if (r === "won") return; if (r === "saved") { await sleep(G.cfg.pause_ms); return playerTurn(); } return finish("lose"); }
   }
   if (G.status.thunder > 0) G.status.thunder--;     // 雷は敵のターンごとに減る
 
@@ -1342,7 +1395,12 @@ async function enemyTurn() {
   }
   await sleep(700);
   bub.style.display = "none";
-  if (G.allyHp <= 1e-9) return finish("lose");
+  if (G.allyHp <= 1e-9) {               // 倒れそう：はじめての人はアステルが必ず助けに来る。精霊の羽があれば使うか聞く
+    const r = await saveFromDown();
+    if (r === "won") return;
+    if (r !== "saved") return finish("lose");
+    await sleep(G.cfg.pause_ms); return playerTurn();
+  }
   // アステルの援護：敵の攻撃のあと、まれに空からやってくる（1回の戦闘で1度だけ）
   const as = G.cfg.assist;
   if (as && as.random && !G.assistRandom && G.assistImages && Math.random() < as.chance) {
@@ -1489,7 +1547,7 @@ async function finish(result) {
     ally_hp: Math.max(0, G.allyHp), enemy_hp: Math.max(0, G.enemyHp), turns: G.turn,
     taps: G.taps, hits: G.hits, misses: G.misses, damage_dealt: G.dealt, damage_taken: G.taken,
     enemy_attacks: G.enemyAttacks, used: G.used, elapsed_ms: Math.round(elapsed), charge: G.charge,
-    assist: G.assistRandom ? "random" : G.assistFeather ? "feather" : null,
+    assist: G.assistRescue ? "rescue" : G.assistRandom ? "random" : G.assistFeather ? "feather" : null,
   };
   setTimeout(() => Streamlit.setValue(value), result === "quit" ? 0 : result === "escape" ? 1000 : 1600);   // 結果を少し見せてから Python に返す
 }

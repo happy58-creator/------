@@ -3,7 +3,7 @@
 流れ： ホーム（キャラ・「倉庫とリュック」） → 「クエスト」（難易度・続きから） → 戦闘 → ステージ間の画面 → … → 終わり
 ホームの上に「クエスト」「称号」「攻略」。サイドバーは出さず、右上の「トップへ」でトップページに戻る。
 - 進み具合は各ステージの始めに自動で保存する（チェックポイント）。手動の中断セーブはない。
-- 負けたとき・「やめる」で戻ったときは、そのステージを始めたときのHPとかばんからやり直す。
+- 負けたとき・「やめる」で戻ったときは、そのステージを始めたときのHPからやり直す（戦闘で使ったアイテムは戻らない）。
 - 挑戦が終わるのは、全クリアしたときと「新規にプレイ」を押したとき（負け扱い）だけ。
 数値は story_data.py、計算は story_logic.py、保存は story_profile.py にある。
 """
@@ -730,6 +730,7 @@ def view_battle():
     if not result or result.get("round") != round_id:
         return
     outcome = result["result"]
+    L.note_battle(profile, result)            # はじめての救援を受けたかなど（勝ち負けに関係なく）
     if outcome == "win":
         L.apply_battle(profile, result)
         rewards = L.clear_stage(profile)
@@ -749,13 +750,13 @@ def view_battle():
         st.session_state.story_notice = "宇宙龍から にげた！ 次のステージへ進もう。"
         go("between")
     elif outcome == "lose":
-        L.restore_checkpoint(profile)
+        L.restore_checkpoint(profile, result.get("used"))   # 使ったアイテムは戻らない
         save()
         go("extra_lost" if run.get("extra") else "retry")
     else:                                      # やめる：ホームへ。次はこのステージの最初から
-        L.restore_checkpoint(profile)
+        L.restore_checkpoint(profile, result.get("used"))   # 使ったアイテムは戻らない
         save()
-        st.session_state.story_notice = f"{stage_label(run)} の最初から 続けられるよ。"
+        st.session_state.story_notice = f"{stage_label(run)} の最初から 続けられるよ。（戦闘で使ったアイテムは もどらないよ）"
         go("home")
 
 

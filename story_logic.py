@@ -162,6 +162,7 @@ def new_profile():
         "cleared_modes": [],     # 全クリアしたことのある難易度
         "titles_seen": [],       # 知らせ済みの称号（新しく手に入れた称号を、挑戦の終わりに知らせる）
         "bonus_day": "",         # ログインボーナスをもらった日（YYYY-MM-DD）
+        "rescue_used": False,    # はじめて倒れそうになったときの、アステルの救援を受けたか（前から遊んでいる人も対象）
         "run": None,
         "starter_items": True,
     }
@@ -209,7 +210,8 @@ def item_effect_text(item):
     if item.get("home_use") == "level_up":
         return "ホームの「倉庫とリュック」で使うと、いまのキャラのレベルが1上がる"
     if item.get("assist"):
-        return "戦闘で使うとアステルが援護に来る。状態異常をすべて治し、その戦闘のあいだ精霊の加護（毒・雷・火にかからない）"
+        return ("戦闘で使うとHP全回復・状態異常をすべて治し、その戦闘のあいだ精霊の加護（毒・雷・火にかからない）。"
+                "さらにアステルが援護に来る。倒れそうになったときにも使える")
     parts = []
     if item["heal_rate"] >= 1:
         parts.append("HPを全回復")
@@ -644,12 +646,18 @@ def begin_stage(profile):
     run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
 
 
-def restore_checkpoint(profile):
-    """負けたとき・「やめる」で戻ったとき：そのステージを始めたときのHPとかばんに戻す"""
+def restore_checkpoint(profile, used=None):
+    """負けたとき・「やめる」で戻ったとき：そのステージを始めたときのHPとチャージに戻す。
+    かばんも始めたときに戻すが、戦闘で使ったアイテム（used）は戻らない（チェックポイントからも減らす）"""
     run = profile["run"]
-    run["hp"] = run["checkpoint"]["hp"]
-    run["bag"] = copy.deepcopy(run["checkpoint"]["bag"])
-    run["charge"] = run["checkpoint"].get("charge", 0)
+    cp = run["checkpoint"]
+    for item_id, n in (used or {}).items():
+        n = min(int(n or 0), bag_counts(cp["bag"]).get(item_id, 0))
+        if n > 0:
+            take_from_bag(cp["bag"], item_id, n)
+    run["hp"] = cp["hp"]
+    run["bag"] = copy.deepcopy(cp["bag"])
+    run["charge"] = cp.get("charge", 0)
 
 
 def apply_battle(profile, result):
@@ -661,11 +669,18 @@ def apply_battle(profile, result):
         except (ValueError, KeyError, TypeError):
             pass
     run["hp"] = max(0.0, float(result.get("ally_hp", run["hp"])))
-    if result.get("assist") == "random" and result.get("result") == "win":
+    if result.get("assist") in ("random", "rescue") and result.get("result") == "win":
         run["assist_drop"] = True                  # アステルがたまたま援護した：クリアすると特別なアイテム
     if "charge" in result:                         # 必殺技のチャージはステージをまたいで残す
         cap = get_ally(run["ally"])["skill"]["charge"]
         run["charge"] = max(0, min(cap, int(result.get("charge") or 0)))
+
+
+def note_battle(profile, result):
+    """戦闘で起きたことを残す（はじめての救援を受けたら、もう出さない）。
+    「やめる」で抜けたときは、ステージの最初に戻るので、救援も受けなかったことにする（保留）"""
+    if result.get("assist") == "rescue" and result.get("result") != "quit":
+        profile["rescue_used"] = True
 
 
 def skip_extra(profile):
@@ -868,7 +883,7 @@ def abandon_run(profile):
 # ---------------------------------------------------------------------------
 # 戦闘コンポーネントに渡す設定
 # ---------------------------------------------------------------------------
-def assist_config(ally_lv, enemy, extra):
+def assist_config(ally_lv, enemy, extra, rescue=False):
     """アステルの援護（たまたま来る・精霊の羽で呼ぶ）。Lv.10 とアビリティのステータスで、必殺技を撃つ"""
     a = story_data.ASSIST
     helper = get_ally(a["ally"])
@@ -879,6 +894,7 @@ def assist_config(ally_lv, enemy, extra):
     raw = stats["atk"] * skill["power"]
     return {
         "random": not extra and ally_lv != a["ally"],     # たまたま来るのは、エクストラ以外・アステル以外のとき
+        "rescue": bool(rescue) and not extra,            # はじめて倒れそうになったとき、必ず助けに来る
         "chance": a["chance"], "who": helper["name"], "speaker": short_name(a["ally"]), "name": skill["name"],
         "damage": raw if skill.get("pierce") else damage(raw, enemy["def"]), "damage_break": raw,
         "break_turns": skill.get("break", 0), "scene": skill.get("scene"),
@@ -1058,7 +1074,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "tap_damage_up_break": damage(ally["atk"] + atk_up, 0),
         },
         "skill": (skill := skill_config(ally_lv, ally, enemy, max_hp, charge)),
-        "assist": assist_config(ally_lv, enemy, extra),   # アステルの援護
+        "assist": assist_config(ally_lv, enemy, extra,
+                                rescue=profile is not None and not profile.get("rescue_used", False)),   # アステルの援護
         # エクストラ（宇宙龍）だけ：HPが半分を切ると覚醒する
         "awaken": awaken_config(ally, max_hp, skill) if extra else None,
         "status": status,

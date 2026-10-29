@@ -267,8 +267,11 @@ def test_checkpoint_restores_hp_and_bag():
     run = L.start_run(p, 1, "easy", {"potion": 3})
     L.apply_battle(p, {"ally_hp": 0, "used": {"potion": 2}})
     assert run["hp"] == 0 and L.bag_counts(run["bag"]) == {"potion": 1}
-    L.restore_checkpoint(p)                       # 負けたら、そのステージを始めたときに戻る
-    assert run["hp"] == 10 and L.bag_counts(run["bag"]) == {"potion": 3}
+    L.restore_checkpoint(p, {"potion": 2})        # 負けたら、HPはステージを始めたときに戻る。使ったアイテムは戻らない
+    assert run["hp"] == 10 and L.bag_counts(run["bag"]) == {"potion": 1}
+    assert L.bag_counts(run["checkpoint"]["bag"]) == {"potion": 1}      # やり直しても、使った分は戻らない
+    L.restore_checkpoint(p)
+    assert L.bag_counts(run["bag"]) == {"potion": 1}
     L.apply_battle(p, {"ally_hp": 4, "used": {}})
     L.clear_stage(p, FixedRng([0.9, 0.5]))       # 宝箱なし・エクストラなし
     assert run["hp"] == 7 and run["checkpoint"]["hp"] == 7   # 減ったHPの半分を回復。次のステージのチェックポイント
@@ -629,6 +632,20 @@ def test_white_scale_levels_up():
     except ValueError:
         pass
     assert p["items"]["white_scale"] == 1                                      # 最大のときは減らない
+
+
+def test_first_rescue_and_feather_heal():
+    p = L.new_profile()
+    assert L.battle_config(1, 1, "easy", 1, profile=p)["assist"]["rescue"]          # はじめての人は救援がある
+    assert not L.battle_config(1, L.EXTRA, "easy", 1, profile=p)["assist"]["rescue"]
+    old = L.normalize_profile({"allies": [1, 2], "ability": {"1": 30}})
+    assert L.battle_config(1, 1, "easy", 1, profile=old)["assist"]["rescue"]        # 前から遊んでいる人にも、これから1度出る
+    L.note_battle(p, {"result": "quit", "assist": "rescue"})                       # 「やめる」で抜けたら保留
+    assert not p["rescue_used"]
+    L.note_battle(p, {"result": "lose", "assist": "rescue"})                       # 負けても、1度受けたらもう出ない
+    assert p["rescue_used"] and not L.battle_config(1, 1, "easy", 1, profile=p)["assist"]["rescue"]
+    feather = next(i for i in L.battle_config(1, 1, "easy", 1)["items"] if i["id"] == "spirit_feather")
+    assert math.isclose(feather["heal"], L.battle_config(1, 1, "easy", 1)["ally"]["max_hp"])   # 羽は全回復
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
