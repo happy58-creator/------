@@ -6,7 +6,7 @@
 <title>story inventory</title>
 <style>
   :root { --gold:#e9d6a6; --ink:#f4ecda; --muted:#b9ab90; --panel:#1b161f; --line:rgba(233,214,166,.28); --ok:#7fd8a0; --bad:#ff8a7a; }
-  html, body { margin:0; height:100%; overflow:hidden; background:#121015; color:var(--ink);
+  html, body { margin:0; height:100%; overflow:hidden; overscroll-behavior:none; touch-action:none; background:#121015; color:var(--ink);
     font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Noto Serif CJK JP",serif; }
   * { box-sizing:border-box; }
   /* 画面いっぱいに表示する（ページ側で iframe を全画面にしている） */
@@ -50,7 +50,8 @@
   .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(54px, 1fr)); gap:6px; }
   .right { display:flex; flex-direction:column; gap:8px; }
   .tile { position:relative; width:100%; aspect-ratio:1/1; border-radius:10px; background:#0d0b10; border:1px solid rgba(255,255,255,.12);
-    touch-action:pan-y; cursor:grab; }   /* 縦に動かすと一覧がスクロール。横や斜めに動かすとドラッグ */
+    touch-action:none; cursor:grab; }   /* 画面は動かさない。指をすべらせると一覧がスクロール、長押ししてから動かすとドラッグ */
+  .tile.armed { outline:2px solid #ffd36a; outline-offset:1px; transform:scale(1.08); transition:transform .12s; }
   .tile img.main { width:100%; height:100%; object-fit:cover; border-radius:9px; pointer-events:none; display:block; }
   .tile.sel { outline:2px solid #ffd36a; outline-offset:1px; }
   .tile.dim { opacity:.4; cursor:default; }
@@ -165,7 +166,7 @@ function start(cfg) {
   $("app").className = "mode-" + mode;
   $("title").textContent = { item: "🎒 アイテム", acc: "💍 アクセサリ", equip: "🛡️ 装備" }[mode];
   $("storeTitle").textContent = { item: "倉庫のアイテム", acc: "倉庫のアクセサリ", equip: "倉庫の装備品" }[mode];
-  $("storeHint").textContent = "押すとくわしく";
+  $("storeHint").textContent = "押すとくわしく・長押しで移動";
   $("who").textContent = mode === "item" ? (cfg.in_run ? "挑戦中のかばん" : "") : `${cfg.ally} の装備` + (cfg.in_run ? "（挑戦中）" : "");
   sel = null; render(); showDetail(); msg(cfg.notice || "", cfg.notice ? "ok" : undefined);
   Streamlit.setHeight();
@@ -362,34 +363,75 @@ function ask(text, max, done) {
 // ドラッグ（マウスでも指でも）。少し動かしたらドラッグ、動かさずに離したら「選ぶ」
 // ---------------------------------------------------------------------------
 let drag = null;
+const HOLD_MS = 220;      // 指：これだけ動かさずに押していたらドラッグできる（すぐ動かしたらスクロール）
+function startDrag(ev) {
+  drag.moving = true;
+  const g = $("ghost"); g.src = drag.el.querySelector("img.main").src; g.style.display = "block";
+  g.style.left = ev.clientX + "px"; g.style.top = ev.clientY + "px";
+}
 function bindTile(el) {
   el.onpointerdown = (ev) => {
     if (el.classList.contains("dim") && el.dataset.kind === "equip") { select(el); return; }
-    drag = { el, x: ev.clientX, y: ev.clientY, moving: false, pid: ev.pointerId };
+    const touch = ev.pointerType !== "mouse";
+    drag = { el, x: ev.clientX, y: ev.clientY, moving: false, armed: !touch, scrolling: false, pid: ev.pointerId };
     el.setPointerCapture(ev.pointerId);
+    if (touch) drag.timer = setTimeout(() => {
+      if (drag && drag.el === el && !drag.scrolling) { drag.armed = true; el.classList.add("armed"); if (navigator.vibrate) navigator.vibrate(15); }
+    }, HOLD_MS);
   };
   el.onpointermove = (ev) => {
-    if (!drag || drag.el !== el) return;
-    if (!drag.moving && Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < 6) return;
+    if (!drag || drag.el !== el || drag.scrolling) return;
+    const far = Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) >= 8;
     if (!drag.moving) {
-      drag.moving = true;
-      const g = $("ghost"); g.src = el.querySelector("img.main").src; g.style.display = "block";
+      if (!far) return;
+      if (!drag.armed) { drag.scrolling = true; clearTimeout(drag.timer); return; }   // 長押しの前に動いた → 一覧のスクロール
+      startDrag(ev);
     }
     const g = $("ghost"); g.style.left = ev.clientX + "px"; g.style.top = ev.clientY + "px";
     highlight(zoneAt(ev.clientX, ev.clientY));
   };
   el.onpointerup = (ev) => {
     if (!drag || drag.el !== el) return;
-    const moving = drag.moving; drag = null;
-    $("ghost").style.display = "none"; highlight(null);
+    const { moving, scrolling } = drag; clearTimeout(drag.timer); drag = null;
+    el.classList.remove("armed"); $("ghost").style.display = "none"; highlight(null);
+    if (scrolling) return;
     if (!moving) return select(el);
     const zone = zoneAt(ev.clientX, ev.clientY);
     if (!zone || zone === el.dataset.from) return;
     if (el.dataset.kind === "item") askMove("item", el.dataset.id, el.dataset.from, zone);
     else moveEquip(Number(el.dataset.id), zone);
   };
-  el.onpointercancel = () => { drag = null; $("ghost").style.display = "none"; highlight(null); };
+  el.onpointercancel = () => { if (drag) clearTimeout(drag.timer); drag = null; el.classList.remove("armed"); $("ghost").style.display = "none"; highlight(null); };
 }
+
+// 画面（外側のページ）は指で動かさない。スクロールできる箱（一覧・リュック・くわしい中身）だけ、自分で動かす
+(function () {
+  let sc = null, lastY = 0, lastT = 0, vel = 0, raf = 0;
+  const scrollerOf = (t) => {
+    for (let n = t; n && n !== document.body; n = n.parentElement) {
+      const o = getComputedStyle(n).overflowY;
+      if ((o === "auto" || o === "scroll") && n.scrollHeight > n.clientHeight + 1) return n;
+    }
+    return null;
+  };
+  document.addEventListener("touchstart", (ev) => {
+    cancelAnimationFrame(raf); vel = 0;
+    sc = scrollerOf(ev.target); lastY = ev.touches[0].clientY; lastT = performance.now();
+  }, { passive: true });
+  document.addEventListener("touchmove", (ev) => {
+    if (ev.cancelable) ev.preventDefault();               // ページのスクロール・引っぱってリロード を止める
+    if (!sc || (drag && (drag.armed || drag.moving))) return;   // ドラッグ中はスクロールしない
+    const y = ev.touches[0].clientY, now = performance.now();
+    const dy = lastY - y; sc.scrollTop += dy;
+    vel = dy / Math.max(1, now - lastT); lastY = y; lastT = now;
+  }, { passive: false });
+  document.addEventListener("touchend", () => {
+    if (!sc || (drag && (drag.armed || drag.moving))) return;
+    const el = sc; let v = vel, prev = performance.now();      // 指をはなしたあと、少しすべる
+    const step = (t) => { const dt = t - prev; prev = t; el.scrollTop += v * dt; v *= Math.pow(0.95, dt / 16); if (Math.abs(v) > 0.02) raf = requestAnimationFrame(step); };
+    if (Math.abs(v) > 0.1) raf = requestAnimationFrame(step);
+  }, { passive: true });
+})();
 function zoneAt(x, y) {
   const hit = document.elementFromPoint(x, y);
   const box = hit && hit.closest("[data-zone]");

@@ -64,6 +64,14 @@ def log_run(summary, run_id):
     )
 
 
+def choose_ally(lv):
+    """キャラをえらぶ（セーブデータにも残して、開き直しても同じキャラにする）"""
+    st.session_state.story_ally = lv
+    if profile.get("last_ally") != lv:
+        profile["last_ally"] = lv
+        save()
+
+
 def go(view):
     st.session_state.story_view = view
     st.rerun()
@@ -87,6 +95,7 @@ if st.session_state.get("story_profile_user") != USER:
     st.session_state.story_profile = loaded
     st.session_state.story_profile_user = USER
     st.session_state.story_view = "home"
+    st.session_state.story_ally = loaded.get("last_ally") or 1      # 前回えらんでいたキャラ（開き直しても、そのまま）
 profile = st.session_state.story_profile
 
 # 称号ができる前のデータ：成績の記録から、全クリアした難易度を拾っておく（最初の1回だけ）
@@ -412,7 +421,7 @@ def view_ally_detail():
         if col_back.button("◀ 一覧にもどる", key="_story_detail_back", width="stretch"):
             back()
         if have and not in_run and col_pick.button("このキャラにする", key="_story_detail_pick", type="primary", width="stretch"):
-            st.session_state.story_ally = lv
+            choose_ally(lv)
             st.session_state.story_detail = None
             go("home")
     with box(BOX_H, key="story_ally_detail", offset=70):
@@ -458,7 +467,7 @@ def view_ally_picker():
                              f"{'Lv.' + str(L.ally_level(profile, lv)) if have else '&nbsp;'}</div>", unsafe_allow_html=True)
                 if have and col.button("えらぶ", key=f"_story_pick_{lv}", width="stretch",
                                        type="primary" if lv == st.session_state.story_ally else "secondary"):
-                    st.session_state.story_ally = lv
+                    choose_ally(lv)
                     go("home")
     if st.button("◀ もどる", key="_story_pick_close", width="stretch"):
         go("home")

@@ -163,6 +163,7 @@ def new_profile():
         "titles_seen": [],       # 知らせ済みの称号（新しく手に入れた称号を、挑戦の終わりに知らせる）
         "bonus_day": "",         # ログインボーナスをもらった日（YYYY-MM-DD）
         "rescue_used": False,    # はじめて倒れそうになったときの、アステルの救援を受けたか（前から遊んでいる人も対象）
+        "last_ally": 1,          # 前回えらんでいたキャラ（ページを開き直しても、このキャラから）
         "run": None,
         "starter_items": True,
     }
@@ -270,6 +271,8 @@ def normalize_profile(data):
     profile["run"] = normalize_run(profile["run"])
     if 1 not in profile["allies"]:
         profile["allies"].insert(0, 1)
+    if profile.get("last_ally") not in profile["allies"]:
+        profile["last_ally"] = 1
     return profile
 
 
