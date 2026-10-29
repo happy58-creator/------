@@ -115,6 +115,11 @@ def equipment_thumb(equip_id, size=96):
     return thumb_uri(f"equipment/{equip_id}.webp", size) or emoji_icon_uri(_equip_emoji(equip_id))
 
 
+def title_thumb(badge, size=200):
+    """称号のバッジ（assets/story/titles/）"""
+    return thumb_uri(f"titles/{badge}", size)
+
+
 def status_thumb(status_id, size=48):
     return thumb_uri(f"status/{status_id}.webp", size)
 

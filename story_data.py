@@ -63,6 +63,7 @@ STATUS_EFFECTS = {
 #           そのうえで HP・攻撃力・防御力を、Lv.1 はそのまま、Lv.10 は1.1倍にし、あいだは Lv に比例して
 #           少しずつ上げている（Lv.n は 1 + 0.1 × (n−1) ÷ 9 倍。Lv.11 は Lv.10 と同じ1.1倍）。
 #           HP は整数、攻撃力・防御力は小数第1位で四捨五入
+#           さらに、1ターンの連打が平均50回くらいになるとわかったので、HP をすべて2倍にした（攻撃力・防御力はそのまま）
 #   image       : assets/story/enemies/ の中のファイル名（当たりマスクは hitmasks/ の同じ名前の .png）
 #   cutout      : True なら背景を透過した画像。背景は scene の画像とCSSで描く
 #   scene       : 背景の種類（story_assets の _SCENE_LAYERS のキー。"image" は画像そのものが背景）
@@ -76,40 +77,40 @@ STATUS_EFFECTS = {
 # ---------------------------------------------------------------------------
 _ALL = None
 ENEMIES = [
-    {"lv": 1, "name": "薄汚れたゾンビ", "hp": 100, "atk": 1, "def": 1,
+    {"lv": 1, "name": "薄汚れたゾンビ", "hp": 200, "atk": 1, "def": 1,
      "image": "enemy_01.webp", "cutout": True, "scene": "corridor", "floating": False, "gimmicks": [], "difficulties": _ALL,
      "lines": ["ウゥ……アァ……", "……ニク……", "グアァァッ！"], "effect": {"type": "claw", "color": "#9db36b"}},
-    {"lv": 2, "name": "呪われた戦士", "hp": 142, "atk": 1, "def": 2,
+    {"lv": 2, "name": "呪われた戦士", "hp": 284, "atk": 1, "def": 2,
      "image": "enemy_02.webp", "cutout": True, "scene": "prison", "floating": False, "gimmicks": [], "difficulties": _ALL,
      "lines": ["呪いは……解けぬ……", "この剣、錆びてはおらぬ", "ここから先へは通さん"], "effect": {"type": "slash", "color": "#d8d2c4"}},
-    {"lv": 3, "name": "幽霊の暗殺者", "hp": 204, "atk": 2, "def": 3.1,
+    {"lv": 3, "name": "幽霊の暗殺者", "hp": 408, "atk": 2, "def": 3.1,
      "image": "enemy_03.webp", "cutout": True, "scene": "catacomb", "floating": False, "gimmicks": [], "difficulties": _ALL,
      "lines": ["……背中が、がら空きだ", "影は斬れまい", "音もなく、消えろ"], "effect": {"type": "ghost", "color": "#8fd8ff"}},
-    {"lv": 4, "name": "骨の魔術師", "hp": 289, "atk": 2.1, "def": 4.1,
+    {"lv": 4, "name": "骨の魔術師", "hp": 578, "atk": 2.1, "def": 4.1,
      "image": "enemy_04.webp", "cutout": True, "scene": "altar", "floating": False, "gimmicks": [], "difficulties": _ALL,
      "lines": ["我が魔術の糧となれ", "骨の髄まで凍えるがいい", "クク……愚かな"], "effect": {"type": "magic", "color": "#b26bff"}},
-    {"lv": 5, "name": "深淵の従者", "hp": 397, "atk": 3.1, "def": 6.3,
+    {"lv": 5, "name": "深淵の従者", "hp": 794, "atk": 3.1, "def": 6.3,
      "image": "enemy_05.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": [], "difficulties": _ALL,
      "lines": ["深淵へ……引きずり込んでやる", "シャアアッ！", "主のもとへは行かせぬ"], "effect": {"type": "whip", "color": "#e0483e"}},
-    {"lv": 6, "name": "死霊の将軍", "hp": 517, "atk": 4.1, "def": 8.4,
+    {"lv": 6, "name": "死霊の将軍", "hp": 1034, "atk": 4.1, "def": 8.4,
      "image": "enemy_06.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": [], "difficulties": _ALL,
      "lines": ["我が軍勢の前にひれ伏せ", "死してなお、我は戦う", "この一撃、受けてみよ"], "effect": {"type": "slash", "color": "#a9c4b0"}},
-    {"lv": 7, "name": "悪魔の貴族", "hp": 683, "atk": 5.4, "def": 10.7,
+    {"lv": 7, "name": "悪魔の貴族", "hp": 1366, "atk": 5.4, "def": 10.7,
      "image": "enemy_07.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": ["poison"], "difficulties": _ALL,
      "lines": ["下賤の者が、我に触れるな", "地獄の炎で焼かれるがいい", "フフ……退屈させるな"], "effect": {"type": "fire", "color": "#ff7a2a"}},
-    {"lv": 8, "name": "半神の魔王", "hp": 895, "atk": 7.1, "def": 12.9,
+    {"lv": 8, "name": "半神の魔王", "hp": 1790, "atk": 7.1, "def": 12.9,
      "image": "enemy_08.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": ["thunder"], "difficulties": _ALL,
      "lines": ["玉座から動くまでもない", "神の雷、その身で知れ", "ひざまずけ"], "effect": {"type": "thunder", "color": "#ffd84a"}},
-    {"lv": 9, "name": "災厄の代行者", "hp": 1187, "atk": 9.4, "def": 16.3,
+    {"lv": 9, "name": "災厄の代行者", "hp": 2374, "atk": 9.4, "def": 16.3,
      "image": "enemy_09.webp", "cutout": True, "scene": "nebula", "floating": True, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire"], "difficulties": _ALL,
      "lines": ["すべては無に還る", "災いは、選ばない", "抗うな。苦しむだけだ"], "effect": {"type": "void", "color": "#9a6bff"}},
-    {"lv": 10, "name": "終焉の創造主", "hp": 1551, "atk": 12.2, "def": 19.8,
+    {"lv": 10, "name": "終焉の創造主", "hp": 3102, "atk": 12.2, "def": 19.8,
      "image": "enemy_10.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor"], "difficulties": _ALL,
      "lines": ["世界を創り、そして終わらせる", "星の一つも、我が意のまま", "よくぞここまで来た。だが、ここで終わりだ"], "effect": {"type": "cosmic", "color": "#a8d4ff"}},
-    {"lv": 11, "name": "混沌の初源", "hp": 2013, "atk": 15.8, "def": 23.1,
+    {"lv": 11, "name": "混沌の初源", "hp": 4026, "atk": 15.8, "def": 23.1,
      "image": "enemy_11_hard.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness"], "difficulties": ["hard", "very_hard"],
      "lines": ["すべてはわたしから生まれた", "還りなさい、始まりの光へ", "混沌こそ、世界の母"], "effect": {"type": "radiance", "color": "#ffd27a"}},
-    {"lv": 11, "name": "永遠の沈黙", "hp": 2013, "atk": 15.8, "def": 23.1,
+    {"lv": 11, "name": "永遠の沈黙", "hp": 4026, "atk": 15.8, "def": 23.1,
      "image": "enemy_11_veryhard.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness", "shadow"], "difficulties": ["very_hard"],
      "lines": ["…………", "音も、光も、ここには届かない", "沈め"], "effect": {"type": "silence", "color": "#6f8cff"}},
 ]
@@ -118,12 +119,12 @@ ENEMIES = [
 # エクストラステージ：極点の宇宙龍（混沌の初源・永遠の沈黙の使い。各ステージを見回っている）
 #   ステージをクリアするたびに EXTRA_CHANCE の確率で、次のステージの前に現れる（1回の挑戦で1度まで）
 #   「にげる」で戦わずに先へ進める（負けにならない）。倒すと超激レア装備（ULTRA_REWARDS）
-#   強さは難易度に関係なく固定（ベリーハードのステージ6と同じ：Lv.6 の HP517・攻撃4.1 × 5.184、防御8.4 × 3.456）
+#   強さは難易度に関係なく固定（ベリーハードのステージ6と同じ：Lv.6 の HP1034・攻撃4.1 × 5.184、防御8.4 × 3.456）
 #   fit / focus : 横長の絵なので、画面を埋めるように拡大し（cover）、focus の位置を中心に見せる
 # ---------------------------------------------------------------------------
 EXTRA_CHANCE = 0.01
 EXTRA_ENEMY = {
-    "lv": "???", "name": "極点の宇宙龍", "title": "災厄と創造の統合者", "hp": 2680, "atk": 21.3, "def": 29.0, "fixed_stats": True,
+    "lv": "???", "name": "極点の宇宙龍", "title": "災厄と創造の統合者", "hp": 5360, "atk": 21.3, "def": 29.0, "fixed_stats": True,
     "image": "enemy_extra.webp", "cutout": False, "scene": "image", "floating": False, "fit": "cover", "focus": "64% 50%",
     "immune": ["thunder"], "gimmicks": ["black_flame", "shadow", "darkness"], "difficulties": None,
     "lines": ["……見つけたぞ、小さき者", "我が主の領域を荒らすか", "星ごと呑み込んでくれよう"],
@@ -152,7 +153,9 @@ EXTRA_ENEMY = {
 #   攻撃で敵に当たった回数（コンボ）が charge に達すると、戦闘画面の味方のアイコンを押して使える。
 #   自分のターンに1回。アイテムとは別で、使ったあともそのターンに攻撃できる。
 #   チャージはステージをまたいで残る（負けてやり直すときは、そのステージを始めたときの値に戻る）。
-#   charge は「1ターン25回当てる」として、コウの5ターン分（125）を基準に決めた。最短でも4ターン分。
+#   charge は「1ターン50回当てる」として、コウの5ターン分（250）を基準に決めた。最短でも4ターン分。
+#   （はじめは25回で決めていたが、実際は平均50回くらいなので、charge を2倍、攻撃系の power も2倍にした。
+#     そのうえで弱めだったコウ・アーサー・エリナの power を少し上げた）
 #   type:
 #     strike : 攻撃力 × power のダメージ。pierce なら敵の防御で減らない。guard ターン防御2倍、stun ターン敵が動けない
 #     guard  : 最大HPの heal_rate を回復して、guard ターン防御力2倍
@@ -170,33 +173,33 @@ STAT_CURVE = 1.3
 
 ALLIES = [
     {"lv": 1,  "name": "平凡な農民、コウ",         "hp": 10, "atk": 1, "def": 1, "max": {"hp": 34, "atk": 7, "def": 8},  "image": "ally_01.webp", "unlock": None,
-     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "def", "value": 3}], "skill": {"name": "渾身のひと振り", "type": "strike", "charge": 125, "power": 20, "anim": "kou", "text": "大きく振りかぶって一撃。攻撃力×20 のダメージ"}},
+     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "def", "value": 3}], "skill": {"name": "渾身のひと振り", "type": "strike", "charge": 250, "power": 50, "anim": "kou", "text": "大きく振りかぶって一撃。攻撃力×50 のダメージ"}},
     {"lv": 2,  "name": "新米自警団員、マリ",       "hp": 11, "atk": 2, "def": 1, "max": {"hp": 35, "atk": 7, "def": 9},  "image": "ally_02.webp", "unlock": {"min_difficulty": "normal", "stage": 2, "chance": 0.30},
-     "abilities": [{"stat": "def", "value": 1}, {"stat": "def", "value": 1}, {"stat": "atk", "value": 4}], "skill": {"name": "守りの誓い", "type": "guard", "charge": 100, "heal_rate": 0.2, "guard": 3, "anim": "mari", "text": "光の盾でHPを最大の20%回復し、3ターン防御力2倍"}},
+     "abilities": [{"stat": "def", "value": 1}, {"stat": "def", "value": 1}, {"stat": "atk", "value": 4}], "skill": {"name": "守りの誓い", "type": "guard", "charge": 200, "heal_rate": 0.2, "guard": 3, "anim": "mari", "text": "光の盾でHPを最大の20%回復し、3ターン防御力2倍"}},
     {"lv": 3,  "name": "新兵中隊長、アレックス",   "hp": 13, "atk": 2, "def": 3, "max": {"hp": 40, "atk": 8, "def": 10},  "image": "ally_03.webp", "unlock": {"min_difficulty": "easy", "stage": 4, "chance": 0.50},
-     "abilities": [{"stat": "hp", "value": 3}, {"stat": "hp", "value": 3}, {"stat": "atk", "value": 3}], "skill": {"name": "突撃号令", "type": "boost", "charge": 100, "mult": 2, "anim": "alex", "text": "号令で奮い立ち、次の攻撃のダメージが2倍"}},
+     "abilities": [{"stat": "hp", "value": 3}, {"stat": "hp", "value": 3}, {"stat": "atk", "value": 3}], "skill": {"name": "突撃号令", "type": "boost", "charge": 200, "mult": 2, "anim": "alex", "text": "号令で奮い立ち、次の攻撃のダメージが2倍"}},
     {"lv": 4,  "name": "魔導戦術家、セリス",       "hp": 16, "atk": 2, "def": 5, "max": {"hp": 45, "atk": 6, "def": 18},  "image": "ally_04.webp", "unlock": {"min_difficulty": "normal", "stage": 3, "chance": 0.30},
-     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "hp", "value": 10}], "skill": {"name": "魔法障壁", "type": "barrier", "charge": 125, "blocks": 2, "anim": "celis", "text": "魔法陣の障壁で敵の攻撃2回を無効にし、状態異常も治す"}},
+     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "hp", "value": 10}], "skill": {"name": "魔法障壁", "type": "barrier", "charge": 250, "blocks": 2, "anim": "celis", "text": "魔法陣の障壁で敵の攻撃2回を無効にし、状態異常も治す"}},
     {"lv": 5,  "name": "先鋭近衛騎士、アーサー",   "hp": 22, "atk": 4, "def": 4, "max": {"hp": 60, "atk": 11, "def": 13},  "image": "ally_05.webp", "unlock": {"min_difficulty": "hard", "stage": 1, "chance": 0.30},
-     "abilities": [{"stat": "def", "value": 2}, {"stat": "def", "value": 2}, {"stat": "hp", "value": 15}], "skill": {"name": "聖盾撃", "type": "strike", "charge": 150, "power": 25, "guard": 2, "anim": "arthur", "text": "聖なる盾ごと突撃。攻撃力×25 のダメージと、2ターン防御力2倍"}},
+     "abilities": [{"stat": "def", "value": 2}, {"stat": "def", "value": 2}, {"stat": "hp", "value": 15}], "skill": {"name": "聖盾撃", "type": "strike", "charge": 300, "power": 60, "guard": 2, "anim": "arthur", "text": "聖なる盾ごと突撃。攻撃力×60 のダメージと、2ターン防御力2倍"}},
     {"lv": 6,  "name": "古代魔導研究者、エリナ",   "hp": 30, "atk": 6, "def": 3, "max": {"hp": 70, "atk": 17, "def": 8},  "image": "ally_06.webp", "unlock": {"min_difficulty": "normal", "stage": 6, "chance": 0.40},
-     "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 8}], "skill": {"name": "古代魔法・崩壊", "type": "strike", "charge": 175, "power": 30, "pierce": True, "anim": "erina", "text": "古代文字が崩れ落ちる。攻撃力×30 の防御無視ダメージ"}},
+     "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 8}], "skill": {"name": "古代魔法・崩壊", "type": "strike", "charge": 350, "power": 70, "pierce": True, "anim": "erina", "text": "古代文字が崩れ落ちる。攻撃力×70 の防御無視ダメージ"}},
     {"lv": 7,  "name": "王宮近衛隊長、ガイウス",   "hp": 45, "atk": 10, "def": 6, "max": {"hp": 95, "atk": 26, "def": 14},  "image": "ally_07.webp", "unlock": {"min_difficulty": "normal", "stage": 7, "chance": 0.20},
-     "abilities": [{"stat": "atk", "value": 2}, {"stat": "atk", "value": 2}, {"stat": "atk", "value": 6}], "skill": {"name": "百裂剣", "type": "strike", "charge": 175, "power": 40, "anim": "gaius", "text": "目にも止まらぬ百の斬撃。攻撃力×40 のダメージ"}},
+     "abilities": [{"stat": "atk", "value": 2}, {"stat": "atk", "value": 2}, {"stat": "atk", "value": 6}], "skill": {"name": "百裂剣", "type": "strike", "charge": 350, "power": 80, "anim": "gaius", "text": "目にも止まらぬ百の斬撃。攻撃力×80 のダメージ"}},
     {"lv": 8,  "name": "魔導工学の至高者、レイノ", "hp": 63, "atk": 13, "def": 15, "max": {"hp": 125, "atk": 28, "def": 32}, "image": "ally_08.webp", "unlock": {"min_difficulty": "hard", "stage": 5, "chance": 0.60},
-     "abilities": [{"stat": "def", "value": 3}, {"stat": "def", "value": 3}, {"stat": "atk", "value": 8}], "skill": {"name": "魔導砲", "type": "strike", "charge": 200, "power": 35, "pierce": True, "stun": 1, "anim": "reino", "text": "魔導砲の光線。攻撃力×35 の防御無視ダメージと、敵を1ターン動けなくする（雷が効かない敵にも効く）"}},
+     "abilities": [{"stat": "def", "value": 3}, {"stat": "def", "value": 3}, {"stat": "atk", "value": 8}], "skill": {"name": "魔導砲", "type": "strike", "charge": 400, "power": 70, "pierce": True, "stun": 1, "anim": "reino", "text": "魔導砲の光線。攻撃力×70 の防御無視ダメージと、敵を1ターン動けなくする（雷が効かない敵にも効く）"}},
     {"lv": 9,  "name": "概念の卵、ガレン",         "hp": 73, "atk": 20, "def": 19, "max": {"hp": 150, "atk": 36, "def": 40}, "image": "ally_09.webp", "unlock": {"min_difficulty": "hard", "stage": 5, "chance": 0.30},
-     "abilities": [{"stat": "hp", "value": 10}, {"stat": "hp", "value": 10}, {"stat": "def", "value": 15}], "skill": {"name": "概念崩し", "type": "break", "charge": 125, "turns": 3, "anim": "garen", "text": "敵の「守る」という概念を壊し、3ターン敵の防御を0にする"}},
+     "abilities": [{"stat": "hp", "value": 10}, {"stat": "hp", "value": 10}, {"stat": "def", "value": 15}], "skill": {"name": "概念崩し", "type": "break", "charge": 250, "turns": 3, "anim": "garen", "text": "敵の「守る」という概念を壊し、3ターン敵の防御を0にする"}},
     {"lv": 10, "name": "至高の光帝、ルナ",         "hp": 100, "atk": 33, "def": 35, "max": {"hp": 160, "atk": 50, "def": 52}, "image": "ally_10.webp", "unlock": {"min_difficulty": "very_hard", "stage": 7, "chance": 0.20},
-     "abilities": [{"stat": "atk", "value": 3}, {"stat": "atk", "value": 3}, {"stat": "hp", "value": 40}], "skill": {"name": "光帝の裁き", "type": "strike", "charge": 250, "power": 60, "pierce": True, "anim": "luna", "text": "天から光の柱が降りる。攻撃力×60 の防御無視ダメージ"}},
+     "abilities": [{"stat": "atk", "value": 3}, {"stat": "atk", "value": 3}, {"stat": "hp", "value": 40}], "skill": {"name": "光帝の裁き", "type": "strike", "charge": 500, "power": 120, "pierce": True, "anim": "luna", "text": "天から光の柱が降りる。攻撃力×120 の防御無視ダメージ"}},
     # エクストラステージ（極点の宇宙龍）を倒すと、必ず仲間になる（unlock の extra）。いちばん強いキャラ
     {"lv": 11, "name": "極点の宇宙龍、アステル",   "hp": 120, "atk": 40, "def": 42, "max": {"hp": 200, "atk": 62, "def": 65},
      "image": "ally_11.webp", "unlock": {"extra": True, "chance": 1.0},
      # アビリティ3「聖霊の加護」：HP+50 と、基本の状態異常（毒・雷・火）にかからない
      "abilities": [{"stat": "atk", "value": 4}, {"stat": "def", "value": 4},
                    {"stat": "hp", "value": 50, "name": "聖霊の加護", "immune": ["poison", "thunder", "fire"]}],
-     "skill": {"name": "創世の咆哮", "type": "strike", "charge": 275, "power": 70, "pierce": True, "break": 2, "anim": "astel",
-               "text": "銀河を呑む咆哮。攻撃力×70 の防御無視ダメージと、2ターン敵の防御を0にする"}},
+     "skill": {"name": "創世の咆哮", "type": "strike", "charge": 550, "power": 140, "pierce": True, "break": 2, "anim": "astel",
+               "text": "銀河を呑む咆哮。攻撃力×140 の防御無視ダメージと、2ターン敵の防御を0にする"}},
 ]
 
 # ---------------------------------------------------------------------------
@@ -348,3 +351,21 @@ ATTR_EFFECTS = {
 TREASURE_CHANCE = 0.70        # ステージクリア時に宝箱が出る確率
 TREASURE_COUNT = (1, 3)       # 出る個数（同じ確率で選ぶ）
 TREASURE_ITEM_RATE = 0.70     # 1個の中身がアイテムになる確率（残りは装備）
+
+
+# ---------------------------------------------------------------------------
+# 称号（バッジ）
+#   モード全クリ：その難易度を最後のステージまでクリアする
+#   エクストラ  ：ステージの番人（極点の宇宙龍）を倒す
+#   キャラ      ：そのキャラを Lv.10（最大）にする。名前は「（肩書き）を極めし者」
+#   badge : assets/story/titles/ の中のファイル名
+# ---------------------------------------------------------------------------
+MODE_TITLES = {
+    "easy":      {"name": "初号の踏破者",   "badge": "title_easy.webp"},
+    "normal":    {"name": "星翼の探索者",   "badge": "title_normal.webp"},
+    "hard":      {"name": "星辰の覚醒者",   "badge": "title_hard.webp"},
+    "very_hard": {"name": "虚無を統べる者", "badge": "title_very_hard.webp"},
+}
+EXTRA_TITLE = {"name": "宇宙龍を討ちし者", "badge": "title_extra.webp"}
+ALLY_TITLE_BADGE = "title_ally_{lv:02d}.webp"
+

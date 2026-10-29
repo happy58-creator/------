@@ -6,11 +6,13 @@
 <title>story battle</title>
 <style>
   :root { --gold:#e9d6a6; --ink:#f4ecda; --muted:#bfb196; --enemy:#e2453b; --ally:#46c37b; --panel:rgba(12,10,16,.82); }
-  html, body { margin:0; height:100%; overflow:hidden; background:#07060a; color:var(--ink);
+  html, body { margin:0; height:100%; overflow:hidden; overscroll-behavior:none; touch-action:none; background:#07060a; color:var(--ink);
     font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Noto Serif CJK JP",serif;
     -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
   * { box-sizing:border-box; }
-  #app { position:fixed; inset:0; touch-action:manipulation; }
+  /* 連打で画面がずれたり拡大したりしないように、スクロール・ピンチ・ダブルタップ拡大を止める（アイテムの一覧だけはスクロールできる） */
+  #app { position:fixed; inset:0; touch-action:none; overscroll-behavior:none; -webkit-touch-callout:none; }
+  #tapzone { touch-action:none; }
 
   /* 画面いっぱいの背景＋敵（story_assets.stage_html の中身） */
   #stage { position:absolute; inset:0; }
@@ -218,7 +220,9 @@
     background:rgba(16,12,20,.97); border-top:1px solid rgba(233,214,166,.4); border-radius:18px 18px 0 0;
     padding:14px max(14px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-bottom)); box-shadow:0 -10px 30px rgba(0,0,0,.6); }
   #sheet.open { transform:translateY(0); }
-  #sheet h3 { margin:0 0 10px; font-size:17px; display:flex; justify-content:space-between; align-items:center; max-width:720px; margin-inline:auto; }
+  #sheet { max-height:72vh; max-height:72dvh; display:flex; flex-direction:column; }
+  #sheet .scroll { overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain; min-height:0; flex:1 1 auto; padding-bottom:4px; }
+  #sheet h3 { width:100%; margin:0 0 10px; font-size:17px; display:flex; justify-content:space-between; align-items:center; max-width:720px; margin-inline:auto; }
   #sheet h3 button { font:600 13px/1 sans-serif; padding:8px 12px; border-radius:999px; background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,.25); cursor:pointer; }
   .items { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; max-width:720px; margin:0 auto; }
   .itembtn img { float:left; width:44px; height:44px; border-radius:10px; margin:0 10px 0 0; object-fit:cover; }
@@ -261,6 +265,30 @@
   #confirm .buttons { margin:0; }
   #confirm .btn { min-height:46px; font-size:16px; }
   .btn.ghost { background:#2a2230; color:var(--ink); }
+
+  /* 装備の確認 */
+  #gearBtn { position:absolute; z-index:60; top:calc(max(8px, env(safe-area-inset-top)) + 68px); right:10px; pointer-events:auto;
+    font:600 12px/1 sans-serif; color:var(--ink); background:rgba(0,0,0,.45); border:1px solid rgba(233,214,166,.45); border-radius:999px; padding:7px 11px; cursor:pointer; }
+  #gearSheet { position:absolute; z-index:75; left:0; right:0; bottom:0; transform:translateY(105%); transition:transform .25s ease-out;
+    background:rgba(16,12,20,.97); border-top:1px solid rgba(233,214,166,.4); border-radius:18px 18px 0 0; max-height:78vh; max-height:78dvh;
+    display:flex; flex-direction:column; padding:14px max(14px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-bottom)); box-shadow:0 -10px 30px rgba(0,0,0,.6); }
+  #gearSheet.open { transform:translateY(0); }
+  #gearSheet h3 { margin:0 0 10px; font-size:17px; display:flex; justify-content:space-between; align-items:center; width:100%; max-width:720px; margin-inline:auto; }
+  #gearSheet h3 button { font:600 13px/1 sans-serif; padding:8px 12px; border-radius:999px; background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,.25); cursor:pointer; }
+  #gearSheet .scroll > div { max-width:720px; margin:0 auto; }
+  .gstats { display:flex; gap:14px; font:700 14px/1.4 ui-monospace,monospace; color:#ffe2a0; margin:0 0 8px; flex-wrap:wrap; }
+  .gsec { margin:12px 0 6px; font-size:13px; color:var(--muted); letter-spacing:.08em; }
+  .gitem { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border-radius:12px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); margin-bottom:6px; }
+  .gitem > img { width:44px; height:44px; border-radius:10px; object-fit:cover; flex:none; }
+  .gitem b { font-size:15px; } .gitem .rk { font-size:11px; color:var(--muted); margin-left:6px; }
+  .gitem .ef { font-size:12px; color:#cfe8c0; }
+  .gattr { display:flex; gap:6px; align-items:center; font-size:12px; color:#f1d9ff; margin-top:3px; }
+  .gattr img { width:18px; height:18px; }
+  .gempty { font-size:13px; color:var(--muted); padding:4px 2px; }
+  .gtags { display:flex; flex-wrap:wrap; gap:6px; }
+  .gtag { display:inline-flex; gap:5px; align-items:center; font-size:13px; padding:5px 10px; border-radius:999px; background:rgba(120,200,255,.12); border:1px solid rgba(120,200,255,.35); }
+  .gtag.imm { background:rgba(255,230,150,.12); border-color:rgba(255,230,150,.45); }
+  .gtag img { width:18px; height:18px; }
 </style>
 <style id="sceneCss"></style>
 </head>
@@ -287,6 +315,7 @@
     <div class="ebadges" id="enemyBadges"></div>
   </div>
   <button id="quit" type="button">やめる</button>
+  <button id="gearBtn" type="button">🛡️ 装備</button>
 
   <div class="hud bottom">
     <div class="row">
@@ -308,8 +337,13 @@
 
   <div id="sheet">
     <h3><span>アイテム（1ターンに1つ）</span><button type="button" id="sheetClose">とじる</button></h3>
-    <div class="items" id="itemList"></div>
-    <div class="note" id="itemNote"></div>
+    <div class="scroll"><div class="items" id="itemList"></div>
+    <div class="note" id="itemNote"></div></div>
+  </div>
+
+  <div id="gearSheet">
+    <h3><span>いまの装備</span><button type="button" id="gearClose">とじる</button></h3>
+    <div class="scroll"><div id="gearList"></div></div>
   </div>
 
   <div id="confirm"><div>
@@ -322,6 +356,15 @@
 </div>
 <script>
 "use strict";
+// 連打中に画面が動かないように：スクロールできる箱（.scroll）の中以外では、指の移動・ピンチ・ダブルタップ拡大を止める
+(function lockGestures() {
+  const inScroll = (t) => t && t.closest && t.closest(".scroll");
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1 || !inScroll(e.target)) e.preventDefault(); }, { passive: false });
+  document.addEventListener("touchstart", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  for (const g of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(g, (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+})();
 // ---------------------------------------------------------------------------
 // Streamlit とのやりとり（公式の component-lib を使わない最小実装）
 // ---------------------------------------------------------------------------
@@ -357,7 +400,7 @@ function start(args) {
     phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0,
     bag: Object.fromEntries(c.items.map((i) => [i.id, i.count])), used: {},
     taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, startAt: performance.now(), hitMask: null,
-    tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {},
+    tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {}, equipIcons: args.equip_icons || {},
     status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0 },   // 残りターン
     // 剣の属性で敵にかかった状態異常
     eDots: {},                                   // { poison: [ターンごとのダメージ, ...] } 先頭から1つずつ入る
@@ -593,14 +636,14 @@ $("btnItem").onclick = () => { if (G && G.phase === "player" && !G.usedItem) ope
 $("sheetClose").onclick = () => $("sheet").classList.remove("open");
 
 async function attack() {
-  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open");
+  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
   await banner("よーい……", "", 700);
   await banner("スタート！", "", 450);
   // 連打の受付
   G.phase = "tapping"; G.tapHits = 0; G.tapDamage = 0;
   const a = G.cfg.ally, broken = G.eBreak > 0;          // 概念崩し：敵の防御0
   const perTap = G.atkTurns > 0 ? (broken ? a.tap_damage_up_break : a.tap_damage_up) : (broken ? a.tap_damage_break : a.tap_damage);
-  $("tapzone").classList.add("on"); $("timer").style.display = "block"; $("combo").style.display = "block";
+  $("tapzone").classList.add("on"); $("gearBtn").style.visibility = "hidden"; $("timer").style.display = "block"; $("combo").style.display = "block";
   $("combo").querySelector(".c").textContent = "0"; $("combo").querySelector(".d").textContent = "";
   const t0 = performance.now(), dur = G.cfg.attack_ms;
   $("tapzone").onpointerdown = (ev) => {
@@ -628,7 +671,7 @@ async function attack() {
     requestAnimationFrame(tick);
   });
   G.phase = "strike";
-  $("tapzone").classList.remove("on"); $("timer").style.display = "none";
+  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("timer").style.display = "none";
   // 合計ダメージで一気に攻撃
   const boost = G.boost; G.boost = 1;                     // 突撃号令：次の攻撃1回だけ
   if (boost > 1) G.tapDamage *= boost;
@@ -759,6 +802,36 @@ async function useSkill() {
 // ---------------------------------------------------------------------------
 // アイテム
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 装備の確認（戦闘中いつでも見られる。連打中は開かない）
+// ---------------------------------------------------------------------------
+function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+function statusImg(id) { const u = G.statusIcons[id]; return u ? `<img src="${u}" alt="">` : ""; }
+function openGear() {
+  const L = G.cfg.loadout || { gear: [], acc: [], resist: [], immune: [], attr_help: [], stats: {} };
+  const st = L.stats || {};
+  const one = (e) => {
+    const icon = G.equipIcons[e.id] ? `<img src="${G.equipIcons[e.id]}" alt="">` : "";
+    const attrs = (e.attrs || []).map((a) => `<div class="gattr">${a.ids.map(statusImg).join("")}<span>${esc(a.text)}</span></div>`).join("");
+    return `<div class="gitem">${icon}<div><b>${esc(e.name)}</b><span class="rk">${esc(e.rank)}</span><div class="ef">${esc(e.effect)}</div>${attrs}</div></div>`;
+  };
+  const list = (arr, empty) => arr.length ? arr.map(one).join("") : `<div class="gempty">${empty}</div>`;
+  const tags = (arr, cls, label) => arr.map((r) => `<span class="gtag ${cls}">${statusImg(r.id)}${esc(r.name)}${label}</span>`).join("");
+  const guard = tags(L.immune || [], "imm", "にかからない") + tags(L.resist || [], "", "を半分");
+  const help = (L.attr_help || []).map((a) => `<div class="gattr">${statusImg(a.id)}<span><b>${esc(a.name)}</b>：${esc(a.text)}</span></div>`).join("");
+  $("gearList").innerHTML =
+    `<div class="gstats"><span>HP ${fmt(st.hp || 0)}</span><span>攻撃力 ${(+st.atk || 0).toFixed(1).replace(/\.0$/, "")}</span><span>防御力 ${(+st.def || 0).toFixed(1).replace(/\.0$/, "")}</span></div>` +
+    `<div class="gsec">装備品</div>${list(L.gear || [], "付けていません")}` +
+    `<div class="gsec">アクセサリ</div>${list(L.acc || [], "付けていません")}` +
+    `<div class="gsec">状態異常への強さ</div>${guard ? `<div class="gtags">${guard}</div>` : `<div class="gempty">なし</div>`}` +
+    (help ? `<div class="gsec">剣の属性</div>${help}` : "");
+  $("sheet").classList.remove("open");
+  $("gearSheet").classList.add("open");
+}
+$("gearBtn").onclick = () => { if (G && G.phase !== "tapping") openGear(); };
+$("gearClose").onclick = () => $("gearSheet").classList.remove("open");
+
 function openSheet() {
   const list = $("itemList"); list.innerHTML = "";
   for (const it of G.cfg.items) {
@@ -985,7 +1058,7 @@ $("doQuit").onclick = () => { $("confirm").style.display = "none"; finish("quit"
 async function finish(result) {
   if (G.phase === "end") return;
   G.phase = "end"; setButtons(false); $("sheet").classList.remove("open");
-  $("tapzone").classList.remove("on"); $("timer").style.display = "none"; $("combo").style.display = "none"; $("bubble").style.display = "none";
+  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("timer").style.display = "none"; $("combo").style.display = "none"; $("bubble").style.display = "none";
   $("warn").classList.remove("on"); $("stun").classList.remove("on"); $("dark").classList.remove("on"); $("btnEnd").classList.remove("on");
   $("hint").textContent = "";
   if (result === "lose") $("allyIcon").classList.add("down");

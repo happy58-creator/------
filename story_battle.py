@@ -36,6 +36,10 @@ iframe[title="story_battle.story_battle"], div[data-testid="stCustomComponentV1"
   z-index: 999999 !important; border: 0 !important; background: #07060a;
 }
 header[data-testid="stHeader"], [data-testid="stSidebar"], [data-testid="stToolbar"] { display: none !important; }
+/* 戦闘中は外側のページを動かさない（連打やピンチでページがずれないように） */
+html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-testid="stMain"], section.main {
+  overflow: hidden !important; overscroll-behavior: none !important; touch-action: none !important;
+}
 </style>
 """
 
@@ -50,6 +54,7 @@ def battle(config, key):
         hit_mask=story_assets.hit_mask_uri(enemy),
         ally_icon=story_assets.ally_icon_uri(config["ally"]["lv"]),
         item_icons={item["id"]: story_assets.item_icon_uri(item["id"]) for item in config["items"]},
+        equip_icons={e["id"]: story_assets.equipment_thumb(e["id"]) for part in ("gear", "acc") for e in config["loadout"][part]},
         status_icons={sid: uri for sid in story_data.STATUS_EFFECTS if (uri := story_assets.status_icon_uri(sid))},
         key=key,
         default=None,

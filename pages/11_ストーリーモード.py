@@ -26,7 +26,8 @@ STAT_NAMES = {"hp": "HP", "atk": "攻撃力", "def": "防御力"}
 OUTCOME_NAMES = {"clear": "全クリア", "abandon": "中断"}
 
 common.init_state({
-    "story_view": "home",        # home / inventory / guide / battle / between / retry / extra_lost / end
+    "story_view": "home",        # home / inventory / guide / titles / battle / between / retry / extra_lost / end
+    "story_detail": None,        # キャラ一覧で、くわしく見ているキャラ
     "story_ally": 1,
     "story_difficulty": "easy",
     "story_rewards": None,       # 直前のステージクリアでもらった物
@@ -87,6 +88,15 @@ if st.session_state.get("story_profile_user") != USER:
     st.session_state.story_profile_user = USER
     st.session_state.story_view = "home"
 profile = st.session_state.story_profile
+
+# 称号ができる前のデータ：成績の記録から、全クリアした難易度を拾っておく（最初の1回だけ）
+if profile.get("titles_seen") is None:
+    try:
+        _rows = history.read_history("ストーリー")
+    except Exception:
+        _rows = []
+    L.backfill_cleared_modes(profile, _rows, USER)
+    save()
 
 # ログインボーナス：その日はじめて開いたら、ランダムでアイテムを1つ（倉庫へ）
 _today = __import__("datetime").datetime.now(__import__("zoneinfo").ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d")
@@ -321,18 +331,90 @@ def ally_panel_html(lv):
     )
 
 
+def ally_detail_html(lv):
+    """キャラの詳しい説明（大きい画像・Lv.1 と Lv.10 のステータス・説明・必殺技・アビリティ・仲間になる方法）"""
+    esc = story_guide.esc
+    ally = L.get_ally(lv)
+    have = lv in L.owned_allies(profile)
+    low, high = L.base_stats(lv, 1), L.base_stats(lv, story_data.LEVEL_MAX)
+    gray = "" if have else "filter:grayscale(1) brightness(.6);"
+    rows = "".join(
+        f"<tr><th>{STAT_NAMES[k]}</th><td>{low[k]:g}</td><td>{high[k]:g}</td></tr>" for k in ("hp", "atk", "def"))
+    skill = ally["skill"]
+    abilities = "".join(
+        f"<li>{esc(L.ability_label(a))}</li>" for a in ally["abilities"])
+    mark = (f"<span style='color:#7fd8a0'>✅ 仲間（いま Lv.{L.ally_level(profile, lv)}）</span>" if have
+            else "<span style='color:#b9ab90'>🔒 まだ仲間ではない</span>")
+    return f"""
+<div class="sd-wrap">
+  <div class="sd-pic"><img src="{story_assets.ally_thumb(lv, size=720)}" style="{gray}" alt=""></div>
+  <div class="sd-name">{esc(ally['name'])}</div>
+  <div class="sd-mark">{mark}</div>
+  <p class="sd-text">{esc(story_guide.ALLY_TEXT.get(lv, ''))}</p>
+  <table class="sd-stats"><tr><th></th><th>はじめ（Lv.1）</th><th>最大（Lv.{story_data.LEVEL_MAX}）</th></tr>{rows}</table>
+  <div class="sd-sec">✨ 必殺技：{esc(skill['name'])}<small>（コンボ{skill['charge']}でチャージ）</small></div>
+  <p class="sd-text">{esc(skill['text'])}</p>
+  <div class="sd-sec">🔓 アビリティ<small>（遊ぶほど順に解放）</small></div>
+  <ol class="sd-list">{abilities}</ol>
+  <div class="sd-sec">🤝 仲間になるには</div>
+  <p class="sd-text">{esc(story_guide.join_text(ally))}</p>
+</div>"""
+
+
+DETAIL_CSS = """<style>
+.sd-wrap { max-width: 560px; margin: 0 auto; }
+.sd-pic { text-align: center; background: radial-gradient(ellipse at 50% 40%, rgba(233,214,166,.18), transparent 70%); border-radius: 16px; }
+.sd-pic img { width: 100%; max-width: 420px; border-radius: 14px; display: inline-block; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+.sd-name { font-weight: 800; font-size: 22px; text-align: center; margin-top: 10px; }
+.sd-mark { text-align: center; font-size: 14px; margin-top: 2px; }
+.sd-text { font-size: 15px; line-height: 1.7; margin: 6px 0; }
+.sd-stats { width: 100%; border-collapse: collapse; margin: 10px 0 4px; font-size: 15px; }
+.sd-stats th, .sd-stats td { border-bottom: 1px solid rgba(128,128,128,.3); padding: 6px 8px; text-align: center; }
+.sd-stats th:first-child { text-align: left; }
+.sd-sec { font-weight: 700; font-size: 16px; margin-top: 14px; }
+.sd-sec small { font-weight: 400; font-size: 12px; opacity: .75; margin-left: 4px; }
+.sd-list { margin: 4px 0 0 1.2em; padding: 0; font-size: 15px; line-height: 1.7; }
+</style>"""
+
+
+def view_ally_detail(lv):
+    """キャラ一覧で画像を押したときの、くわしい説明"""
+    have = lv in L.owned_allies(profile)
+    with st.container(border=True, key="story_ally_detail"):
+        st.markdown(DETAIL_CSS + ally_detail_html(lv), unsafe_allow_html=True)
+        col_back, col_pick = st.columns(2)
+        if col_back.button("◀ 一覧にもどる", key="_story_detail_back", width="stretch"):
+            st.session_state.story_detail = None
+            st.rerun()
+        if have and col_pick.button("このキャラにする", key="_story_detail_pick", type="primary", width="stretch"):
+            st.session_state.story_ally = lv
+            st.session_state.story_detail = None
+            st.session_state.story_pick_char = False
+            st.rerun()
+
+
 def view_ally_picker():
-    """キャラクター一覧（まだ仲間でないキャラはグレー）"""
+    """キャラクター一覧（まだ仲間でないキャラはグレー）。画像を押すと、くわしい説明を出す"""
+    if st.session_state.get("story_detail"):
+        view_ally_detail(st.session_state.story_detail)
+        return
     owned = L.owned_allies(profile)
     # スマホでも1行5体のまま並べる（Streamlit は狭い画面で列を縦に積むので、この箱の中だけ止める）
+    # 画像の上に透明なボタンを重ねて、画像を押すと説明が開くようにする
     st.markdown("""<style>
 .st-key-story_picker [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 6px !important; }
 .st-key-story_picker [data-testid="stColumn"], .st-key-story_picker [data-testid="column"] {
   min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
 .st-key-story_picker button { padding: 2px 4px !important; min-height: 32px !important; font-size: 12px !important; }
+.st-key-story_picker [class*="st-key-story_card_"] { position: relative !important; gap: 0 !important; }
+.st-key-story_picker [class*="st-key-_story_detail_"] { position: absolute !important; inset: 0 !important; z-index: 2; margin: 0 !important; }
+.st-key-story_picker [class*="st-key-_story_detail_"] > div, .st-key-story_picker [class*="st-key-_story_detail_"] .stButton {
+  width: 100% !important; height: 100% !important; }
+.st-key-story_picker [class*="st-key-_story_detail_"] button {
+  width: 100% !important; height: 100% !important; min-height: 0 !important; opacity: 0 !important; cursor: zoom-in !important; }
 </style>""", unsafe_allow_html=True)
     with st.container(border=True, key="story_picker"):
-        st.markdown("**キャラクターを えらぶ**")
+        st.markdown("**キャラクターを えらぶ**　<small>（画像を押すと、くわしく見られるよ）</small>", unsafe_allow_html=True)
         for row in range(0, len(story_data.ALLIES), 5):
             cols = st.columns(5)
             for col, ally in zip(cols, story_data.ALLIES[row:row + 5]):
@@ -340,8 +422,13 @@ def view_ally_picker():
                 have = lv in owned
                 style = "" if have else "filter:grayscale(1) brightness(.45)"
                 name = short_name(lv) if have else "？？？"
-                col.markdown(f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:8px;{style}'>"
-                             f"<div style='text-align:center;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;"
+                with col.container(key=f"story_card_{lv}"):
+                    st.markdown(f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:8px;display:block;{style}'>",
+                                unsafe_allow_html=True)
+                    if st.button("くわしく", key=f"_story_detail_{lv}"):
+                        st.session_state.story_detail = lv
+                        st.rerun()
+                col.markdown(f"<div style='text-align:center;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;"
                              f"text-overflow:ellipsis'>{name}<br>"
                              f"{'Lv.' + str(L.ally_level(profile, lv)) if have else '&nbsp;'}</div>", unsafe_allow_html=True)
                 if have and col.button("えらぶ", key=f"_story_pick_{lv}", width="stretch",
@@ -361,12 +448,14 @@ def view_home():
     common.hero("⚔️ ストーリーモード",
                 "敵をタップして攻撃！ ステージを勝ちぬいて、最後の敵をたおそう。"
                 "（イージー・ノーマルは10、ハードは11、ベリーハードは12ステージ）")
-    col_guide, col_bag = st.columns(2)
+    col_guide, col_bag, col_title = st.columns(3)
     if col_guide.button("📖 攻略", width="stretch"):
         go("guide")
     if col_bag.button("🎒 倉庫とリュック", width="stretch"):
         st.session_state.story_round += 1
         go("inventory")
+    if col_title.button("🏅 称号", width="stretch"):
+        go("titles")
     notice = st.session_state.pop("story_notice", None)
     if notice:
         st.info(notice)
@@ -438,6 +527,8 @@ def view_prepare():
         cols = st.columns(2)
         for col, diff in zip(cols, row):
             label = f"{L.get_difficulty(diff)['name']}（{L.stage_count(diff)}ステージ）"
+            if diff in profile["cleared_modes"]:
+                label += "　🏆クリア"
             chosen = diff == st.session_state.story_difficulty
             if col.button(("✔ " if chosen else "") + label, key=f"_story_diff_{diff}", width="stretch",
                           type="primary" if chosen else "secondary"):
@@ -478,6 +569,55 @@ def view_inventory():
         save()
         st.session_state.story_notice = "倉庫とリュックを保存したよ。"
     go("home")
+
+
+TITLE_CSS = """<style>
+.tt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin: 6px 0 18px; }
+.tt-card { text-align: center; padding: 10px 8px 12px; border-radius: 14px; border: 1px solid rgba(128,128,128,.28);
+  background: linear-gradient(180deg, rgba(120,90,200,.10), rgba(0,0,0,0)); }
+.tt-card.on { border-color: rgba(233,200,110,.75); box-shadow: 0 0 16px rgba(233,200,110,.25); }
+.tt-card img { width: 100%; max-width: 140px; aspect-ratio: 1; object-fit: contain; display: block; margin: 0 auto 6px; }
+.tt-card.off img { filter: grayscale(1) brightness(.35); }
+.tt-name { font-weight: 800; font-size: 15px; }
+.tt-card.off .tt-name { opacity: .55; }
+.tt-how { font-size: 12px; opacity: .75; margin-top: 3px; line-height: 1.4; }
+.tt-mark { font-size: 12px; margin-top: 4px; }
+.tt-card.on .tt-mark { color: #e9c86e; font-weight: 700; }
+@media (max-width: 520px) { .tt-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; } }
+</style>"""
+
+
+def title_cards(items):
+    cards = []
+    for t in items:
+        cls = "on" if t["earned"] else "off"
+        mark = "🏅 獲得！" if t["earned"] else "🔒 まだ"
+        cards.append(f"<div class='tt-card {cls}'><img src='{story_assets.title_thumb(t['badge'])}' alt=''>"
+                     f"<div class='tt-name'>{story_guide.esc(t['name'])}</div>"
+                     f"<div class='tt-how'>{story_guide.esc(t['how'])}</div><div class='tt-mark'>{mark}</div></div>")
+    return "<div class='tt-grid'>" + "".join(cards) + "</div>"
+
+
+def view_titles():
+    items = L.titles(profile)
+    got = sum(t["earned"] for t in items)
+    common.hero("🏅 称号", f"手に入れた称号：{got} / {len(items)}")
+    if st.button("🏠 ホームにもどる", key="_story_titles_back_top"):
+        go("home")
+    st.subheader("モード全クリ・エクストラ")
+    st.markdown(TITLE_CSS + title_cards([t for t in items if t["kind"] != "ally"]), unsafe_allow_html=True)
+    st.subheader(f"キャラ Lv.{story_data.LEVEL_MAX}")
+    st.markdown(title_cards([t for t in items if t["kind"] == "ally"]), unsafe_allow_html=True)
+    if st.button("🏠 ホームにもどる", key="_story_titles_back"):
+        go("home")
+
+
+def show_new_titles(new_titles):
+    """挑戦の終わりに、新しく手に入れた称号を知らせる"""
+    if not new_titles:
+        return
+    st.subheader("🏅 新しい称号")
+    st.markdown(TITLE_CSS + title_cards(new_titles), unsafe_allow_html=True)
 
 
 def view_guide():
@@ -663,6 +803,8 @@ def view_end():
         if not rewards["allies"]:
             st.balloons()
 
+    show_new_titles(summary.get("new_titles"))
+
     st.subheader("✨ アビリティ")
     if summary["ability_after"] > summary["ability_before"]:
         st.caption(f"{name} の アビリティが たまったよ！")
@@ -686,7 +828,7 @@ def view_end():
 
 
 {
-    "home": view_home, "inventory": view_inventory, "guide": view_guide,
+    "home": view_home, "inventory": view_inventory, "guide": view_guide, "titles": view_titles,
     "battle": view_battle, "between": view_between, "retry": view_retry,
     "extra_lost": view_extra_lost, "end": view_end,
 }[st.session_state.story_view]()

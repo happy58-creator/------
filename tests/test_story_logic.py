@@ -18,11 +18,11 @@ def test_damage_never_negative_and_never_zero_for_positive_attack():
 
 def test_difficulty_multipliers():
     vh = L.enemy_stats(10, "very_hard")
-    assert math.isclose(vh["hp"], 1551 * 5.184) and math.isclose(vh["atk"], 12.2 * 5.184) and math.isclose(vh["def"], 19.8 * 3.456)
+    assert math.isclose(vh["hp"], 3102 * 5.184) and math.isclose(vh["atk"], 12.2 * 5.184) and math.isclose(vh["def"], 19.8 * 3.456)
     extra = L.enemy_stats(story_data.EXTRA_ENEMY, "very_hard")          # エクストラは難易度に関係なく固定
-    assert extra == {"hp": 2680, "atk": 21.3, "def": 29.0}           # ベリーハードのステージ6と同じ
+    assert extra == {"hp": 5360, "atk": 21.3, "def": 29.0}           # ベリーハードのステージ6と同じ
     n = L.enemy_stats(1, "normal")
-    assert math.isclose(n["hp"], 204.6) and math.isclose(n["def"], 1.782)
+    assert math.isclose(n["hp"], 409.2) and math.isclose(n["def"], 1.782)
 
 
 def test_display_hp():
@@ -138,22 +138,22 @@ def test_levels_and_growth():
     # コウの Lv.10 は、マリの Lv.10 よりほんの少し弱い
     kou, mari = L.base_stats(1, 10), L.base_stats(2, 10)
     assert kou["atk"] == mari["atk"] and kou["hp"] < mari["hp"] and kou["def"] < mari["def"]
-    # 必殺技のチャージは、コウ（125）を基準に4ターン分以上
-    assert story_data.ALLIES[0]["skill"]["charge"] == 125
-    assert all(a["skill"]["charge"] >= 100 for a in story_data.ALLIES)
+    # 必殺技のチャージは、1ターン50回として、コウ（250）を基準に4ターン分以上
+    assert story_data.ALLIES[0]["skill"]["charge"] == 250
+    assert all(a["skill"]["charge"] >= 200 for a in story_data.ALLIES)
 
 
 def test_skill_config_and_charge_carry():
     p = L.new_profile()
     c = L.battle_config(1, 1, "easy", 1, profile=p, charge=50)
     assert c["skill"]["type"] == "strike" and c["skill"]["start"] == 50
-    assert math.isclose(c["skill"]["damage"], L.damage(1 * 20, 1.155))
+    assert math.isclose(c["skill"]["damage"], L.damage(1 * 50, 1.155))
     luna = L.battle_config(1, 12, "very_hard", 10)["skill"]
-    assert math.isclose(luna["damage"], 33 * 60)                     # 防御無視
+    assert math.isclose(luna["damage"], 33 * 120)                    # 防御無視
     assert math.isclose(L.battle_config(1, 1, "easy", 2)["skill"]["heal"], 11 * 0.2)
     run = L.start_run(p, 1, "easy", {})
     L.apply_battle(p, {"ally_hp": 10, "charge": 999})
-    assert run["charge"] == 125                                       # 上限で止まる
+    assert run["charge"] == 250                                       # 上限で止まる
     L.restore_checkpoint(p)
     assert run["charge"] == 0                                         # 負けたらステージ開始時に戻る
     L.apply_battle(p, {"ally_hp": 10, "charge": 80})
@@ -505,7 +505,7 @@ def test_extra_ally_joins_and_is_strongest():
     rewards = L.clear_stage(p, FixedRng([]))
     assert rewards["allies"] == [11] and 11 in p["allies"]
     c = L.battle_config(1, 1, "easy", 11)["skill"]
-    assert c["break_turns"] == 2 and math.isclose(c["damage"], 40 * 70)
+    assert c["break_turns"] == 2 and math.isclose(c["damage"], 40 * 140)
     # アビリティ3「聖霊の加護」：毒・雷・火にかからない（25ポイントから）
     assert L.battle_config(1, 9, "hard", 11, profile=p)["ally"]["immune"] == []
     p["ability"]["11"] = 25
@@ -537,6 +537,40 @@ def test_profile_round_trips_through_json():
     assert L.normalize_profile(json.loads(json.dumps(p))) == p
     assert L.normalize_profile(None)["allies"] == [1]
 
+
+
+def test_titles():
+    p = L.new_profile()
+    assert [t["id"] for t in L.titles(p)][:5] == ["mode_easy", "mode_normal", "mode_hard", "mode_very_hard", "extra"]
+    assert len(L.titles(p)) == 5 + len(story_data.ALLIES) and not any(t["earned"] for t in L.titles(p))
+    # 全クリアで、その難易度の称号
+    L.start_run(p, 1, "easy")
+    p["run"]["cleared"] = 10
+    s = L.finish_run(p, "clear")
+    assert p["cleared_modes"] == ["easy"] and [t["id"] for t in s["new_titles"]] == ["mode_easy"]
+    assert L.take_new_titles(p) == []                       # 一度知らせたら、もう出ない
+    # 中断では全クリアにならない
+    L.start_run(p, 1, "normal")
+    assert L.finish_run(p, "abandon")["new_titles"] == [] and p["cleared_modes"] == ["easy"]
+    # 宇宙龍を倒す・Lv.10 にする
+    p["defeated"].append(L.enemy_key(story_data.EXTRA_ENEMY))
+    p["ability"]["1"] = L.level_points_max(1)
+    assert {t["id"] for t in L.take_new_titles(p)} == {"extra", "ally_1"}
+    # 仲間でないキャラは、ポイントがあっても称号にならない
+    p["ability"]["10"] = 999
+    assert not next(t for t in L.titles(p) if t["id"] == "ally_10")["earned"]
+
+
+def test_titles_backfill_from_history():
+    old = {"allies": [1], "defeated": ["enemy_11_veryhard"]}
+    p = L.normalize_profile(old)
+    assert p["titles_seen"] is None and p["cleared_modes"] == []
+    rows = [{"名前": "a", "難易度": "ハード", "結果": "全クリア"}, {"名前": "a", "難易度": "イージー", "結果": "中断"},
+            {"名前": "b", "難易度": "ノーマル", "結果": "全クリア"}]
+    L.backfill_cleared_modes(p, rows, "a")
+    assert sorted(p["cleared_modes"]) == ["hard", "very_hard"]
+    assert set(p["titles_seen"]) == {"mode_hard", "mode_very_hard"}
+    assert L.take_new_titles(p) == []
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):

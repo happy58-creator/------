@@ -159,6 +159,8 @@ def new_profile():
         "pack": {},
         "locked": [],
         "defeated": [],          # 倒したことのある敵（攻略で、謎の敵の姿を見せる）
+        "cleared_modes": [],     # 全クリアしたことのある難易度
+        "titles_seen": [],       # 知らせ済みの称号（新しく手に入れた称号を、挑戦の終わりに知らせる）
         "bonus_day": "",         # ログインボーナスをもらった日（YYYY-MM-DD）
         "run": None,
         "starter_items": True,
@@ -255,6 +257,8 @@ def normalize_profile(data):
         for item_id, n in initial_items().items():
             profile["items"][item_id] = max(n, profile["items"].get(item_id, 0))
         profile["starter_items"] = True
+    if isinstance(data, dict) and "titles_seen" not in data:
+        profile["titles_seen"] = None     # 称号ができる前のデータ：ページ側で、前の記録から全クリアを拾ってから決める
     profile["run"] = normalize_run(profile["run"])
     if 1 not in profile["allies"]:
         profile["allies"].insert(0, 1)
@@ -411,6 +415,56 @@ def roll_weapon_attrs(equip_id, difficulty_id, rng=random):
         if a in story_data.ATTR_SOLO:
             attrs[a] = round(rng.uniform(*story_data.ATTR_SOLO_CHANCE), 2)
     return {a: attrs[a] for a in story_data.ATTR_GROUP + story_data.ATTR_SOLO if a in attrs}
+
+
+# 剣の属性の説明（倉庫の画面と戦闘中の装備の確認で使う）
+ATTR_TEXT = {
+    "poison": "当たった攻撃のダメージの半分くらいを、しばらく毎ターン与える",
+    "fire": "当たった攻撃のダメージの7割を、3ターン与える",
+    "black_flame": "当たった攻撃のダメージの6割を3ターン、そのあと少しずつ長く与える",
+    "thunder": "敵を1〜2ターン動けなくする（強い敵には効かないことも）",
+    "darkness": "敵の次の攻撃を弱める",
+    "shadow": "敵の攻撃をよけやすくなる（2回分）",
+}
+
+
+def loadout_config(profile, ally_lv):
+    """戦闘中に見る「いまの装備」。付けている装備品・アクセサリ、剣の属性、効かない・半分にする状態異常"""
+    effects = story_data.STATUS_EFFECTS
+    ally = ally_stats(ally_lv, profile)
+    gear, acc = split_equipped(profile, ally_lv) if profile is not None else ([], [])
+    by_uid = equipment_by_uid(profile) if profile is not None else {}
+
+    def entry_info(uid):
+        entry = by_uid[uid]
+        equip = get_equipment(entry["id"])
+        attrs = entry.get("attrs") or {}
+        group = [a for a in story_data.ATTR_GROUP if a in attrs]
+        lines = []
+        if group:
+            names = "・".join(effects[a]["name"] for a in group)
+            lines.append({"ids": group, "chance": round(attrs[group[0]] * 100),
+                          "text": f"当たると{round(attrs[group[0]] * 100)}%で{names}" + ("のどれか1つ" if len(group) > 1 else "")})
+        for a in story_data.ATTR_SOLO:
+            if a in attrs:
+                lines.append({"ids": [a], "chance": round(attrs[a] * 100),
+                              "text": f"当たると{round(attrs[a] * 100)}%で{effects[a]['name']}：{ATTR_TEXT[a]}"})
+        return {"uid": uid, "id": entry["id"], "name": equip["name"], "rank": story_data.EQUIP_RANKS[equip["rank"]]["name"],
+                "effect": equip_effect_text(entry), "attrs": lines}
+
+    gear_info = [entry_info(u) for u in gear if u in by_uid]
+    acc_info = [entry_info(u) for u in acc if u in by_uid]
+    used = {a for e in gear_info + acc_info for line in e["attrs"] for a in line["ids"]}
+    return {
+        "gear": gear_info,
+        "acc": acc_info,
+        # 付けている剣に付いている属性の説明
+        "attr_help": [{"id": a, "name": effects[a]["name"], "text": ATTR_TEXT[a]}
+                      for a in story_data.ATTR_GROUP + story_data.ATTR_SOLO if a in used],
+        "resist": [{"id": r, "name": effects[r]["name"]} for r in dict.fromkeys(ally["resist"])],
+        "immune": [{"id": r, "name": effects[r]["name"]} for r in ally.get("immune", [])],
+        "stats": {"hp": ally["hp"], "atk": ally["atk"], "def": ally["def"]},
+    }
 
 
 def weapon_attr_config(entry):
@@ -735,12 +789,63 @@ def finish_run(profile, outcome, run=None):
     profile["ability"][key] = round(before + gained, 2)
     if profile.get("run") is run:
         profile["run"] = None
+    if outcome == "clear" and run["difficulty"] not in profile["cleared_modes"]:
+        profile["cleared_modes"].append(run["difficulty"])
+    new_titles = take_new_titles(profile)
     return {
         "outcome": outcome, "ally": run["ally"], "difficulty": run["difficulty"], "cleared": run["cleared"],
         "extra_won": bool(run.get("extra_won")), "returned": returned, "lost": {},
         "ability_before": before, "ability_after": profile["ability"][key],
         "new_abilities": len(unlocked_abilities(run["ally"], profile["ability"][key])) - len(unlocked_abilities(run["ally"], before)),
+        "new_titles": new_titles,
     }
+
+
+# ---------------------------------------------------------------------------
+# 称号
+# ---------------------------------------------------------------------------
+def titles(profile):
+    """称号の一覧（モード全クリ4つ → エクストラ → キャラ Lv.10）。earned は手に入れたかどうか"""
+    out = []
+    cleared = set(profile.get("cleared_modes") or [])
+    for diff in story_data.DIFFICULTIES:
+        t = story_data.MODE_TITLES[diff["id"]]
+        out.append({"id": f"mode_{diff['id']}", "kind": "mode", "name": t["name"], "badge": t["badge"],
+                    "how": f"{diff['name']}を全クリアする（{stage_count(diff['id'])}ステージ）", "earned": diff["id"] in cleared})
+    t = story_data.EXTRA_TITLE
+    out.append({"id": "extra", "kind": "extra", "name": t["name"], "badge": t["badge"],
+                "how": "ステージの番人（極点の宇宙龍）を倒す",
+                "earned": enemy_key(story_data.EXTRA_ENEMY) in profile.get("defeated", [])})
+    for ally in story_data.ALLIES:
+        lv = ally["lv"]
+        role = ally["name"].split("、")[0]
+        out.append({"id": f"ally_{lv}", "kind": "ally", "ally": lv, "name": f"{role}を極めし者",
+                    "badge": story_data.ALLY_TITLE_BADGE.format(lv=lv),
+                    "how": f"{short_name(lv)}を Lv.{story_data.LEVEL_MAX} にする",
+                    "earned": lv in profile["allies"] and ally_level(profile, lv) >= story_data.LEVEL_MAX})
+    return out
+
+
+def take_new_titles(profile):
+    """まだ知らせていない、手に入れた称号を返して、知らせ済みにする"""
+    if profile.get("titles_seen") is None:
+        profile["titles_seen"] = []
+    new = [t for t in titles(profile) if t["earned"] and t["id"] not in profile["titles_seen"]]
+    profile["titles_seen"] += [t["id"] for t in new]
+    return new
+
+
+def backfill_cleared_modes(profile, history_rows, user):
+    """称号ができる前に全クリアしていた難易度を、成績の記録（ストーリー）から拾う。そのあと、いまの称号を知らせ済みにする"""
+    names = {d["name"]: d["id"] for d in story_data.DIFFICULTIES}
+    for row in history_rows or []:
+        if str(row.get("名前")) == user and row.get("結果") == "全クリア":
+            diff = names.get(row.get("難易度"))
+            if diff and diff not in profile["cleared_modes"]:
+                profile["cleared_modes"].append(diff)
+    if "enemy_11_veryhard" in profile["defeated"] and "very_hard" not in profile["cleared_modes"]:
+        profile["cleared_modes"].append("very_hard")      # 永遠の沈黙はベリーハードの最後の敵
+    profile["titles_seen"] = [t["id"] for t in titles(profile) if t["earned"]]
 
 
 def abandon_run(profile):
@@ -876,6 +981,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         "status": status,
         "status_chance": story_data.STATUS_CHANCE,
         "weapons": weapons,                  # 付けている剣の属性（攻撃が当たったときに発動の抽選）
+        "loadout": loadout_config(profile, ally_lv),   # 戦闘中に「装備」ボタンで見る中身
         "enemy_status": enemy_status,        # 剣の属性で敵にかかる状態異常の数字
         "meteor": {"trigger_rate": story_data.METEOR_TRIGGER_HP_RATE,
                    "current_hp_rate": effects["meteor"]["current_hp_rate"]},

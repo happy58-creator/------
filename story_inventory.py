@@ -31,14 +31,7 @@ def equip_effect(equip):
     return "・".join(f"{STAT_NAMES[s]}+{equip[s]:g}" for s in ("hp", "atk", "def") if equip[s])
 
 
-ATTR_TEXT = {
-    "poison": "当たった攻撃のダメージの半分くらいを、しばらく毎ターン与える",
-    "fire": "当たった攻撃のダメージの7割を、3ターン与える",
-    "black_flame": "当たった攻撃のダメージの6割を3ターン、そのあと少しずつ長く与える",
-    "thunder": "敵を1〜2ターン動けなくする（強い敵には効かないことも）",
-    "darkness": "敵の次の攻撃を弱める",
-    "shadow": "敵の攻撃をよけやすくなる（2回分）",
-}
+ATTR_TEXT = L.ATTR_TEXT
 
 
 def item_effect(item):
