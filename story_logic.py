@@ -879,7 +879,7 @@ def assist_config(ally_lv, enemy, extra):
     raw = stats["atk"] * skill["power"]
     return {
         "random": not extra and ally_lv != a["ally"],     # たまたま来るのは、エクストラ以外・アステル以外のとき
-        "chance": a["chance"], "who": helper["name"], "name": skill["name"],
+        "chance": a["chance"], "who": helper["name"], "speaker": short_name(a["ally"]), "name": skill["name"],
         "damage": raw if skill.get("pierce") else damage(raw, enemy["def"]), "damage_break": raw,
         "break_turns": skill.get("break", 0), "scene": skill.get("scene"),
         "immune": [s for ab in helper["abilities"] for s in ab.get("immune", [])],   # 精霊の羽：精霊の加護

@@ -357,9 +357,16 @@
     background:repeating-conic-gradient(from 0deg at 50% 0%, rgba(255,250,220,.35) 0 3deg, transparent 3deg 11deg); }
   #sky.on .rays { animation:skyRays 2.8s ease-out forwards; }
   @keyframes skyRays { 0%{opacity:0} 30%{opacity:1} 100%{opacity:.4; transform:rotate(8deg)} }
-  #sky .msg { position:absolute; left:0; right:0; bottom:12%; text-align:center; font-weight:900; font-size:clamp(18px,5vw,40px); line-height:1.4;
-    color:#fff; text-shadow:0 0 8px #6aa8ff, 0 0 20px #b48cff, 0 2px 0 #1a2040; opacity:0; padding:0 6%; }
-  #sky.on .msg { animation:gUp .7s ease .7s forwards; }
+  #sky.on img, #sky.on .rays { animation-duration:4.6s; }
+  /* 見上げた人のつぶやき → アステルのせりふ */
+  #sky .narr { position:absolute; left:0; right:0; top:14%; text-align:center; font:700 clamp(17px,4.6vw,32px)/1.5 serif; letter-spacing:.15em;
+    color:#fff; text-shadow:0 0 6px #0a0c20, 0 0 14px #0a0c20, 0 0 28px #0a0c20, 0 2px 0 #000; opacity:0; }
+  #sky.on .narr { animation:gUp .6s ease .5s forwards; }
+  #sky .talk { position:absolute; left:5%; right:5%; bottom:7%; max-width:640px; margin:0 auto; padding:12px 16px 14px; border-radius:14px;
+    background:rgba(14,10,30,.78); border:1px solid rgba(233,214,166,.7); box-shadow:0 0 24px rgba(180,140,255,.45); opacity:0; }
+  #sky.on .talk { animation:gUp .6s ease 1.9s forwards; }
+  #sky .talk .who { font:800 clamp(13px,3.4vw,18px)/1 sans-serif; color:#ffe7a8; letter-spacing:.2em; margin-bottom:8px; }
+  #sky .talk .say { font:700 clamp(17px,4.8vw,30px)/1.5 serif; color:#fff; }
 
   /* 状態異常の演出 */
   #dark { position:absolute; inset:0; z-index:32; pointer-events:none; display:none;
@@ -425,7 +432,8 @@
   <div id="timer"><div></div></div>
   <div id="combo"><div class="c">0</div><div class="d"></div></div>
   <div id="bubble"></div>
-  <div id="sky"><img alt=""><div class="rays"></div><div class="msg"></div></div>
+  <div id="sky"><img alt=""><div class="rays"></div><div class="narr"></div>
+    <div class="talk"><div class="who"></div><div class="say"></div></div></div>
   <div id="grand"><div class="g-black"></div><svg class="g-circle" viewBox="0 0 100 100"><circle class="d" cx="50" cy="50" r="46"/><circle class="d" cx="50" cy="50" r="40"/><circle class="d" cx="50" cy="50" r="22"/>
       <polygon class="d" points="50,6 88,72 12,72"/><polygon class="d" points="50,94 12,28 88,28"/><circle class="d" cx="50" cy="50" r="31"/></svg><div class="g-who"></div>
     <img class="g-img" alt=""><div class="g-shine"></div><div class="g-fx"></div>
@@ -958,21 +966,23 @@ async function astelAssist(kind) {
   if (kind === "random") G.assistRandom = true; else G.assistFeather = true;
   G.phase = "assist"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
   // 1. 空を見上げる
-  await banner(kind === "random" ? "……空が、光った？" : "精霊の羽が、空へ舞い上がった……", "", 1100);
+  await banner(kind === "random" ? "……空が、光った？" : "精霊の羽が、空へ舞い上がった……", "", 1300);
   $("stage").classList.add("lookup"); $("fx").classList.add("lookup");
   await sleep(900);
   // 2. アステルが空を翔ける
   const sky = $("sky");
   if (im.sky) sky.querySelector("img").src = im.sky;
-  sky.querySelector(".msg").innerHTML = kind === "random"
-    ? `${esc(as.who)}が<br>たまたま通りかかった！` : `${esc(as.who)}が<br>呼びかけに応えた！`;
+  // この世界ではアステルは知られていないので、名前は本人のせりふで初めて出す
+  sky.querySelector(".narr").textContent = kind === "random" ? "……龍？　……女神？" : "……また、あの光が……";
+  sky.querySelector(".who").textContent = as.speaker || "アステル";
+  sky.querySelector(".say").textContent = kind === "random" ? "大丈夫？　あとは、わたしに任せて" : "呼んでくれたのね。あとは、わたしに任せて";
   sky.classList.remove("on"); void sky.offsetWidth; sky.classList.add("on");
   if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
-  await sleep(2900);
+  await sleep(4400);
   sky.classList.remove("on");
   $("stage").classList.remove("lookup"); $("fx").classList.remove("lookup");
   // 3. 必殺技（アステルの特別演出）
-  await grandSkill({ name: as.name, scene: as.scene || {} }, im.skill || G.skillSceneImage, as.who);
+  await grandSkill({ name: as.name, scene: as.scene || {} }, im.skill || G.skillSceneImage, as.speaker || "アステル");
   await SKILL_FX.astel.fx();
   await sleep(250);
   // 4. ダメージと、敵の防御崩壊
@@ -982,7 +992,7 @@ async function astelAssist(kind) {
   shake(); popAt(c.x, c.y, fmt(dmg), "big");
   hitEnemy(hit); updateBars();
   if (as.break_turns) { G.eBreak = Math.max(G.eBreak, as.break_turns); popAt(c.x, c.y + 70, "💥 防御崩壊！", "proc"); }
-  popAt(window.innerWidth / 2, window.innerHeight * 0.3, "✨ アステルの援護！", "info");
+  popAt(window.innerWidth / 2, window.innerHeight * 0.3, `✨ ${as.speaker || "アステル"}の援護！`, "info");
   updateBadges();
   await sleep(1100);
   if (G.enemyHp <= 1e-9) { finish("win"); return true; }
