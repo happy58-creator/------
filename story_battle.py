@@ -48,6 +48,13 @@ def battle(config, key):
     """story_logic.battle_config() で作った設定で戦闘を始める"""
     enemy = story_logic.enemy_by_key(config["enemy"]["key"])
     awaken = {}
+    skill_scene = (config.get("skill") or {}).get("scene")
+    if skill_scene:
+        awaken["skill_scene_image"] = story_assets.image_uri(f"skills/{skill_scene['image']}")
+    scene = enemy.get("meteor_scene")
+    if scene and "meteor" in enemy.get("gimmicks", []):
+        awaken["meteor_scene"] = {"name": scene["name"], "focus": scene.get("focus", "50% 50%"),
+                                  "image": story_assets.image_uri(f"enemies/{scene['image']}")}
     if config.get("awaken") and enemy.get("awaken"):
         aw = enemy["awaken"]
         awake_enemy = {**enemy, "image": aw["image"], "focus": aw.get("focus", enemy.get("focus")), "name": aw["name"]}

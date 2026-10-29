@@ -273,12 +273,76 @@
     animation:flash 1s ease-out forwards; }
   /* 大技（黒星の劫火）のワンシーン */
   #special { position:absolute; inset:0; z-index:57; display:none; overflow:hidden; background:#000; pointer-events:none; }
-  #special img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:35% 50%; animation:spZoom 2.2s ease-out forwards; }
+  #special img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:35% 50%; }
+  #special img.main { animation:spZoom 2.2s ease-out forwards; }
+  #special img.bg { display:none; filter:blur(18px) brightness(.45); transform:scale(1.2); }
+  /* 縦長の画面で横長の絵を出すとき：絵は全体を見せ、まわりはぼかした同じ絵で埋める */
+  #special.fit img.bg { display:block; }
+  #special.fit img.main { object-fit:contain; animation:spZoomFit 2.2s ease-out forwards; }
+  @keyframes spZoomFit { 0%{transform:scale(1.9); filter:brightness(.3)} 15%{filter:brightness(1.2)} 100%{transform:scale(1.45); filter:brightness(1)} }
   @keyframes spZoom { 0%{transform:scale(1.25); filter:brightness(.3)} 15%{filter:brightness(1.2)} 100%{transform:scale(1.02); filter:brightness(1)} }
   #special::after { content:""; position:absolute; inset:0; background:radial-gradient(ellipse at 50% 50%, transparent 45%, rgba(0,0,0,.85) 100%); }
   #special .name { position:absolute; z-index:2; left:4%; right:4%; bottom:14%; text-align:center; font-weight:900; font-size:clamp(24px,7vw,72px); letter-spacing:.08em; line-height:1.2;
     color:#fff1d6; text-shadow:0 0 12px #ff6a00, 0 0 28px #ff2a00, 0 0 50px #5a00ff, 0 3px 0 #000; animation:spName 2.2s ease-out forwards; }
   @keyframes spName { 0%{opacity:0; transform:scale(1.6); letter-spacing:.4em} 20%{opacity:1; transform:scale(1); letter-spacing:.08em} 85%{opacity:1} 100%{opacity:0} }
+
+
+  /* アステルの必殺技（特別演出） */
+  #grand { position:absolute; inset:0; z-index:90; display:none; overflow:hidden; pointer-events:none; background:#000; }
+  #grand.on { display:block; }
+  #grand .g-black { position:absolute; inset:0; background:radial-gradient(ellipse at 50% 50%, #120a24 0%, #000 70%); }
+  #grand .g-star { position:absolute; width:3px; height:3px; border-radius:50%; background:#fff; box-shadow:0 0 6px 2px var(--c);
+    left:var(--x); top:var(--y); animation:gStar var(--d) cubic-bezier(.6,0,.9,.4) forwards; }
+  @keyframes gStar { 0%{opacity:0; transform:scale(.4)} 20%{opacity:1} 100%{left:50%; top:50%; opacity:0; transform:scale(1.6)} }
+  #grand svg.g-circle { position:absolute; left:50%; top:50%; width:min(90vw,90vh); height:min(90vw,90vh); transform:translate(-50%,-50%);
+    filter:drop-shadow(0 0 8px #ffd98a) drop-shadow(0 0 22px #b48cff); animation:gSpin 4s linear infinite; opacity:0; }
+  #grand.p1 svg.g-circle { opacity:1; transition:opacity .4s; }
+  #grand svg.g-circle .d { fill:none; stroke:#ffe7a8; stroke-width:.6; stroke-dasharray:400; stroke-dashoffset:400; }
+  #grand.p1 svg.g-circle .d { animation:gDraw 1s ease-out forwards; }
+  @keyframes gDraw { to { stroke-dashoffset:0; } }
+  @keyframes gSpin { to { transform:translate(-50%,-50%) rotate(360deg); } }
+  #grand .g-who { position:absolute; left:0; right:0; top:62%; text-align:center; font:700 clamp(14px,3.6vw,22px)/1 serif; letter-spacing:.3em;
+    color:#f4e8ff; text-shadow:0 0 10px #b48cff; opacity:0; }
+  #grand.p1 .g-who { animation:gFade 1.2s ease forwards; }
+  @keyframes gFade { 0%{opacity:0; transform:translateY(8px)} 40%,80%{opacity:1; transform:none} 100%{opacity:0} }
+  #grand img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; }
+  #grand.p2 img.g-img { opacity:1; animation:gPan 3.2s cubic-bezier(.2,.6,.3,1) forwards; }
+  @keyframes gPan { 0%{transform:scale(1.35); object-position:28% 35%; filter:brightness(2.2) saturate(.6)}
+                    18%{filter:brightness(1.05) saturate(1.1)} 100%{transform:scale(1.06); object-position:62% 45%; filter:brightness(.88) saturate(1.1)} }
+  #grand .g-shine { position:absolute; inset:-20%; opacity:0; mix-blend-mode:screen;
+    background:conic-gradient(from 0deg at 60% 45%, transparent 0 8deg, rgba(255,240,200,.35) 10deg, transparent 14deg 40deg, rgba(200,180,255,.3) 43deg, transparent 47deg 80deg,
+      rgba(255,240,200,.3) 83deg, transparent 87deg 130deg, rgba(180,220,255,.3) 133deg, transparent 137deg 200deg, rgba(255,240,200,.35) 203deg, transparent 207deg 360deg); }
+  #grand.p2 .g-shine { opacity:1; animation:gShine 3.2s linear forwards; }
+  @keyframes gShine { from { transform:rotate(0) } to { transform:rotate(25deg) } }
+  #grand .g-spark { position:absolute; width:6px; height:6px; border-radius:50%; background:radial-gradient(circle,#fff 0,#ffe7a8 40%,transparent 70%);
+    left:var(--x); top:var(--y); animation:gSpark var(--d) ease-out forwards; }
+  @keyframes gSpark { 0%{opacity:0; transform:scale(.3)} 30%{opacity:1} 100%{opacity:0; transform:translate(var(--dx),var(--dy)) scale(1.4)} }
+  #grand .g-title { position:absolute; left:0; right:0; bottom:8%; padding:5% 0 4%; text-align:center; opacity:0;
+    background:linear-gradient(180deg, transparent, rgba(10,4,24,.72) 30%, rgba(10,4,24,.78) 70%, transparent); }
+  #grand.p3 .g-title { opacity:1; }
+  #grand .g-reading { font:700 clamp(12px,3vw,18px)/1 serif; letter-spacing:.5em; color:#fff6dc; text-shadow:0 0 8px #ffb84a; margin-bottom:6px;
+    opacity:0; animation:none; }
+  #grand.p3 .g-reading { animation:gUp .6s ease .1s forwards; }
+  #grand .g-name { font-weight:900; font-size:clamp(40px,12vw,104px); line-height:1.05; letter-spacing:.1em; white-space:nowrap; }
+  #grand .g-name span { display:inline-block; opacity:0; background:linear-gradient(180deg,#fffef4 0%,#ffe7a0 45%,#ffb43a 75%,#fff2c0 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    -webkit-text-stroke:1px rgba(90,40,0,.55); filter:drop-shadow(0 2px 0 #3a1a00) drop-shadow(0 0 10px #ff9a2a) drop-shadow(0 0 26px #9a6bff); }
+  #grand.p3 .g-name span { animation:gChar .55s cubic-bezier(.2,1.6,.4,1) forwards; animation-delay:calc(var(--i) * 110ms + 200ms); }
+  @keyframes gChar { 0%{opacity:0; transform:scale(2.6) translateY(-10px); filter:blur(8px) drop-shadow(0 0 30px #fff)} 100%{opacity:1; transform:none} }
+  #grand .g-sub { margin-top:8px; font:800 clamp(11px,2.6vw,16px)/1 sans-serif; letter-spacing:.9em; color:#e8dcff; text-shadow:0 0 10px #9a6bff; opacity:0; }
+  #grand.p3 .g-sub { animation:gUp .7s ease .9s forwards; }
+  @keyframes gUp { from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+  #grand .g-beam { position:absolute; left:-15%; top:34%; height:36%; width:0; opacity:0; filter:blur(10px);
+    background:radial-gradient(ellipse 60% 50% at 0% 50%, #fff 0%, #fff8e0 30%, rgba(255,215,140,.85) 55%, rgba(170,130,255,.35) 75%, transparent 100%);
+    transform:skewY(-4deg); mix-blend-mode:screen; }
+  #grand.p4 .g-beam { animation:gBeam .55s cubic-bezier(.5,0,.2,1) forwards; }
+  @keyframes gBeam { 0%{width:0; opacity:1} 100%{width:260%; opacity:1} }
+  #grand.p4 { animation:gShake .08s linear infinite; }
+  @keyframes gShake { 0%{transform:translate(0,0)} 50%{transform:translate(-8px,5px)} 100%{transform:translate(7px,-6px)} }
+  #grand .g-white { position:absolute; inset:0; background:#fff; opacity:0; }
+  #grand.flash .g-white { animation:gWhite .45s ease-out forwards; }
+  #grand.whiteout .g-white { opacity:1; transition:opacity .25s ease-in; }
+  @keyframes gWhite { 0%{opacity:1} 100%{opacity:0} }
 
   /* 状態異常の演出 */
   #dark { position:absolute; inset:0; z-index:32; pointer-events:none; display:none;
@@ -344,7 +408,12 @@
   <div id="timer"><div></div></div>
   <div id="combo"><div class="c">0</div><div class="d"></div></div>
   <div id="bubble"></div>
-  <div id="special"><img alt=""><div class="name"></div></div>
+  <div id="grand"><div class="g-black"></div><svg class="g-circle" viewBox="0 0 100 100"><circle class="d" cx="50" cy="50" r="46"/><circle class="d" cx="50" cy="50" r="40"/><circle class="d" cx="50" cy="50" r="22"/>
+      <polygon class="d" points="50,6 88,72 12,72"/><polygon class="d" points="50,94 12,28 88,28"/><circle class="d" cx="50" cy="50" r="31"/></svg><div class="g-who"></div>
+    <img class="g-img" alt=""><div class="g-shine"></div><div class="g-fx"></div>
+    <div class="g-title"><div class="g-reading"></div><div class="g-name"></div><div class="g-sub"></div></div>
+    <div class="g-beam"></div><div class="g-white"></div></div>
+  <div id="special"><img class="bg" alt=""><img class="main" alt=""><div class="name"></div></div>
   <div id="cutin"><div class="band"></div><img alt=""><div class="name"></div></div>
   <div id="banner"><div class="t"></div><div class="s"></div></div>
 
@@ -456,7 +525,11 @@ function start(args) {
       scene: args.awaken_scene_html, mask: args.awaken_hit_mask, special: args.awaken_special_image } : null,
   };
   $("special").style.display = "none";
-  if (args.awaken_special_image) $("special").querySelector("img").src = args.awaken_special_image;   // 先に読みこんでおく
+  if (args.awaken_special_image) { $("special").querySelector("img.main").src = args.awaken_special_image; $("special").querySelector("img.bg").src = args.awaken_special_image; }   // 先に読みこんでおく
+  G.skillSceneImage = args.skill_scene_image || null;   // 必殺技の絵
+  if (G.skillSceneImage) { const pre = new Image(); pre.src = G.skillSceneImage; }
+  G.meteorScene = args.meteor_scene || null;            // メテオを撃つときの絵と技名
+  if (G.meteorScene) { const pre = new Image(); pre.src = G.meteorScene.image; }
   $("enemyName").textContent = `Lv.${c.enemy.lv} ${c.enemy.name}`;
   $("stageNo").textContent = c.extra ? "EXTRA" : `ステージ ${c.stage} / ${c.stage_count}`;
   $("quit").textContent = c.extra ? "にげる" : "やめる";
@@ -812,12 +885,63 @@ async function cutin(name, color) {
   await sleep(1150);
   c.style.display = "none";
 }
+
+// アステルの必殺技：暗転 → 星が集まって魔法陣 → 一枚絵 → 技名 → 光の咆哮 → 真っ白
+async function grandSkill(s, src) {
+  const g = $("grand"), sc = s.scene || {}, fx = g.querySelector(".g-fx");
+  fx.innerHTML = ""; g.className = "on";
+  g.querySelector(".g-img").src = src;
+  g.querySelector(".g-who").textContent = G.cfg.ally.name;
+  g.querySelector(".g-reading").textContent = sc.reading || "";
+  g.querySelector(".g-sub").textContent = sc.sub || "";
+  g.querySelector(".g-name").innerHTML = [...s.name].map((ch, i) => `<span style="--i:${i}">${esc(ch)}</span>`).join("");
+  if (navigator.vibrate) navigator.vibrate([60, 60, 60, 60, 120]);
+  // 1. 星が中心に集まり、金の魔法陣が描かれる
+  for (let i = 0; i < 46; i++) {
+    const st = document.createElement("div"); st.className = "g-star";
+    const a = Math.random() * Math.PI * 2, r = 55 + Math.random() * 30;
+    st.style.setProperty("--x", (50 + Math.cos(a) * r) + "%"); st.style.setProperty("--y", (50 + Math.sin(a) * r) + "%");
+    st.style.setProperty("--d", (0.7 + Math.random() * 0.6) + "s"); st.style.setProperty("--c", ["#ffe7a8", "#b48cff", "#9fd8ff"][i % 3]);
+    st.style.animationDelay = (Math.random() * 0.35) + "s"; fx.appendChild(st);
+  }
+  await sleep(150); g.classList.add("p1");
+  await sleep(1250);
+  // 2. 白く光って、一枚絵
+  g.classList.add("flash"); g.classList.add("p2");
+  for (let i = 0; i < 34; i++) setTimeout(() => {
+    const sp = document.createElement("div"); sp.className = "g-spark";
+    sp.style.setProperty("--x", Math.random() * 100 + "%"); sp.style.setProperty("--y", Math.random() * 100 + "%");
+    sp.style.setProperty("--dx", (Math.random() * 80 - 40) + "px"); sp.style.setProperty("--dy", (-30 - Math.random() * 60) + "px");
+    sp.style.setProperty("--d", (0.8 + Math.random() * 0.8) + "s"); fx.appendChild(sp); setTimeout(() => sp.remove(), 1700);
+  }, Math.random() * 2600);
+  await sleep(500);
+  g.classList.remove("flash");
+  // 3. 技名（1文字ずつ）
+  g.classList.add("p3");
+  await sleep(2100);
+  // 4. 光の咆哮が画面を横切り、真っ白に
+  if (navigator.vibrate) navigator.vibrate([400]);
+  g.classList.add("p4");
+  await sleep(520);
+  g.classList.add("whiteout");
+  await sleep(380);
+  g.className = "";
+  fxEl("flash", { background: "rgba(255,255,255,.95)" });
+}
 async function useSkill() {
   const s = G.cfg.skill, look = SKILL_FX[s.anim] || SKILL_FX.kou;
   G.phase = "skill"; G.skillUsed = true; G.charge = 0;
   setButtons(false); updateSkill(); $("sheet").classList.remove("open");
-  await cutin(s.name, look.color);
-  await look.fx();
+  if (s.scene && s.scene.grand && G.skillSceneImage) {
+    await grandSkill(s, G.skillSceneImage);       // アステル：特別演出
+    await look.fx();
+  } else if (s.scene && G.skillSceneImage) {
+    await specialScene(s.name, G.skillSceneImage, s.scene.focus || "50% 45%");   // 絵のある必殺技
+    await look.fx();
+  } else {
+    await cutin(s.name, look.color);
+    await look.fx();
+  }
   await sleep(250);
   const c = enemyCenter(), me = $("allyIcon").getBoundingClientRect();
   if (s.type === "strike") {
@@ -1079,6 +1203,10 @@ async function enemyTurn() {
   if (G.eStatus.darkness > 0) G.eStatus.darkness--;
   const dodged = G.eStatus.shadow > 0 && Math.random() < G.cfg.enemy_status.shadow.evade_rate;
   if (G.eStatus.shadow > 0) G.eStatus.shadow--;
+  if (G.meteorPending && G.meteorScene) {                  // メテオ：撃つ前に、画面いっぱいの絵と技名
+    bub.style.display = "none";
+    await specialScene(G.meteorScene.name, G.meteorScene.image, G.meteorScene.focus);
+  }
   if (G.barrier > 0 && !dodged) {                          // 魔法障壁：攻撃を無効にする
     G.barrier--;
     if (G.meteorPending) { G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on"); }
@@ -1102,7 +1230,7 @@ async function enemyTurn() {
   } else if (special) {
     bub.style.display = "none";
     const sp = G.cfg.awaken.special;
-    await specialScene(sp.name);
+    await specialScene(sp.name, G.awakenArgs && G.awakenArgs.special, "35% 50%");
     // 術式解除：アイテムでかけた守り（封炎・防御アップ）を消す
     if (G.ward > 0 || G.guardTurns > 0) {
       G.ward = 0; G.guardTurns = 0; updateBadges();
@@ -1211,10 +1339,16 @@ async function awaken() {
   }
   G.specialNext = true;     // 覚醒して最初の攻撃は、必ず大技
 }
-async function specialScene(name) {
+async function specialScene(name, src, focus) {
   const sp = $("special");
   sp.querySelector(".name").textContent = name;
-  const img = sp.querySelector("img"); img.style.animation = "none"; void img.offsetWidth; img.style.animation = "";
+  const img = sp.querySelector("img.main"), bg = sp.querySelector("img.bg");
+  if (src && img.getAttribute("src") !== src) { img.src = src; bg.src = src; }
+  img.style.objectPosition = focus || "35% 50%"; img.style.transformOrigin = focus || "50% 50%";
+  // 絵より画面がずっと縦長なら、切りすぎないよう全体を見せる
+  const ratio = (img.naturalWidth || 16) / (img.naturalHeight || 9);
+  sp.classList.toggle("fit", ratio / (window.innerWidth / window.innerHeight) > 4.5);
+  img.style.animation = "none"; void img.offsetWidth; img.style.animation = "";
   const nm = sp.querySelector(".name"); nm.style.animation = "none"; void nm.offsetWidth; nm.style.animation = "";
   sp.style.display = "block";
   if (navigator.vibrate) navigator.vibrate([120, 60, 300]);

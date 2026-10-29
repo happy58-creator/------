@@ -74,6 +74,8 @@ STATUS_EFFECTS = {
 #                 ハードは11ステージ（最後が混沌の初源）、ベリーハードは12ステージ（混沌の初源のあとに永遠の沈黙）
 #   lines       : 敵のターンに出す一言（毎回この中から1つ選ぶ）
 #   effect      : 敵の攻撃エフェクトの種類と色（web/story/index.html の EFFECTS）
+#   meteor_scene: メテオを撃つときに画面いっぱいに出す絵と技名（focus は横長の絵のどこを見せるか）。
+#                 メテオを使う敵（gimmicks に meteor がある敵）だけで出る
 # ---------------------------------------------------------------------------
 _ALL = None
 ENEMIES = [
@@ -102,16 +104,16 @@ ENEMIES = [
      "image": "enemy_08.webp", "cutout": False, "scene": "image", "floating": False, "gimmicks": ["thunder"], "difficulties": _ALL,
      "lines": ["玉座から動くまでもない", "神の雷、その身で知れ", "ひざまずけ"], "effect": {"type": "thunder", "color": "#ffd84a"}},
     {"lv": 9, "name": "災厄の代行者", "hp": 2374, "atk": 9.4, "def": 16.3,
-     "image": "enemy_09.webp", "cutout": True, "scene": "nebula", "floating": True, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire"], "difficulties": _ALL,
+     "image": "enemy_09.webp", "meteor_scene": {"name": "災厄の流星", "image": "meteor_09.webp", "focus": "50% 50%"}, "cutout": True, "scene": "nebula", "floating": True, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire"], "difficulties": _ALL,
      "lines": ["すべては無に還る", "災いは、選ばない", "抗うな。苦しむだけだ"], "effect": {"type": "void", "color": "#9a6bff"}},
     {"lv": 10, "name": "終焉の創造主", "hp": 3102, "atk": 12.2, "def": 19.8,
-     "image": "enemy_10.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor"], "difficulties": _ALL,
+     "image": "enemy_10.webp", "meteor_scene": {"name": "終焉の星墜", "image": "meteor_10.webp", "focus": "55% 45%"}, "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor"], "difficulties": _ALL,
      "lines": ["世界を創り、そして終わらせる", "星の一つも、我が意のまま", "よくぞここまで来た。だが、ここで終わりだ"], "effect": {"type": "cosmic", "color": "#a8d4ff"}},
     {"lv": 11, "name": "混沌の初源", "hp": 4026, "atk": 15.8, "def": 23.1,
-     "image": "enemy_11_hard.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness"], "difficulties": ["hard", "very_hard"],
+     "image": "enemy_11_hard.webp", "meteor_scene": {"name": "原初の流星雨", "image": "meteor_11_hard.webp", "focus": "72% 45%"}, "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness"], "difficulties": ["hard", "very_hard"],
      "lines": ["すべてはわたしから生まれた", "還りなさい、始まりの光へ", "混沌こそ、世界の母"], "effect": {"type": "radiance", "color": "#ffd27a"}},
     {"lv": 11, "name": "永遠の沈黙", "hp": 4026, "atk": 15.8, "def": 23.1,
-     "image": "enemy_11_veryhard.webp", "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness", "shadow"], "difficulties": ["very_hard"],
+     "image": "enemy_11_veryhard.webp", "meteor_scene": {"name": "無音の墜星", "image": "meteor_11_veryhard.webp", "focus": "55% 50%"}, "cutout": False, "scene": "image", "floating": False, "immune": ["thunder"], "gimmicks": ["poison", "thunder", "fire", "meteor", "darkness", "shadow"], "difficulties": ["very_hard"],
      "lines": ["…………", "音も、光も、ここには届かない", "沈め"], "effect": {"type": "silence", "color": "#6f8cff"}},
 ]
 
@@ -178,6 +180,7 @@ EXTRA_ENEMY = {
 #     barrier: 敵の攻撃 blocks 回を無効にして、状態異常（毒・雷・火・黒炎）を治す
 #     break  : turns ターン（敵のターンの回数）のあいだ、敵の防御を0にする
 #   anim : 戦闘画面の演出（web/story/index.html の SKILL_FX）
+#   scene: 必殺技の絵（assets/story/skills/）。grand なら特別演出（アステル）
 # ---------------------------------------------------------------------------
 ABILITY_THRESHOLDS = (5, 10, 25)
 ABILITY_POINT_PER_STAGE = 0.1     # クリアしたステージ1つにつき 0.1（全クリアで 1.0）
@@ -214,6 +217,8 @@ ALLIES = [
      "abilities": [{"stat": "atk", "value": 4}, {"stat": "def", "value": 4},
                    {"stat": "hp", "value": 50, "name": "聖霊の加護", "immune": ["poison", "thunder", "fire"]}],
      "skill": {"name": "創世の咆哮", "type": "strike", "charge": 550, "power": 140, "pierce": True, "break": 2, "anim": "astel",
+               # 必殺技の特別演出（grand）：暗転 → 星が集まり魔法陣 → 絵 → 技名 → 光の咆哮
+               "scene": {"image": "skill_astel.webp", "grand": True, "reading": "そうせいのほうこう", "sub": "GENESIS ROAR"},
                "text": "銀河を呑む咆哮。攻撃力×140 の防御無視ダメージと、2ターン敵の防御を0にする"}},
 ]
 
