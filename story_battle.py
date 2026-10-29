@@ -47,6 +47,13 @@ html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-tes
 def battle(config, key):
     """story_logic.battle_config() で作った設定で戦闘を始める"""
     enemy = story_logic.enemy_by_key(config["enemy"]["key"])
+    awaken = {}
+    if config.get("awaken") and enemy.get("awaken"):
+        aw = enemy["awaken"]
+        awake_enemy = {**enemy, "image": aw["image"], "focus": aw.get("focus", enemy.get("focus")), "name": aw["name"]}
+        awaken = {"awaken_scene_html": story_assets.stage_html(awake_enemy),
+                  "awaken_hit_mask": story_assets.hit_mask_uri(awake_enemy),
+                  "awaken_special_image": story_assets.image_uri(f"enemies/{aw['special']['image']}")}
     return _component(
         config=config,
         scene_html=story_assets.stage_html(enemy),
@@ -56,6 +63,7 @@ def battle(config, key):
         item_icons={item["id"]: story_assets.item_icon_uri(item["id"]) for item in config["items"]},
         equip_icons={e["id"]: story_assets.equipment_thumb(e["id"]) for part in ("gear", "acc") for e in config["loadout"][part]},
         status_icons={sid: uri for sid in story_data.STATUS_EFFECTS if (uri := story_assets.status_icon_uri(sid))},
+        **awaken,
         key=key,
         default=None,
     )

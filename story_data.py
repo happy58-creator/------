@@ -129,6 +129,21 @@ EXTRA_ENEMY = {
     "immune": ["thunder"], "gimmicks": ["black_flame", "shadow", "darkness"], "difficulties": None,
     "lines": ["……見つけたぞ、小さき者", "我が主の領域を荒らすか", "星ごと呑み込んでくれよう"],
     "effect": {"type": "cosmic", "color": "#c49bff"},
+    # 覚醒：HPが hp_rate 以下になると、地鳴りとともに姿が変わる（1回の戦闘で1度だけ）
+    #   heal_rate : 減っているHPのこの割合を回復する
+    #   stat_rate : HP以外（攻撃力・防御力）は、ベリーハードの最後の敵（永遠の沈黙）のこの倍にする
+    #   special   : 覚醒して最初の攻撃で必ず使い、そのあとは chance の確率で使う大技「術式解除＋業火」。
+    #               アイテムでかけた守り（封炎の巻物・防御アップ）を消してから、最大HPの damage_rate の
+    #               割合ダメージ（防御で減らない）を与え、必ず黒炎にする。かかった黒炎は、黒炎払い・浄化で治せる
+    "awaken": {
+        "hp_rate": 0.5, "heal_rate": 0.3, "stat_rate": 1.05,
+        "name": "極点の宇宙龍・覚醒", "title": "星を喰らう終焉",
+        "image": "enemy_extra_awake.webp", "focus": "45% 45%",
+        "lines": ["……目覚めの時だ", "星々よ、我が糧となれ", "終わりを見せてやろう"],
+        "effect": {"type": "cosmic", "color": "#ff7a3a"},
+        "special": {"name": "破術・終焉の黒き業火", "chance": 0.07, "damage_rate": 0.2, "image": "extra_awake_attack.webp",
+                    "line": "……小賢しい術ごと、黒き炎に還れ"},
+    },
 }
 
 # ---------------------------------------------------------------------------

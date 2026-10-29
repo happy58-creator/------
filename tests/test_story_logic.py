@@ -574,6 +574,19 @@ def test_titles_backfill_from_history():
     assert set(p["titles_seen"]) == {"mode_hard", "mode_very_hard"}
     assert L.take_new_titles(p) == []
 
+
+def test_extra_awaken():
+    last = L.enemy_stats(L.stages_for("very_hard")[-1], "very_hard")
+    st = L.awaken_stats()
+    assert st["atk"] > last["atk"] and st["def"] > last["def"]            # ベリーハードの最後の敵より少し上
+    c = L.battle_config(1, L.EXTRA, "easy", 1)
+    aw = c["awaken"]
+    assert aw["hp_rate"] == 0.5 and aw["heal_rate"] == 0.3 and aw["special"]["chance"] == 0.07 and aw["special"]["damage_rate"] == 0.2
+    assert math.isclose(aw["hit_damage"], L.damage(st["atk"], c["ally"]["def"]))
+    assert math.isclose(aw["tap_damage"], L.damage(c["ally"]["atk"], st["def"]))
+    assert math.isclose(aw["skill_damage"], L.damage(c["skill"]["damage_break"], st["def"]))
+    assert L.battle_config(1, 3, "easy", 1)["awaken"] is None              # ふつうのステージでは覚醒しない
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

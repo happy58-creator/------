@@ -856,6 +856,34 @@ def abandon_run(profile):
 # ---------------------------------------------------------------------------
 # 戦闘コンポーネントに渡す設定
 # ---------------------------------------------------------------------------
+def awaken_stats():
+    """覚醒した宇宙龍の攻撃力・防御力（ベリーハードの最後の敵の stat_rate 倍）"""
+    aw = story_data.EXTRA_ENEMY["awaken"]
+    last = enemy_stats(stages_for("very_hard")[-1], "very_hard")
+    return {"atk": round(last["atk"] * aw["stat_rate"], 1), "def": round(last["def"] * aw["stat_rate"], 1)}
+
+
+def awaken_config(ally, max_hp, skill):
+    """戦闘画面に渡す、覚醒のあとの数字（敵の攻撃・防御が変わるので、ダメージを計算し直しておく）"""
+    aw = story_data.EXTRA_ENEMY.get("awaken")
+    if not aw:
+        return None
+    st = awaken_stats()
+    guard_def = ally["def"] * story_data.GUARD_MULTIPLIER
+    atk_up = max(i["atk_bonus"] for i in story_data.ITEMS)
+    out = {
+        "hp_rate": aw["hp_rate"], "heal_rate": aw["heal_rate"], "name": aw["name"], "title": aw["title"],
+        "lines": aw["lines"], "effect": aw["effect"], "atk": st["atk"], "def": st["def"],
+        "hit_damage": damage(st["atk"], ally["def"]), "hit_damage_guard": damage(st["atk"], guard_def),
+        "tap_damage": damage(ally["atk"], st["def"]), "tap_damage_up": damage(ally["atk"] + atk_up, st["def"]),
+        "special": {k: v for k, v in aw["special"].items() if k != "image"},
+    }
+    if skill and skill.get("type") == "strike":
+        raw = skill["damage_break"]
+        out["skill_damage"] = raw if skill.get("pierce") else damage(raw, st["def"])
+    return out
+
+
 def _status_label(status_id):
     effect = story_data.STATUS_EFFECTS[status_id]
     return {"name": effect["name"], "icon": effect["icon"]}
@@ -977,7 +1005,9 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "immune": ally.get("immune", []),                        # かからない状態異常（聖霊の加護）
             "tap_damage_up_break": damage(ally["atk"] + atk_up, 0),
         },
-        "skill": skill_config(ally_lv, ally, enemy, max_hp, charge),
+        "skill": (skill := skill_config(ally_lv, ally, enemy, max_hp, charge)),
+        # エクストラ（宇宙龍）だけ：HPが半分を切ると覚醒する
+        "awaken": awaken_config(ally, max_hp, skill) if extra else None,
         "status": status,
         "status_chance": story_data.STATUS_CHANCE,
         "weapons": weapons,                  # 付けている剣の属性（攻撃が当たったときに発動の抽選）
