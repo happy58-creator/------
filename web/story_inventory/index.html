@@ -137,6 +137,27 @@
 </div></div>
 <script>
 "use strict";
+// 軽いタップ・クリックでも必ず反応させる：押した場所とはなした場所がほぼ同じなら、はなした瞬間にクリック扱いにする
+// （トラックパッドの軽いタップや、指が少しずれたタップで click が出ないことがあるため。あとから来る本物の click は無視して二重にしない）
+(function fastTap() {
+  const SEL = "button, .cand, #skillWrap, [data-tip]";
+  let down = null, quietUntil = 0;
+  document.addEventListener("pointerdown", (e) => {
+    const el = e.target.closest && e.target.closest(SEL);
+    down = el && !el.disabled ? { el, x: e.clientX, y: e.clientY, t: performance.now() } : null;
+  }, true);
+  document.addEventListener("pointerup", (e) => {
+    const d = down; down = null;
+    if (!d || d.el.disabled || !d.el.isConnected) return;
+    if (performance.now() - d.t > 900 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 16) return;
+    quietUntil = performance.now() + 450;
+    d.el.click();
+  }, true);
+  document.addEventListener("pointercancel", () => { down = null; }, true);
+  document.addEventListener("click", (e) => {
+    if (e.isTrusted && performance.now() < quietUntil && e.detail !== 0) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+})();
 const Streamlit = {
   send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data), "*"); },
   ready() { this.send("streamlit:componentReady", { apiVersion: 1 }); },

@@ -133,7 +133,7 @@
   .btn.attack { background:linear-gradient(#ffd98a,#e3a33f); }
   .btn.item { background:linear-gradient(#cfe6ff,#7aa9e0); flex:.7; }
   .btn:disabled { filter:grayscale(.8) brightness(.55); cursor:default; }
-  .btn:not(:disabled):active { transform:translateY(2px); }
+  .btn:not(:disabled):active { filter:brightness(1.15); }   /* 押したときに動かさない（はなした場所がずれてクリックにならないように） */
   #quit { position:absolute; z-index:60; top:max(8px, env(safe-area-inset-top)); right:10px; pointer-events:auto;
     font:600 12px/1 sans-serif; color:var(--muted); background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.2); border-radius:999px; padding:7px 11px; cursor:pointer; }
   .hud.top .row { padding-right:64px; }
@@ -512,6 +512,27 @@
 </div>
 <script>
 "use strict";
+// 軽いタップ・クリックでも必ず反応させる：押した場所とはなした場所がほぼ同じなら、はなした瞬間にクリック扱いにする
+// （トラックパッドの軽いタップや、指が少しずれたタップで click が出ないことがあるため。あとから来る本物の click は無視して二重にしない）
+(function fastTap() {
+  const SEL = "button, .cand, #skillWrap, [data-tip]";
+  let down = null, quietUntil = 0;
+  document.addEventListener("pointerdown", (e) => {
+    const el = e.target.closest && e.target.closest(SEL);
+    down = el && !el.disabled ? { el, x: e.clientX, y: e.clientY, t: performance.now() } : null;
+  }, true);
+  document.addEventListener("pointerup", (e) => {
+    const d = down; down = null;
+    if (!d || d.el.disabled || !d.el.isConnected) return;
+    if (performance.now() - d.t > 900 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 16) return;
+    quietUntil = performance.now() + 450;
+    d.el.click();
+  }, true);
+  document.addEventListener("pointercancel", () => { down = null; }, true);
+  document.addEventListener("click", (e) => {
+    if (e.isTrusted && performance.now() < quietUntil && e.detail !== 0) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+})();
 // 連打中に画面が動かないように：スクロールできる箱（.scroll）の中以外では、指の移動・ピンチ・ダブルタップ拡大を止める
 (function lockGestures() {
   const inScroll = (t) => t && t.closest && t.closest(".scroll");
