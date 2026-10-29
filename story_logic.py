@@ -1015,7 +1015,7 @@ def apply_inventory(profile, ally_lv, result):
 
     result = {"store": {アイテムID: 個数}, "pack": {アイテムID: 個数},
               "gear": [uid, ...], "acc": [uid, ...], "deleted": [uid, ...], "locked": [uid, ...]}
-    - アイテムは、倉庫とリュックの合計が前より増えてはいけない（減った分は削除）
+    - アイテムは削除できない：倉庫とリュックの合計は、前とまったく同じでないといけない
     - リュックは MAX_CARRY_ITEMS 個まで
     - 装備のルールは set_equipment と同じ。ロックした装備・ほかのキャラが付けている装備は削除できない
     """
@@ -1025,9 +1025,10 @@ def apply_inventory(profile, ally_lv, result):
         old_pack = pack_counts(profile)
         store = {k: int(v) for k, v in (result.get("store") or {}).items() if int(v) > 0}
         pack = {k: int(v) for k, v in (result.get("pack") or {}).items() if int(v) > 0}
-        for item_id in set(store) | set(pack):
+        old_store = {k: int(v) for k, v in profile["items"].items() if int(v) > 0}
+        for item_id in set(store) | set(pack) | set(old_store) | set(old_pack):
             get_item(item_id)
-            if store.get(item_id, 0) + pack.get(item_id, 0) > profile["items"].get(item_id, 0) + old_pack.get(item_id, 0):
+            if store.get(item_id, 0) + pack.get(item_id, 0) != old_store.get(item_id, 0) + old_pack.get(item_id, 0):
                 raise ValueError("アイテムの数が合わないよ。もう一度ためしてね。")
         if sum(pack.values()) > story_data.MAX_CARRY_ITEMS:
             raise ValueError(f"リュックに入るのは {story_data.MAX_CARRY_ITEMS}個までだよ。")

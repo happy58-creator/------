@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>story inventory</title>
+<style>
+  :root { --gold:#e9d6a6; --ink:#f4ecda; --muted:#b9ab90; --panel:#1b161f; --line:rgba(233,214,166,.28); --ok:#7fd8a0; --bad:#ff8a7a; }
+  html, body { margin:0; height:100%; overflow-y:auto; background:#121015; color:var(--ink); -webkit-overflow-scrolling:touch;
+    font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Noto Serif CJK JP",serif; }
+  * { box-sizing:border-box; }
+  /* 画面いっぱいに表示する（ページ側で iframe を全画面にしている） */
+  #app { min-height:100%; max-width:1100px; margin:0 auto; background:#121015; user-select:none; -webkit-user-select:none;
+    padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  @media (min-width:700px) { .grid { grid-template-columns:repeat(auto-fill, minmax(66px, 1fr)); } .cols { gap:12px; } }
+  .head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .head h2 { margin:0; font-size:17px; color:var(--gold); }
+  .head .who { margin-left:auto; font-size:13px; color:var(--muted); }
+  .bar { position:sticky; bottom:0; background:#121015; padding-top:8px; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:8px; min-height:64px; }
+  .box.drop { outline:2px dashed var(--gold); outline-offset:-3px; background:#2a2220; }
+  .box.bad { outline:2px dashed var(--bad); outline-offset:-3px; }
+  .box h3 { margin:0 0 6px; font-size:13px; display:flex; justify-content:space-between; color:var(--gold); font-weight:700; }
+  .box h3 small { color:var(--muted); font-weight:400; }
+  .sub { font-size:11px; color:var(--muted); margin:6px 0 4px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(54px, 1fr)); gap:6px; }
+  .right { display:flex; flex-direction:column; gap:8px; }
+  .tile { position:relative; width:100%; aspect-ratio:1/1; border-radius:10px; background:#0d0b10; border:1px solid rgba(255,255,255,.12);
+    touch-action:none; cursor:grab; }
+  .tile img.main { width:100%; height:100%; object-fit:cover; border-radius:9px; pointer-events:none; display:block; }
+  .tile.sel { outline:2px solid #ffd36a; outline-offset:1px; }
+  .tile.dim { opacity:.4; cursor:default; }
+  .tile .n { position:absolute; right:2px; bottom:2px; min-width:18px; padding:0 4px; border-radius:9px; background:rgba(0,0,0,.8);
+    font:800 11px/16px ui-sans-serif,system-ui,sans-serif; text-align:center; color:#fff; pointer-events:none; }
+  .tile .lock { position:absolute; left:2px; top:2px; font-size:12px; pointer-events:none; text-shadow:0 0 3px #000; }
+  .tile .ultra { position:absolute; right:2px; top:2px; font-size:11px; pointer-events:none; text-shadow:0 0 3px #000; }
+  .tile .attrs { position:absolute; left:0; right:0; bottom:-7px; display:flex; justify-content:center; gap:1px; pointer-events:none; }
+  .tile .attrs img { width:15px; height:15px; border-radius:50%; border:1px solid rgba(120,200,255,.9); background:#000; }
+  .tile.hasattr { margin-bottom:6px; }
+  .slot { aspect-ratio:1/1; border-radius:10px; border:1px dashed rgba(233,214,166,.25); }
+  .empty { font-size:12px; color:var(--muted); padding:6px 2px; grid-column:1 / -1; }
+
+  #detail { margin-top:8px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:10px; min-height:70px; }
+  #detail .row { display:flex; gap:10px; align-items:flex-start; }
+  #detail img.big { width:64px; height:64px; border-radius:10px; flex:none; }
+  #detail b { font-size:15px; }
+  #detail .meta { font-size:12px; color:var(--muted); margin:2px 0 4px; }
+  #detail .eff { font-size:14px; }
+  #detail .attr { display:flex; gap:6px; align-items:center; font-size:12px; margin-top:4px; }
+  #detail .attr img { width:20px; height:20px; border-radius:50%; }
+  .acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  button { font-family:inherit; cursor:pointer; }
+  .btn { min-height:38px; padding:0 12px; border-radius:10px; border:1px solid var(--line); background:#2a2230; color:var(--ink); font-size:14px; font-weight:700; }
+  .btn:disabled { opacity:.35; cursor:default; }
+  .btn.danger { background:#4a1d1a; border-color:#a8433b; }
+  .btn.primary { background:linear-gradient(#ffd98a,#e3a33f); color:#1b120a; border-color:rgba(233,214,166,.7); }
+  .bar { display:flex; gap:8px; margin-top:10px; }
+  .bar .btn { flex:1; min-height:46px; font-size:16px; }
+  #msg { min-height:20px; font-size:13px; margin-top:6px; }
+  #msg.bad { color:var(--bad); } #msg.ok { color:var(--ok); }
+  #ghost { position:fixed; width:56px; height:56px; pointer-events:none; z-index:50; display:none; border-radius:10px;
+    box-shadow:0 6px 20px rgba(0,0,0,.6); opacity:.9; transform:translate(-50%,-50%); }
+  #dlg { position:fixed; inset:0; z-index:60; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
+  #dlg > div { width:min(88vw,340px); background:#1a1520; border:1px solid var(--line); border-radius:14px; padding:14px; text-align:center; }
+  #dlg p { margin:0 0 10px; }
+  .num { display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:12px; }
+  .num input { width:80px; height:40px; font-size:20px; text-align:center; border-radius:8px; border:1px solid var(--line); background:#0d0b10; color:#fff; }
+  .num .btn { min-width:44px; }
+  @media (max-width:420px) { .grid { grid-template-columns:repeat(auto-fill, minmax(46px, 1fr)); gap:5px; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="head"><h2>🎒 倉庫とリュック</h2><span class="who" id="who"></span></div>
+  <div class="cols">
+    <div class="box" id="z-store" data-zone="store">
+      <h3>倉庫</h3>
+      <div class="sub">アイテム</div><div class="grid" id="store-items"></div>
+      <div class="sub">装備</div><div class="grid" id="store-equip"></div>
+    </div>
+    <div class="right">
+      <div class="box" id="z-pack" data-zone="pack"><h3>リュック <small id="packN"></small></h3><div class="grid" id="pack"></div></div>
+      <div class="box" id="z-gear" data-zone="gear"><h3>装備品 <small id="gearN"></small></h3><div class="grid" id="gear"></div></div>
+      <div class="box" id="z-acc" data-zone="acc"><h3>アクセサリ <small id="accN"></small></h3><div class="grid" id="acc"></div></div>
+    </div>
+  </div>
+  <div id="detail"><div class="empty">アイコンを押すと、ここに効果が出ます。ドラッグで入れ替えられます。</div></div>
+  <div id="msg"></div>
+  <div class="bar">
+    <button class="btn" id="cancel" type="button">もどる</button>
+    <button class="btn primary" id="save" type="button">決定</button>
+  </div>
+</div>
+<img id="ghost" alt="">
+<div id="dlg"><div>
+  <p id="dlgText"></p>
+  <div class="num"><button class="btn" type="button" id="dm">−</button><input id="dn" type="number" inputmode="numeric" min="1"><button class="btn" type="button" id="dp">＋</button></div>
+  <div class="bar" style="margin-top:0"><button class="btn" type="button" id="dno">やめる</button><button class="btn primary" type="button" id="dok">OK</button></div>
+</div></div>
+<script>
+"use strict";
+const Streamlit = {
+  send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data), "*"); },
+  ready() { this.send("streamlit:componentReady", { apiVersion: 1 }); },
+  setHeight() { this.send("streamlit:setFrameHeight", { height: Math.ceil(document.documentElement.getBoundingClientRect().height) + 4 }); },
+  setValue(value) { this.send("streamlit:setComponentValue", { value, dataType: "json" }); },
+};
+window.addEventListener("message", (ev) => { const d = ev.data; if (d && d.type === "streamlit:render") start(d.args.config); });
+new ResizeObserver(() => Streamlit.setHeight()).observe(document.body);
+
+const $ = (id) => document.getElementById(id);
+let S = null;        // 画面の状態
+let sel = null;      // 選んでいるアイコン {kind, id, from}
+
+function start(cfg) {
+  if (S && S.round === cfg.round) return;
+  S = {
+    round: cfg.round, cfg, done: false,
+    store: Object.fromEntries(cfg.items.map((i) => [i.id, i.store])),
+    pack: Object.fromEntries(cfg.items.map((i) => [i.id, i.pack])),
+    place: Object.fromEntries(cfg.equipment.map((e) => [e.uid, e.place])),   // store / gear / acc / deleted
+    locked: new Set(cfg.equipment.filter((e) => e.locked).map((e) => e.uid)),
+  };
+  S.items = Object.fromEntries(cfg.items.map((i) => [i.id, i]));
+  S.equip = Object.fromEntries(cfg.equipment.map((e) => [e.uid, e]));
+  $("who").textContent = `${cfg.ally} の装備` + (cfg.in_run ? "（挑戦中）" : "");
+  sel = null; render(); showDetail(); msg("");
+}
+
+// ---------------------------------------------------------------------------
+// 表示
+// ---------------------------------------------------------------------------
+function tile(kind, id, from, n) {
+  const el = document.createElement("div");
+  el.className = "tile"; el.dataset.kind = kind; el.dataset.id = id; el.dataset.from = from;
+  let html = "";
+  if (kind === "item") {
+    const it = S.items[id];
+    html = `<img class="main" src="${it.icon}" alt="${it.name}"><span class="n">${n}</span>`;
+  } else {
+    const e = S.equip[id];
+    html = `<img class="main" src="${e.icon}" alt="${e.name}">`;
+    if (S.locked.has(e.uid)) html += `<span class="lock">🔒</span>`;
+    if (e.ultra) html += `<span class="ultra">🌟</span>`;
+    if (e.tag) html += `<span class="n">${e.tag}</span>`;
+    if (e.attrs.length) { html += `<span class="attrs">${e.attrs.map((a) => `<img src="${a.icon}" alt="${a.name}">`).join("")}</span>`; el.classList.add("hasattr"); }
+    if (e.other) el.classList.add("dim");
+  }
+  el.innerHTML = html;
+  if (sel && sel.kind === kind && String(sel.id) === String(id) && sel.from === from) el.classList.add("sel");
+  bindTile(el);
+  return el;
+}
+function fill(boxId, tiles, slots) {
+  const box = $(boxId); box.innerHTML = "";
+  tiles.forEach((t) => box.appendChild(t));
+  for (let i = tiles.length; i < (slots || 0); i++) { const s = document.createElement("div"); s.className = "slot"; box.appendChild(s); }
+  if (!tiles.length && !slots) box.innerHTML = `<div class="empty">からっぽ</div>`;
+}
+function packTotal() { return Object.values(S.pack).reduce((a, b) => a + b, 0); }
+function uidsAt(place) { return S.cfg.equipment.filter((e) => S.place[e.uid] === place).map((e) => e.uid); }
+function render() {
+  const L = S.cfg.limits;
+  fill("store-items", S.cfg.items.filter((i) => S.store[i.id] > 0).map((i) => tile("item", i.id, "store", S.store[i.id])));
+  fill("store-equip", uidsAt("store").map((u) => tile("equip", u, "store")));
+  fill("pack", S.cfg.items.filter((i) => S.pack[i.id] > 0).map((i) => tile("item", i.id, "pack", S.pack[i.id])));
+  fill("gear", uidsAt("gear").map((u) => tile("equip", u, "gear")), L.gear);
+  fill("acc", uidsAt("acc").map((u) => tile("equip", u, "acc")), L.acc);
+  $("packN").textContent = `${packTotal()} / ${L.pack}`;
+  $("gearN").textContent = `${uidsAt("gear").length} / ${L.gear}`;
+  $("accN").textContent = `${uidsAt("acc").length} / ${L.acc}`;
+  Streamlit.setHeight();
+}
+function msg(text, kind) { const m = $("msg"); m.textContent = text || ""; m.className = kind || ""; }
+
+function showDetail() {
+  const d = $("detail");
+  if (!sel) { d.innerHTML = `<div class="empty">アイコンを押すと、ここに効果が出ます。ドラッグで入れ替えられます。</div>`; Streamlit.setHeight(); return; }
+  const acts = [];
+  if (sel.kind === "item") {
+    const it = S.items[sel.id];
+    d.innerHTML = `<div class="row"><img class="big" src="${it.icon}" alt=""><div><b>${it.name}</b>
+      <div class="meta">倉庫 ${S.store[it.id]}こ ／ リュック ${S.pack[it.id]}こ</div><div class="eff">${it.effect}</div></div></div>`;
+    if (sel.from === "store") acts.push(["リュックへ", () => askMove("item", it.id, "store", "pack")]);
+    else acts.push(["倉庫へ", () => askMove("item", it.id, "pack", "store")]);
+    acts.push(["削除", () => askDelete(it.id, sel.from), "danger"]);
+  } else {
+    const e = S.equip[sel.id];
+    const where = { store: "倉庫", gear: "装備中", acc: "装備中" }[S.place[e.uid]];
+    d.innerHTML = `<div class="row"><img class="big" src="${e.icon}" alt=""><div><b>${e.name}</b>
+      <div class="meta">${e.rank}${e.accessory ? "（アクセサリ）" : ""} ／ ${where}${e.other ? `（${e.other} が使用中）` : ""}${S.locked.has(e.uid) ? " ／ 🔒ロック中" : ""}</div>
+      <div class="eff">${e.effect}</div>
+      ${e.attrs.map((a) => `<div class="attr"><img src="${a.icon}" alt=""><span><b>${a.name}</b>（発動 ${a.chance}%）${a.text}</span></div>`).join("")}</div></div>`;
+    if (!e.other) {
+      if (S.place[e.uid] === "store") acts.push([e.accessory ? "アクセサリに付ける" : "装備品に付ける", () => moveEquip(e.uid, e.accessory ? "acc" : "gear")]);
+      else acts.push(["外して倉庫へ", () => moveEquip(e.uid, "store")]);
+      acts.push([S.locked.has(e.uid) ? "ロックを外す" : "ロック", () => { S.locked.has(e.uid) ? S.locked.delete(e.uid) : S.locked.add(e.uid); render(); showDetail(); }]);
+      acts.push(["削除", () => deleteEquip(e.uid), "danger"]);
+    }
+  }
+  const box = document.createElement("div"); box.className = "acts";
+  for (const [label, fn, cls] of acts) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "btn " + (cls || ""); b.textContent = label; b.onclick = fn; box.appendChild(b);
+  }
+  d.appendChild(box);
+  Streamlit.setHeight();
+}
+
+// ---------------------------------------------------------------------------
+// 移動・削除（ルールはここで確かめ、Python でももう一度確かめる）
+// ---------------------------------------------------------------------------
+function canEquip(uid, zone) {
+  const e = S.equip[uid], L = S.cfg.limits;
+  if (e.other) return `${e.other} が付けている装備は使えないよ`;
+  if (zone === "gear") {
+    if (e.accessory) return "アクセサリは アクセサリの箱に入れてね";
+    const now = uidsAt("gear").filter((u) => u !== uid);
+    if (now.length >= L.gear) return `装備品は ${L.gear}つまでだよ`;
+    if (e.attrs.length && now.filter((u) => S.equip[u].attrs.length).length >= L.attr_weapons) return "属性の付いた剣は1本だけ付けられるよ";
+  }
+  if (zone === "acc") {
+    if (!e.accessory) return "装備品は 装備品の箱に入れてね";
+    const now = uidsAt("acc").filter((u) => u !== uid);
+    if (now.length >= L.acc) return `アクセサリは ${L.acc}つまでだよ`;
+    if (now.some((u) => S.equip[u].id === e.id)) return "同じアクセサリは2つ付けられないよ";
+  }
+  return null;
+}
+function moveEquip(uid, zone) {
+  if (zone === "pack") return msg("リュックには アイテムだけ入れられるよ", "bad");
+  if (zone !== "store") { const why = canEquip(uid, zone); if (why) return msg(why, "bad"); }
+  S.place[uid] = zone; sel = { kind: "equip", id: uid, from: zone }; msg(""); render(); showDetail();
+}
+function deleteEquip(uid) {
+  const e = S.equip[uid];
+  if (S.locked.has(uid)) return msg("ロックしている装備は削除できないよ", "bad");
+  if (e.other) return msg(`${e.other} が付けている装備は削除できないよ`, "bad");
+  S.place[uid] = "deleted"; sel = null; msg(`${e.name} を削除したよ（「決定」で確定）`, "ok"); render(); showDetail();
+}
+function askMove(kind, id, from, to) {
+  if (from === to) return;
+  if (to === "gear" || to === "acc") return msg("アイテムは リュックか倉庫に入れてね", "bad");
+  const have = from === "store" ? S.store[id] : S.pack[id];
+  const room = to === "pack" ? S.cfg.limits.pack - packTotal() : have;
+  const max = Math.min(have, room);
+  if (max <= 0) return msg(`リュックは ${S.cfg.limits.pack}こまでだよ`, "bad");
+  ask(`${S.items[id].name} を${to === "pack" ? "リュック" : "倉庫"}へ いくつ入れる？`, max, (n) => {
+    if (from === "store") { S.store[id] -= n; S.pack[id] += n; } else { S.pack[id] -= n; S.store[id] += n; }
+    sel = { kind: "item", id, from: to }; msg(""); render(); showDetail();
+  });
+}
+function askDelete(id, from) {
+  const have = from === "store" ? S.store[id] : S.pack[id];
+  ask(`${S.items[id].name} を いくつ削除する？`, have, (n) => {
+    if (from === "store") S.store[id] -= n; else S.pack[id] -= n;
+    if ((from === "store" ? S.store[id] : S.pack[id]) <= 0) sel = null;
+    msg(`${S.items[id].name} を ${n}こ 削除したよ（「決定」で確定）`, "ok"); render(); showDetail();
+  });
+}
+function ask(text, max, done) {
+  $("dlgText").textContent = text + `（1〜${max}）`;
+  const inp = $("dn"); inp.max = max; inp.value = max;
+  const clamp = () => { inp.value = Math.max(1, Math.min(max, parseInt(inp.value, 10) || 1)); };
+  $("dm").onclick = () => { inp.value = (parseInt(inp.value, 10) || 1) - 1; clamp(); };
+  $("dp").onclick = () => { inp.value = (parseInt(inp.value, 10) || 0) + 1; clamp(); };
+  $("dno").onclick = () => { $("dlg").style.display = "none"; };
+  $("dok").onclick = () => { clamp(); $("dlg").style.display = "none"; done(parseInt(inp.value, 10)); };
+  $("dlg").style.display = "flex";
+}
+
+// ---------------------------------------------------------------------------
+// ドラッグ（マウスでも指でも）。少し動かしたらドラッグ、動かさずに離したら「選ぶ」
+// ---------------------------------------------------------------------------
+let drag = null;
+function bindTile(el) {
+  el.onpointerdown = (ev) => {
+    if (el.classList.contains("dim") && el.dataset.kind === "equip") { select(el); return; }
+    drag = { el, x: ev.clientX, y: ev.clientY, moving: false, pid: ev.pointerId };
+    el.setPointerCapture(ev.pointerId);
+  };
+  el.onpointermove = (ev) => {
+    if (!drag || drag.el !== el) return;
+    if (!drag.moving && Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < 6) return;
+    if (!drag.moving) {
+      drag.moving = true;
+      const g = $("ghost"); g.src = el.querySelector("img.main").src; g.style.display = "block";
+    }
+    const g = $("ghost"); g.style.left = ev.clientX + "px"; g.style.top = ev.clientY + "px";
+    highlight(zoneAt(ev.clientX, ev.clientY));
+  };
+  el.onpointerup = (ev) => {
+    if (!drag || drag.el !== el) return;
+    const moving = drag.moving; drag = null;
+    $("ghost").style.display = "none"; highlight(null);
+    if (!moving) return select(el);
+    const zone = zoneAt(ev.clientX, ev.clientY);
+    if (!zone || zone === el.dataset.from) return;
+    if (el.dataset.kind === "item") askMove("item", el.dataset.id, el.dataset.from, zone);
+    else moveEquip(Number(el.dataset.id), zone);
+  };
+  el.onpointercancel = () => { drag = null; $("ghost").style.display = "none"; highlight(null); };
+}
+function zoneAt(x, y) {
+  const hit = document.elementFromPoint(x, y);
+  const box = hit && hit.closest("[data-zone]");
+  return box ? box.dataset.zone : null;
+}
+function highlight(zone) {
+  for (const z of ["store", "pack", "gear", "acc"]) $("z-" + z).classList.toggle("drop", z === zone);
+}
+function select(el) {
+  sel = { kind: el.dataset.kind, id: el.dataset.kind === "equip" ? Number(el.dataset.id) : el.dataset.id, from: el.dataset.from };
+  render(); showDetail();
+}
+
+// ---------------------------------------------------------------------------
+// 決定・もどる
+// ---------------------------------------------------------------------------
+$("save").onclick = () => {
+  if (!S || S.done) return;
+  S.done = true; $("save").disabled = true; $("cancel").disabled = true;
+  const deleted = S.cfg.equipment.filter((e) => S.place[e.uid] === "deleted").map((e) => e.uid);
+  Streamlit.setValue({
+    round: S.round, action: "save",
+    store: Object.fromEntries(Object.entries(S.store).filter(([, n]) => n > 0)),
+    pack: Object.fromEntries(Object.entries(S.pack).filter(([, n]) => n > 0)),
+    gear: uidsAt("gear"), acc: uidsAt("acc"), deleted,
+    locked: [...S.locked].filter((u) => S.place[u] !== "deleted"),
+  });
+  msg("保存しています…", "ok");
+};
+$("cancel").onclick = () => {
+  if (!S || S.done) return;
+  S.done = true;
+  Streamlit.setValue({ round: S.round, action: "cancel" });
+};
+
+Streamlit.ready();
+</script>
+</body>
+</html>

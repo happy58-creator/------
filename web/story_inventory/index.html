@@ -184,7 +184,7 @@ function showDetail() {
       <div class="meta">倉庫 ${S.store[it.id]}こ ／ リュック ${S.pack[it.id]}こ</div><div class="eff">${it.effect}</div></div></div>`;
     if (sel.from === "store") acts.push(["リュックへ", () => askMove("item", it.id, "store", "pack")]);
     else acts.push(["倉庫へ", () => askMove("item", it.id, "pack", "store")]);
-    acts.push(["削除", () => askDelete(it.id, sel.from), "danger"]);
+    // アイテムは削除できない（装備だけ削除できる）
   } else {
     const e = S.equip[sel.id];
     const where = { store: "倉庫", gear: "装備中", acc: "装備中" }[S.place[e.uid]];

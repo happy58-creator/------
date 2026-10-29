@@ -405,6 +405,7 @@ def test_only_one_attr_weapon():
 
 def test_pack_and_inventory():
     p = L.new_profile()
+    p["items"] = {"potion": 10, "elixir": 10}
     s1 = L.add_equipment(p, "wood_sword")
     s2 = L.add_equipment(p, "wood_sword")
     ring = L.add_equipment(p, "thunder_ring")
@@ -413,10 +414,11 @@ def test_pack_and_inventory():
                              "gear": [s1, s2], "acc": [ring], "deleted": [], "locked": [s2]})
     assert p["items"]["potion"] == 5 and p["pack"] == {"potion": 5} and p["locked"] == [s2]
     assert L.ally_stats(1, p)["atk"] == 3
-    # 増やすのはだめ・ロックした装備は消せない・失敗したら何も変わらない
-    for bad in ({"store": {"potion": 9}, "pack": {"potion": 5}},
-                {"store": {}, "pack": {"potion": 31}},
-                {"store": {"potion": 5}, "pack": {"potion": 5}, "deleted": [s2], "locked": [s2]}):
+    # 増やす・減らす（アイテムは削除できない）・ロックした装備を消すのはだめ。失敗したら何も変わらない
+    for bad in ({"store": {"potion": 9, "elixir": 10}, "pack": {"potion": 5}},
+                {"store": {"potion": 3, "elixir": 10}, "pack": {"potion": 5}},
+                {"store": {"potion": 5}, "pack": {"potion": 5}},
+                {"store": {"potion": 5, "elixir": 10}, "pack": {"potion": 5}, "deleted": [s2], "locked": [s2]}):
         snapshot = json.dumps(p, sort_keys=True)
         try:
             L.apply_inventory(p, 1, {"gear": [s1, s2], "acc": [ring], **bad})
@@ -424,16 +426,16 @@ def test_pack_and_inventory():
         except ValueError:
             pass
         assert json.dumps(p, sort_keys=True) == snapshot
-    # 削除（ポーション2個と剣1本）
-    L.apply_inventory(p, 1, {"store": {"potion": 3}, "pack": {"potion": 5}, "gear": [s2], "acc": [ring],
+    # 装備は削除できる（剣1本）
+    L.apply_inventory(p, 1, {"store": {"potion": 5, "elixir": 10}, "pack": {"potion": 5}, "gear": [s2], "acc": [ring],
                              "deleted": [s1], "locked": [s2]})
-    assert [e["uid"] for e in p["equipment"]] == [s2, ring] and "elixir" not in p["items"]
+    assert [e["uid"] for e in p["equipment"]] == [s2, ring]
     # 挑戦を始めるとリュックの中身を持っていき、リュックは空になる
     run = L.start_run(p, 1, "easy")
-    assert L.bag_counts(run["bag"]) == {"potion": 5} and p["pack"] == {} and p["items"] == {"potion": 3}
+    assert L.bag_counts(run["bag"]) == {"potion": 5} and p["pack"] == {} and p["items"] == {"potion": 5, "elixir": 10}
     # 挑戦中はかばんを入れ替える
-    L.apply_inventory(p, 1, {"store": {"potion": 1}, "pack": {"potion": 7}, "gear": [s2], "acc": [ring], "locked": [s2]})
-    assert L.bag_counts(run["bag"]) == {"potion": 7} and p["items"] == {"potion": 1}
+    L.apply_inventory(p, 1, {"store": {"potion": 3, "elixir": 10}, "pack": {"potion": 7}, "gear": [s2], "acc": [ring], "locked": [s2]})
+    assert L.bag_counts(run["bag"]) == {"potion": 7} and p["items"] == {"potion": 3, "elixir": 10}
 
 
 def test_new_items_and_potions():

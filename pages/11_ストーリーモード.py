@@ -1,7 +1,7 @@
 """ストーリーモード（イージー・ノーマルは10ステージ、ハードは11、ベリーハードは12ステージ）
 
-流れ： ホーム（キャラ・難易度。装備とリュックは「倉庫とリュック」の画面） → 戦闘 → ステージ間の画面 → … → 終わり
-ホームの上の「攻略」で、味方・装備・敵の説明と攻略のコツを見られる。
+流れ： ホーム（キャラ・「倉庫とリュック」） → 「クエスト」（難易度・続きから） → 戦闘 → ステージ間の画面 → … → 終わり
+ホームの上に「クエスト」「称号」「攻略」。サイドバーは出さず、右上の「トップへ」でトップページに戻る。
 - 進み具合は各ステージの始めに自動で保存する（チェックポイント）。手動の中断セーブはない。
 - 負けたとき・「やめる」で戻ったときは、そのステージを始めたときのHPとかばんからやり直す。
 - 挑戦が終わるのは、全クリアしたときと「新規にプレイ」を押したとき（負け扱い）だけ。
@@ -26,7 +26,7 @@ STAT_NAMES = {"hp": "HP", "atk": "攻撃力", "def": "防御力"}
 OUTCOME_NAMES = {"clear": "全クリア", "abandon": "中断"}
 
 common.init_state({
-    "story_view": "home",        # home / inventory / guide / titles / battle / between / retry / extra_lost / end
+    "story_view": "home",        # home / quest / ally_detail / inventory / guide / titles / battle / between / retry / extra_lost / end
     "story_detail": None,        # キャラ一覧で、くわしく見ているキャラ
     "story_ally": 1,
     "story_difficulty": "easy",
@@ -284,6 +284,13 @@ def new_rewards(rewards):
 # キャラの表示（左に絵と装備のアイコン、右にステータス）
 # ---------------------------------------------------------------------------
 def ally_panel_html(lv):
+    left, right = ally_panel_parts(lv)
+    return ("<div style='display:flex;gap:12px;align-items:flex-start'>"
+            f"<div style='width:30%;flex:none'>{left}</div><div style='flex:1;min-width:0'>{right}</div></div>")
+
+
+def ally_panel_parts(lv):
+    """キャラの表示を、左（画像・属性・装備のアイコン）と右（名前・ステータス・必殺技・アビリティ）に分けて返す"""
     ally = L.get_ally(lv)
     points = L.ability_points(profile, lv)
     level, progress = L.level_progress(lv, points)
@@ -320,15 +327,13 @@ def ally_panel_html(lv):
     resist = now["resist"]
     resist_html = ("<div style='font-size:12px;color:#b9ab90;margin-top:4px'>たいせい："
                    + "・".join(story_data.STATUS_EFFECTS[r]["name"] for r in resist) + "</div>") if resist else ""
-    return (
-        "<div style='display:flex;gap:12px;align-items:flex-start'>"
-        f"<div style='width:30%;flex:none'><div style='position:relative'>"
-        f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:12px;display:block'>{overlay_html}</div>"
-        f"<div style='margin-top:4px;line-height:0'>{icons or ''}</div></div>"
-        f"<div style='flex:1;min-width:0'><div style='font-weight:700;font-size:17px'>{ally['name']}"
-        f"<span style='margin-left:8px;color:#8fe0ff'>Lv.{level}</span></div>"
-        f"<div style='font-size:14px;margin-top:4px'>{'　'.join(stats)}</div>{resist_html}{exp}{skill_html}{''.join(gauges)}</div></div>"
-    )
+    left = (f"<div style='position:relative'>"
+            f"<img src='{story_assets.ally_thumb(lv)}' style='width:100%;border-radius:12px;display:block'>{overlay_html}</div>"
+            f"<div style='margin-top:4px;line-height:0'>{icons or ''}</div>")
+    right = (f"<div style='font-weight:700;font-size:17px'>{ally['name']}"
+             f"<span style='margin-left:8px;color:#8fe0ff'>Lv.{level}</span></div>"
+             f"<div style='font-size:14px;margin-top:4px'>{'　'.join(stats)}</div>{resist_html}{exp}{skill_html}{''.join(gauges)}")
+    return left, right
 
 
 def ally_detail_html(lv):
@@ -377,27 +382,31 @@ DETAIL_CSS = """<style>
 </style>"""
 
 
-def view_ally_detail(lv):
-    """キャラ一覧で画像を押したときの、くわしい説明"""
+def view_ally_detail():
+    """キャラ一覧で画像を押したときの、くわしい説明（画面のいちばん上から出す）"""
+    lv = st.session_state.get("story_detail") or 1
     have = lv in L.owned_allies(profile)
+    in_run = bool(profile["run"])
+
+    def back():
+        st.session_state.story_detail = None
+        go("home")
+
+    if st.button("◀ 一覧にもどる", key="_story_detail_back_top"):
+        back()
     with st.container(border=True, key="story_ally_detail"):
         st.markdown(DETAIL_CSS + ally_detail_html(lv), unsafe_allow_html=True)
         col_back, col_pick = st.columns(2)
         if col_back.button("◀ 一覧にもどる", key="_story_detail_back", width="stretch"):
-            st.session_state.story_detail = None
-            st.rerun()
-        if have and col_pick.button("このキャラにする", key="_story_detail_pick", type="primary", width="stretch"):
+            back()
+        if have and not in_run and col_pick.button("このキャラにする", key="_story_detail_pick", type="primary", width="stretch"):
             st.session_state.story_ally = lv
-            st.session_state.story_detail = None
             st.session_state.story_pick_char = False
-            st.rerun()
+            back()
 
 
 def view_ally_picker():
-    """キャラクター一覧（まだ仲間でないキャラはグレー）。画像を押すと、くわしい説明を出す"""
-    if st.session_state.get("story_detail"):
-        view_ally_detail(st.session_state.story_detail)
-        return
+    """キャラクター一覧（まだ仲間でないキャラはグレー）。画像を押すと、くわしい説明の画面に切りかえる"""
     owned = L.owned_allies(profile)
     # スマホでも1行5体のまま並べる（Streamlit は狭い画面で列を縦に積むので、この箱の中だけ止める）
     # 画像の上に透明なボタンを重ねて、画像を押すと説明が開くようにする
@@ -427,7 +436,7 @@ def view_ally_picker():
                                 unsafe_allow_html=True)
                     if st.button("くわしく", key=f"_story_detail_{lv}"):
                         st.session_state.story_detail = lv
-                        st.rerun()
+                        go("ally_detail")
                 col.markdown(f"<div style='text-align:center;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;"
                              f"text-overflow:ellipsis'>{name}<br>"
                              f"{'Lv.' + str(L.ally_level(profile, lv)) if have else '&nbsp;'}</div>", unsafe_allow_html=True)
@@ -444,22 +453,89 @@ def view_ally_picker():
 # ---------------------------------------------------------------------------
 # ホーム
 # ---------------------------------------------------------------------------
+HOME_CSS = """<style>
+/* ストーリーモードではサイドバーを出さず、上の余白をつめる */
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"],
+[data-testid="stSidebarCollapseButton"] { display: none !important; }
+[data-testid="stMainBlockContainer"], .block-container { padding-top: 1.2rem !important; }
+/* 横並びのまま（スマホでも縦に積まない） */
+.st-key-story_head [data-testid="stHorizontalBlock"], .st-key-story_menu [data-testid="stHorizontalBlock"],
+.st-key-story_panel [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; align-items: center; }
+.st-key-story_panel [data-testid="stHorizontalBlock"] { align-items: flex-start; }
+.st-key-story_head [data-testid="stColumn"], .st-key-story_menu [data-testid="stColumn"], .st-key-story_panel [data-testid="stColumn"] {
+  min-width: 0 !important; }
+.st-key-story_head h3 { margin: 0 !important; padding: 0 !important; font-size: 1.35rem !important; white-space: nowrap; }
+.st-key-story_head button, .st-key-story_menu button { padding: 4px 6px !important; min-height: 38px !important; font-size: 13px !important;
+  white-space: nowrap !important; }
+.st-key-story_menu button p, .st-key-story_head button p { white-space: nowrap !important; overflow: hidden; text-overflow: clip; }
+/* スマホでは10%だと字が入らないので、いちばん小さい幅を決めておく */
+.st-key-story_menu [data-testid="stColumn"]:nth-child(1) { min-width: 92px !important; }
+.st-key-story_menu [data-testid="stColumn"]:nth-child(2), .st-key-story_menu [data-testid="stColumn"]:nth-child(3) { min-width: 64px !important; }
+.st-key-story_panel button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
+</style>"""
+st.markdown(HOME_CSS, unsafe_allow_html=True)
+
+
+def story_header(title="⚔️ ストーリーモード", back=None):
+    """いちばん上の1行：見出しと、右に「トップへ」（back を渡すと、そのボタンに変える）"""
+    with st.container(key="story_head"):
+        col_title, col_btn = st.columns([7, 3], vertical_alignment="center")
+        col_title.markdown(f"### {title}")
+        if back is None:
+            if col_btn.button("🏠 トップへ", key="_story_top", width="stretch"):
+                if "home" in common.PAGES:
+                    st.switch_page(common.PAGES["home"])
+        else:
+            label, view = back
+            if col_btn.button(label, key="_story_head_back", width="stretch"):
+                go(view)
+
+
 def view_home():
-    common.hero("⚔️ ストーリーモード",
-                "敵をタップして攻撃！ ステージを勝ちぬいて、最後の敵をたおそう。"
-                "（イージー・ノーマルは10、ハードは11、ベリーハードは12ステージ）")
-    col_guide, col_bag, col_title = st.columns(3)
-    if col_guide.button("📖 攻略", width="stretch"):
-        go("guide")
-    if col_bag.button("🎒 倉庫とリュック", width="stretch"):
-        st.session_state.story_round += 1
-        go("inventory")
-    if col_title.button("🏅 称号", width="stretch"):
-        go("titles")
+    story_header()
+    # 上のメニュー：クエスト（画面の約20%）・称号・攻略（約10%ずつ）を横に並べる
+    with st.container(key="story_menu"):
+        col_quest, col_title, col_guide, _ = st.columns([2, 1, 1, 6])
+        if col_quest.button("🗺️ クエスト", key="_story_quest", type="primary", width="stretch"):
+            st.session_state.story_confirm_new = False
+            go("quest")
+        if col_title.button("🏅 称号", key="_story_titles", width="stretch"):
+            go("titles")
+        if col_guide.button("📖 攻略", key="_story_guide", width="stretch"):
+            go("guide")
     notice = st.session_state.pop("story_notice", None)
     if notice:
         st.info(notice)
 
+    run = profile["run"]
+    owned = L.owned_allies(profile)
+    if run:
+        st.session_state.story_ally = run["ally"]
+    elif st.session_state.story_ally not in owned:
+        st.session_state.story_ally = 1
+    lv = st.session_state.story_ally
+
+    with st.container(border=True, key="story_panel"):
+        left, right = ally_panel_parts(lv)
+        col_pic, col_info = st.columns([3, 7])
+        col_pic.markdown(left, unsafe_allow_html=True)
+        if col_pic.button("🎒 倉庫と リュック", key="_story_inventory", width="stretch"):
+            st.session_state.story_round += 1
+            go("inventory")
+        col_info.markdown(right, unsafe_allow_html=True)
+        if run:
+            st.caption(f"📌 挑戦中：{L.get_difficulty(run['difficulty'])['name']} {stage_label(run)}"
+                       "（「クエスト」から続きを遊べるよ。挑戦中はキャラを変えられないよ）")
+        elif st.button("🔄 キャラクター変更", key="_story_change", width="stretch"):
+            st.session_state.story_pick_char = not st.session_state.get("story_pick_char", False)
+            st.rerun()
+    if not run and st.session_state.get("story_pick_char"):
+        view_ally_picker()
+
+
+def view_quest():
+    """クエスト：挑戦中なら「続きから」、そうでなければ難易度をえらんで「プレイする」"""
+    story_header("🗺️ クエスト", ("◀ もどる", "home"))
     run = profile["run"]
     if run:
         view_continue(run)
@@ -476,11 +552,10 @@ def view_continue(run):
             f"#### 📌 続きから：{L.get_difficulty(run['difficulty'])['name']} {stage_label(run)} ／ "
             f"{short_name(run['ally'])} HP {L.display_hp(run['hp'])}/{max_hp:g}"
         )
-        st.markdown(ally_panel_html(run["ally"]), unsafe_allow_html=True)
         hp_bar(run["hp"], max_hp)
         st.caption(f"クリアしたステージ：{run['cleared']} / {L.stage_count(run['difficulty'])}　"
                    f"リュック：{L.bag_total(run['bag'])} / {story_data.MAX_CARRY_ITEMS}こ　"
-                   "（挑戦中はキャラを変えられないよ。装備とリュックは「倉庫とリュック」で変えられるよ）")
+                   "（挑戦中はキャラを変えられないよ。装備とリュックは、ホームの「倉庫とリュック」で変えられるよ）")
         if st.button("▶️ 続きから", type="primary", width="stretch"):
             st.session_state.story_confirm_new = False
             go_battle()
@@ -513,13 +588,7 @@ def view_prepare():
     if st.session_state.story_ally not in owned:
         st.session_state.story_ally = 1
     lv = st.session_state.story_ally
-    with st.container(border=True):
-        st.markdown(ally_panel_html(lv), unsafe_allow_html=True)
-        if st.button("🔄 キャラクター変更", width="stretch"):
-            st.session_state.story_pick_char = not st.session_state.get("story_pick_char", False)
-            st.rerun()
-    if st.session_state.get("story_pick_char"):
-        view_ally_picker()
+    st.caption(f"キャラ：{L.get_ally(lv)['name']}（Lv.{L.ally_level(profile, lv)}）　キャラはホームの「キャラクター変更」で変えられるよ。")
 
     st.subheader("🎚️ 難易度")
     ids = [d["id"] for d in story_data.DIFFICULTIES]
@@ -539,7 +608,7 @@ def view_prepare():
     st.subheader("🎒 リュック")
     if pack:
         st.markdown("".join(item_icon(k, n) for k, n in pack.items()), unsafe_allow_html=True)
-    st.caption(f"{sum(pack.values())} / {story_data.MAX_CARRY_ITEMS}こ　持っていくアイテムは「🎒 倉庫とリュック」で入れてね。")
+    st.caption(f"{sum(pack.values())} / {story_data.MAX_CARRY_ITEMS}こ　持っていくアイテムは、ホームの「🎒 倉庫とリュック」で入れてね。")
 
     st.divider()
     if st.button("⚔️ プレイする", type="primary", width="stretch"):
@@ -828,7 +897,8 @@ def view_end():
 
 
 {
-    "home": view_home, "inventory": view_inventory, "guide": view_guide, "titles": view_titles,
+    "home": view_home, "quest": view_quest, "ally_detail": view_ally_detail,
+    "inventory": view_inventory, "guide": view_guide, "titles": view_titles,
     "battle": view_battle, "between": view_between, "retry": view_retry,
     "extra_lost": view_extra_lost, "end": view_end,
 }[st.session_state.story_view]()
