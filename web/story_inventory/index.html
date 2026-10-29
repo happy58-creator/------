@@ -14,10 +14,17 @@
     display:flex; flex-direction:column;
     padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
   /* 中身だけスクロール（ページ全体は動かさない） */
-  #main { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
-    display:flex; flex-direction:column; gap:8px; padding-bottom:6px; }
-  .grid5 { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; }
-  .grid3 { display:grid; grid-template-columns:repeat(3, minmax(0, 92px)); gap:10px; }
+  /* 装備品・アクセサリ・リュックの箱は動かさず、一覧（倉庫）の箱の中だけスクロールする */
+  #main { flex:1 1 auto; min-height:0; overflow:hidden; display:flex; flex-direction:column; gap:8px; padding-bottom:6px; }
+  #main > .box { flex:none; }
+  #main > #z-store { flex:1 1 auto; min-height:120px; display:flex; flex-direction:column; }
+  #z-store > .grid5 { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+    align-content:start; padding:2px 2px 10px; scrollbar-width:none; }
+  #z-store > .grid5::-webkit-scrollbar { display:none; }
+  #z-pack > .grid5 { max-height:30vh; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:2px 2px 8px; }
+  .grid3 > .tile, .grid3 > .slot { width:100%; }
+  .grid5 { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:8px; }
+  .grid3 { display:grid; grid-template-columns:repeat(3, minmax(0, 84px)); gap:10px; }
   .mode-equip .only-item, .mode-item .only-equip { display:none !important; }
   /* くわしい中身：画面の下からせり上がる（たくさんあっても必ず見える） */
   #detail { position:fixed; left:0; right:0; bottom:0; z-index:40; max-width:900px; margin:0 auto; transform:translateY(105%); transition:transform .2s ease-out;
@@ -41,7 +48,7 @@
   .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(54px, 1fr)); gap:6px; }
   .right { display:flex; flex-direction:column; gap:8px; }
   .tile { position:relative; width:100%; aspect-ratio:1/1; border-radius:10px; background:#0d0b10; border:1px solid rgba(255,255,255,.12);
-    touch-action:none; cursor:grab; }
+    touch-action:pan-y; cursor:grab; }   /* 縦に動かすと一覧がスクロール。横や斜めに動かすとドラッグ */
   .tile img.main { width:100%; height:100%; object-fit:cover; border-radius:9px; pointer-events:none; display:block; }
   .tile.sel { outline:2px solid #ffd36a; outline-offset:1px; }
   .tile.dim { opacity:.4; cursor:default; }
@@ -142,7 +149,7 @@ function start(cfg) {
   $("app").className = "mode-" + mode;
   $("title").textContent = mode === "item" ? "🎒 アイテム" : "🛡️ 装備";
   $("storeTitle").textContent = mode === "item" ? "倉庫のアイテム" : "倉庫の装備";
-  $("storeHint").textContent = "押すとくわしく・ドラッグで移動";
+  $("storeHint").textContent = "押すとくわしく";
   $("who").textContent = mode === "item" ? (cfg.in_run ? "挑戦中のかばん" : "") : `${cfg.ally} の装備` + (cfg.in_run ? "（挑戦中）" : "");
   sel = null; render(); showDetail(); msg(cfg.notice || "", cfg.notice ? "ok" : undefined);
   Streamlit.setHeight();
