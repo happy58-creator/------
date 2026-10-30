@@ -5,6 +5,7 @@ import time
 import pandas as pd
 import streamlit as st
 
+import ai_explain
 import auth
 import common
 import history
@@ -43,7 +44,6 @@ HOWTO = """
 
 
 SUBJECT = "数学"
-LEARN_PAGES = ["ポイント", "例題", "もう1問", "やってみよう", "まとめ"]
 
 
 def unit_name(uid):
@@ -57,21 +57,31 @@ def unit_label(uid):
     return ("✓ " if uid in learn_log.learned(SUBJECT) else "") + unit_name(uid)
 
 
-def start_learn():
+HIGH_COURSES = [("高1", "m1"), ("高1", "mA"), ("高2", "m2"), ("高2", "mB"), ("高2", "mC"), ("高2", "m3")]
+
+
+def lesson_list():
+    """学ぶ：学年順の単元（見出し, 学年, 科目, 単元id）。小1〜中3、そのあと高校の科目順（中3と重なる単元は のせない）"""
+    out, seen = [], set()
+    for g, uids in U.SANSU.items():
+        course = "sansu" if g.startswith("小") else "sugaku"
+        for uid in uids:
+            if uid in LS.LESSONS and uid not in seen:
+                out.append((K.GRADE_NAMES[g], g, course, uid))
+                seen.add(uid)
+    for g, course in HIGH_COURSES:
+        head = ("高校1年生" if g == "高1" else "高校2・3年生") + "・" + U.COURSES[course]["name"]
+        for uid in U.COURSES[course]["units"]:
+            if uid in LS.LESSONS and uid not in seen:
+                out.append((head, g, course, uid))
+                seen.add(uid)
+    return out
+
+
+def start_practice(grade, course_id, unit):
     ss = st.session_state
-    ss.calc_step = "learn"
-    ss.calc_lpage = 0
-    ss.calc_lstep = 0            # 例題の手順を何行まで見せたか
-    new_example()
-    ss.calc_ltry = U.make_set([ss.calc_unit], random.Random(), 2)
-    ss.calc_ltry_checked = False
-    for i in range(2):
-        ss.pop(f"calc_try_{i}", None)
-
-
-def new_example():
-    st.session_state.calc_lex = U.make_set([st.session_state.calc_unit], random.Random(), 1)[0]
-    st.session_state.calc_lex_open = False
+    ss.calc_grade, ss.calc_course, ss.calc_unit = grade, course_id, unit
+    new_questions()
 
 
 def course_label():
@@ -114,148 +124,94 @@ common.hero(*{"小": ("🧮 算数マスター", "学年と たんげんを え�
               "中": ("🧮 数学マスター", "学年と単元を選んで、10問のチャレンジに挑戦しよう！"),
               "高": ("🧮 数学マスター", "科目と単元を選んで、10問の演習に取り組もう。")}[common.age_band()])
 
-# 1. 初期設定画面
+# 1. はじめの画面（練習問題 ／ 学ぶ）
 if st.session_state.calc_step == "setup":
-    age_grade = K.grade_for_age(st.session_state.get("auth_age"))
-    with st.container(border=True):
-        st.subheader("① 学年")
-        if auth.is_admin() or age_grade is None:
-            default = st.session_state.get("calc_grade_pick") or age_grade or "小3"
-            grade = st.selectbox("学年をえらんでね", K.GRADES, index=K.GRADES.index(default),
-                                 format_func=lambda g: K.GRADE_NAMES[g], key="calc_grade_pick")
-        else:
-            grade = age_grade
-            st.markdown(f"**{K.GRADE_NAMES[grade]}** の問題が出るよ（{st.session_state.auth_age}さい）")
-
-        course_ids = U.courses_for(grade)
-        if len(course_ids) > 1:
-            st.subheader("② 科目")
-            course_id = st.radio("科目", course_ids, key=f"calc_course_pick_{grade}", label_visibility="collapsed",
-                                 format_func=lambda c: f"{U.COURSES[c]['name']}　―　{U.COURSES[c]['desc']}")
-        else:
-            course_id = course_ids[0]
-            st.caption(f"📚 {U.COURSES[course_id]['name']}：{U.COURSES[course_id]['desc']}")
-
-    units = U.units_for(course_id, grade)
-    with st.container(border=True):
-        st.subheader(f"{'③' if len(course_ids) > 1 else '②'} 単元")
-        st.caption("前の学年の単元も、ふくしゅうで入っているよ。" if U.COURSES[course_id].get("units") is None and grade not in ("小1", "中1") else "")
-        unit = st.radio("単元", [MIX] + units, key=f"calc_unit_pick_{grade}_{course_id}", label_visibility="collapsed",
-                        format_func=unit_label, horizontal=True)
-        done = sum(1 for u in units if u in learn_log.learned(SUBJECT))
-        st.caption(f"📖 まなんだ単元：{done} / {len(units)}（✓ がついているよ）")
-
-    best = st.session_state.calc_best.get((grade, course_id, unit))
-    if best is not None:
-        st.caption(f"🏆 この単元のベスト：{best} 点")
-    has_lesson = unit in LS.LESSONS
-    if has_lesson:
-        st.info("📖「まなぶ」で説明と例題を見てから、🏁「練習する」で10問に挑戦しよう！", icon="💡")
-    else:
-        st.info(f"全部で{TOTAL_Q}問出題されるよ。準備ができたらスタート！" +
-                ("（「いろいろ」には まなぶ画面はないよ。単元を1つえらぶと まなべるよ）" if unit == MIX else ""), icon="💡")
-    col_learn, col_go = st.columns(2)
-    if col_learn.button("📖 まなぶ", use_container_width=True, disabled=not has_lesson):
-        st.session_state.calc_grade, st.session_state.calc_course, st.session_state.calc_unit = grade, course_id, unit
-        start_learn()
-        st.rerun()
-    if col_go.button("🏁 練習する（10問）", type="primary", use_container_width=True):
-        st.session_state.calc_grade, st.session_state.calc_course, st.session_state.calc_unit = grade, course_id, unit
-        new_questions()
-        st.rerun()
-
-# 1.5 まなぶ画面（ポイント → 例題 → もう1問 → やってみよう → まとめ）
-elif st.session_state.calc_step == "learn":
+    common.no_keyboard_selects()
     ss = st.session_state
-    uid = ss.calc_unit
-    lesson = LS.LESSONS[uid]
-    page = ss.calc_lpage
-    st.subheader(f"📖 {unit_name(uid)}")
-    st.caption(f"{course_label()}　／　{page + 1} / {len(LEARN_PAGES)}：{LEARN_PAGES[page]}" + ("　✓ まなんだ" if uid in learn_log.learned(SUBJECT) else ""))
-    st.progress((page + 1) / len(LEARN_PAGES))
+    age_grade = K.grade_for_age(ss.get("auth_age"))
+    tab_practice, tab_learn = st.tabs(["🏁 練習問題", "📖 学ぶ"])
 
-    with st.container(border=True):
-        if page == 0:
-            st.markdown(f"#### 💡 {lesson['intro']}")
-            st.markdown("**おぼえよう**")
-            st.markdown("\n".join(f"- {p}" for p in lesson["points"]))
-            if lesson.get("caution"):
-                st.warning("⚠️ " + lesson["caution"])
-        elif page == 1:
-            ex = lesson["example"]
-            st.markdown("#### ✏️ 例題")
-            st.markdown(ex["q"])
-            for i, step_text in enumerate(ex["steps"][: ss.calc_lstep]):
-                st.markdown(f"**{i + 1}.** {step_text}")
-            if ss.calc_lstep < len(ex["steps"]):
-                if st.button("▶ 次の手順を見る", key="calc_lnext"):
-                    ss.calc_lstep += 1
-                    st.rerun()
+    with tab_practice:
+        with st.container(border=True):
+            if auth.is_admin() or age_grade is None:
+                default = ss.get("calc_grade_pick") or age_grade or "小3"
+                grade = st.selectbox("🎓 学年", K.GRADES, index=K.GRADES.index(default),
+                                     format_func=lambda g: K.GRADE_NAMES[g], key="calc_grade_pick")
             else:
-                st.success(f"答え：**{ex['answer']}**")
-        elif page == 2:
-            q = ss.calc_lex
-            st.markdown("#### 🔁 もう1問（数字を変えた例題）")
-            st.markdown(q["q"])
-            if ss.calc_lex_open:
-                st.success(f"答え：**{q['show']}**")
-                st.info("📝 解き方：" + q["explain"])
-            elif st.button("👀 答えと解き方を見る", key="calc_lopen"):
-                ss.calc_lex_open = True
-                st.rerun()
-            if st.button("🔄 べつの例題にする", key="calc_lnew"):
-                new_example()
-                st.rerun()
-        elif page == 3:
-            st.markdown("#### 🙋 やってみよう（点数はつかないよ）")
-            with st.expander("✍️ 答えの書き方"):
-                st.markdown(HOWTO)
-            with st.form("calc_try_form"):
-                for i, q in enumerate(ss.calc_ltry):
-                    st.markdown(f"**{i + 1}.** {q['q']}")
-                    if q.get("hint"):
-                        st.caption(q["hint"])
-                    st.text_input("答え", key=f"calc_try_{i}", label_visibility="collapsed", placeholder="答えを入力")
-                if st.form_submit_button("答えを たしかめる", type="primary"):
-                    ss.calc_ltry_checked = True
-            if ss.calc_ltry_checked:
-                for i, q in enumerate(ss.calc_ltry):
-                    typed = ss.get(f"calc_try_{i}", "")
-                    ok, note = M.check(q["spec"], typed.replace(":", ",") if q.get("ratio") else typed)
-                    if ok:
-                        st.success(f"{i + 1}. ⭕ せいかい！（{q['show']}）")
-                    else:
-                        st.error(f"{i + 1}. ❌ 答えは **{q['show']}**" + (f"（{note}）" if note and note != "（未入力）" else ""))
-                        st.caption("📝 " + q["explain"])
-            if st.button("🔄 ちがう問題で もう一度", key="calc_try_new"):
-                ss.calc_ltry = U.make_set([uid], random.Random(), 2)
-                ss.calc_ltry_checked = False
-                for i in range(2):
-                    ss.pop(f"calc_try_{i}", None)
-                st.rerun()
-        else:
-            st.markdown("#### 🎓 まとめ")
-            st.markdown("\n".join(f"- {p}" for p in lesson["points"]))
-            if uid in learn_log.learned(SUBJECT):
-                st.success("✓ この単元は まなんだよ！")
-            elif st.button("✅ まなんだ！（記録する）", type="primary", use_container_width=True):
-                learn_log.mark(SUBJECT, ss.calc_grade, uid, unit_name(uid))
-                st.balloons()
-                st.rerun()
-            if st.button("🏁 この単元を 練習する（10問）", use_container_width=True):
-                new_questions()
-                st.rerun()
+                grade = age_grade
+                st.markdown(f"🎓 **{K.GRADE_NAMES[grade]}** の問題が出るよ（{ss.auth_age}さい）")
+            course_ids = U.courses_for(grade)
+            if len(course_ids) > 1:
+                course_id = st.selectbox("📚 科目", course_ids, key=f"calc_course_pick_{grade}",
+                                         format_func=lambda c: f"{U.COURSES[c]['name']}（{U.COURSES[c]['desc']}）")
+            else:
+                course_id = course_ids[0]
+                st.caption(f"📚 {U.COURSES[course_id]['name']}：{U.COURSES[course_id]['desc']}")
+            units = U.units_for(course_id, grade)
+            now_units = U.current_units(course_id, grade)
+            unit = st.selectbox("✏️ 単元", [MIX] + units, key=f"calc_unit_pick_{grade}_{course_id}",
+                                format_func=lambda u: unit_label(u) + ("（前の学年のふくしゅう）" if u != MIX and u not in now_units else ""))
+            done = sum(1 for u in units if u in learn_log.learned(SUBJECT))
+            st.caption(f"📖 学んだ単元：{done} / {len(units)}（✓ がついているよ）")
+        best = ss.calc_best.get((grade, course_id, unit))
+        if best is not None:
+            st.caption(f"🏆 この単元のベスト：{best} 点")
+        if st.button(f"🏁 {TOTAL_Q}問に挑戦！", type="primary", use_container_width=True):
+            start_practice(grade, course_id, unit)
+            st.rerun()
 
-    col_prev, col_next = st.columns(2)
-    if page > 0 and col_prev.button("◀ 前へ", use_container_width=True):
-        ss.calc_lpage -= 1
-        st.rerun()
-    if page < len(LEARN_PAGES) - 1 and col_next.button("次へ ▶", type="primary", use_container_width=True):
-        ss.calc_lpage += 1
-        st.rerun()
-    if st.button("↩ 単元えらびに もどる"):
-        ss.calc_step = "setup"
-        st.rerun()
+    with tab_learn:
+        items = lesson_list()
+        common.anchor("top")
+        with st.container(border=True):
+            st.markdown("**📑 目次**　えらんで「表示」を押すと、その単元まで ジャンプするよ")
+            mine = {"高3": "高2"}.get(age_grade, age_grade)
+            first = next((i for i, it in enumerate(items) if it[1] == mine), 0)
+            pick = st.selectbox("単元", list(range(len(items))), index=first, key="calc_learn_pick", label_visibility="collapsed",
+                                format_func=lambda i: f"{i + 1}. {items[i][0]}・{unit_name(items[i][3])}"
+                                                      + ("　✓" if items[i][3] in learn_log.learned(SUBJECT) else ""))
+            if st.button("👉 表示", type="primary", use_container_width=True):
+                ss.calc_jump = (items[pick][3], time.time())
+            done = sum(1 for it in items if it[3] in learn_log.learned(SUBJECT))
+            st.caption(f"📖 学んだ単元：{done} / {len(items)}")
+        lex = ss.setdefault("calc_lex_map", {})
+        last_head = None
+        for i, (head, g, course, uid) in enumerate(items):
+            if head != last_head:
+                st.markdown(f"### 🎓 {head}")
+                last_head = head
+            lesson = LS.LESSONS[uid]
+            common.anchor(uid)
+            with st.container(border=True):
+                st.markdown(f"#### {i + 1}. {unit_name(uid)}" + ("　✓" if uid in learn_log.learned(SUBJECT) else ""))
+                st.markdown(f"💡 {lesson['intro']}")
+                st.markdown("**おぼえよう**\n" + "\n".join(f"- {p}" for p in lesson["points"]))
+                if lesson.get("caution"):
+                    st.caption("⚠️ " + lesson["caution"])
+                ex = lesson["example"]
+                st.markdown("**✏️ 例題**　" + ex["q"])
+                st.markdown("\n".join(f"{n}. {step}" for n, step in enumerate(ex["steps"], 1)) + f"\n\n👉 答え：**{ex['answer']}**")
+                with st.expander("🔁 数字を変えた例題を見る"):
+                    if uid not in lex:
+                        lex[uid] = U.make_set([uid], random.Random(), 1)[0]
+                    q = lex[uid]
+                    st.markdown(q["q"])
+                    st.markdown(f"👉 答え：**{q['show']}**")
+                    st.caption("📝 " + q["explain"])
+                col_done, col_go = st.columns(2)
+                if uid in learn_log.learned(SUBJECT):
+                    col_done.success("✓ 学んだ！")
+                elif col_done.button("✅ 学んだ！", key=f"calc_done_{uid}", use_container_width=True):
+                    learn_log.mark(SUBJECT, g, uid, unit_name(uid))
+                    ss.calc_jump = (uid, time.time())
+                    st.rerun()
+                if col_go.button("🏁 この単元を練習", key=f"calc_go_{uid}", use_container_width=True):
+                    start_practice(g, course, uid)
+                    st.rerun()
+                if st.button("⬆ 目次へ", key=f"calc_top_{uid}"):
+                    ss.calc_jump = ("top", time.time())
+        if ss.get("calc_jump"):
+            common.jump_to(*ss.calc_jump)
 
 # 2. 問題回答画面
 elif st.session_state.calc_step == "playing":
@@ -345,14 +301,24 @@ elif st.session_state.calc_step == "result":
     wrong = [i for i, (ok, _) in enumerate(checks) if not ok]
     if wrong:
         st.subheader(f"👀 まちがえた問題を見なおそう（{len(wrong)}問）")
-        for i in wrong:
+        grade_name = K.GRADE_NAMES.get(st.session_state.calc_grade, "")
+        ai_items = [{"q": plain(st.session_state.calc_questions[i]["q"]),
+                     "user": (st.session_state.calc_user_answers.get(i) or "").strip() + (f"（判定メモ：{checks[i][1]}）" if checks[i][1] and checks[i][1] != "（未入力）" else ""),
+                     "correct": st.session_state.calc_questions[i]["show"], "hint": st.session_state.calc_questions[i]["explain"]} for i in wrong]
+        ai_notes = ai_explain.cached_explanations(f"calc-{game_id}", "算数" if st.session_state.calc_grade.startswith("小") else "数学",
+                                                  grade_name, ai_items)
+        for n, i in enumerate(wrong):
             q = st.session_state.calc_questions[i]
             with st.container(border=True):
                 st.markdown(f"**問 {i + 1}**　{q['q']}")
                 st.markdown(f"あなたの答え：`{records[i]['あなたの解答']}`　→　正しい答え：**{q['show']}**")
                 if checks[i][1] and checks[i][1] != "（未入力）":
                     st.caption("💡 " + checks[i][1])
-                st.info("📝 解き方：" + q["explain"])
+                if ai_notes:
+                    st.info("🤖 **AI先生の解説**\n\n" + ai_notes[n])
+                    st.caption("📝 解き方のポイント：" + q["explain"])
+                else:
+                    st.info("📝 解き方：" + q["explain"])
     with st.expander("📊 全部の結果を見る"):
         st.dataframe(pd.DataFrame(records), use_container_width=True, hide_index=True)
 

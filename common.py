@@ -277,6 +277,58 @@ def setup_page(title, icon, layout="centered", home_link=True):
         st.html(_PDF_OPEN_JS, unsafe_allow_javascript=True)
 
 
+_NO_KEYBOARD_JS = """
+<script>
+(() => {
+  // ドロップダウン（selectbox）を押しても、スマホのキーボードが出ないようにする（文字は打てない）
+  const fix = (doc) => doc.querySelectorAll('[data-baseweb="select"] input').forEach((el) => {
+    if (el.dataset.kzNoKbd) return;
+    el.dataset.kzNoKbd = "1";
+    el.setAttribute("inputmode", "none");
+    el.setAttribute("readonly", "readonly");
+  });
+  const docs = [document];
+  try { if (window.parent !== window) docs.push(window.parent.document); } catch (e) {}
+  for (const doc of docs) {
+    fix(doc);
+    if (doc.defaultView.__kzNoKbdObserver) continue;
+    doc.defaultView.__kzNoKbdObserver = new MutationObserver(() => fix(doc));
+    doc.defaultView.__kzNoKbdObserver.observe(doc.body, { childList: true, subtree: true });
+  }
+})();
+</script>
+"""
+
+
+def no_keyboard_selects():
+    """このページのドロップダウンを、キーボードが出ないものにする（ページに1回よぶ）"""
+    st.html(_NO_KEYBOARD_JS, unsafe_allow_javascript=True)
+
+
+def anchor(name):
+    """jump_to で飛べる目印"""
+    st.markdown(f"<div id='kz-{name}' style='position:relative;top:-70px'></div>", unsafe_allow_html=True)
+
+
+def jump_to(name, nonce):
+    """anchor(name) の場所まで画面をスクロールする（nonce を変えると、もう一度動く）"""
+    st.html(f"""<script>
+(() => {{
+  const id = "kz-{name}"; void "{nonce}";
+  const go = (tries) => {{
+    const docs = [document];
+    try {{ if (window.parent !== window) docs.push(window.parent.document); }} catch (e) {{}}
+    for (const doc of docs) {{
+      const el = doc.getElementById(id);
+      if (el) {{ el.scrollIntoView({{ behavior: "smooth", block: "start" }}); return; }}
+    }}
+    if (tries > 0) setTimeout(() => go(tries - 1), 150);
+  }};
+  setTimeout(() => go(20), 100);
+}})();
+</script>""", unsafe_allow_javascript=True)
+
+
 def pdf_preview_button(pdf_bytes, label="📄 表彰状を 見る"):
     """PDFを、保存せずに、画面の上のビューアで見せるボタン。保存・印刷は、ビューアの中のボタンから。"""
     import base64
