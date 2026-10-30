@@ -12,7 +12,7 @@ HOME_PAGE = "home.py"
 # ファイル名の文字の形（Mac の濁点の分かれ方）に左右されないようにする。
 PAGE_DEFS = [
     ("home", "home.py", "トップ", "🏠", ""),
-    ("calc", "pages/0_計算マスター.py", "計算マスター", "🧮", "calc"),
+    ("calc", "pages/0_計算マスター.py", "算数・数学", "🧮", "calc"),
     ("kokugo", "pages/1_国語.py", "AI国語", "🧙‍♂️", "kokugo"),
     ("english", "pages/2_英語.py", "AI英語", "🔤", "english"),
     ("kanji", "pages/10_漢字.py", "漢字", "✍️", "kanji"),
@@ -32,6 +32,37 @@ SECTIONS = {
     "きろく": ["history"],
 }
 PAGES = {}  # 名前 -> st.Page（教材.py が毎回つくる）
+
+# 年齢で変える表記（小学生 / 中学生 / 高校生以上）。サイドバーのメニュー名と見出し
+BAND_PAGE_TITLES = {
+    "中": {"calc": "数学", "history": "成績の履歴"},
+    "高": {"calc": "数学", "history": "成績の履歴"},
+}
+BAND_SECTIONS = {
+    "中": {"べんきょう": "学習", "きろく": "記録"},
+    "高": {"べんきょう": "学習", "きろく": "記録"},
+}
+
+
+def age_band():
+    """ログイン中の人の年齢から "小"（12さいまで・年齢がわからない）/ "中"（13〜15さい）/ "高"（16さい以上・管理者）"""
+    import auth
+
+    ss = st.session_state
+    age, admin = ss.get("auth_age"), ss.get("auth_admin")
+    if "auth_age" not in ss:              # ページを開き直した直後は、保存してあるログイン情報から読む
+        try:
+            token = auth._stored_token()
+            entry = auth.read_token(token) if token else None
+            if entry:
+                age, admin = entry.get("age"), entry.get("admin")
+        except Exception:
+            pass
+    try:
+        age = int(age)
+    except (TypeError, ValueError):
+        return "高" if admin else "小"
+    return "小" if age <= 12 else ("中" if age <= 15 else "高")
 
 # Streamlit Cloud がアプリの外側の画面に出す「王冠マーク」と「作った人のアカウント表示」を消す。
 # アプリと外側の画面は同じドメイン（〜.streamlit.app）なので、JavaScript から触れる。
@@ -260,13 +291,16 @@ def pdf_preview_button(pdf_bytes, label="📄 表彰状を 見る"):
 
 def build_navigation():
     """サイドバーのメニューとページを登録して返す（教材.py から呼ぶ）。"""
+    band = age_band()
+    titles = BAND_PAGE_TITLES.get(band, {})
     for key, path, title, icon, url_path in PAGE_DEFS:
-        PAGES[key] = st.Page(page_file(path), title=title, icon=icon, url_path=url_path, default=(key == "home"))
+        PAGES[key] = st.Page(page_file(path), title=titles.get(key, title), icon=icon, url_path=url_path, default=(key == "home"))
     import auth
 
     # ログイン前はサイドバーのメニューを出さない
     position = "sidebar" if auth.session_alive() else "hidden"
-    return st.navigation({section: [PAGES[k] for k in keys] for section, keys in SECTIONS.items()}, position=position)
+    names = BAND_SECTIONS.get(band, {})
+    return st.navigation({names.get(section, section): [PAGES[k] for k in keys] for section, keys in SECTIONS.items()}, position=position)
 
 
 def page_file(path):

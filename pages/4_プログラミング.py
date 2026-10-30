@@ -123,15 +123,26 @@ def generate_lesson(lang, level, topic):
     return None
 
 
+# スマホのキーボードは " や ' を “ ” ‘ ’（くるっとした形）に自動で変えたり、全角で入ったりするので、半角の記号にそろえる
+_QUOTES = str.maketrans({"“": '"', "”": '"', "„": '"', "‟": '"', "″": '"', "＂": '"', "〝": '"', "〟": '"',
+                         "‘": "'", "’": "'", "‚": "'", "‛": "'", "′": "'", "＇": "'", "｀": "`"})
+
+
+def normalize_code(text):
+    """くるっとした引用符・全角の英数字や記号（＝ （ ） ； など）を、半角にそろえる"""
+    text = (text or "").translate(_QUOTES)
+    return "".join(chr(ord(c) - 0xFEE0) if "！" <= c <= "～" else ("" if c == "\u3000" else c) for c in text)
+
+
 def squash(text):
-    """空白をすべて無視して比べる（スペースの数のちがいは気にしない）。"""
-    return "".join((text or "").split())
+    """空白をすべて無視して比べる（スペースの数のちがいは気にしない）。記号の全角・半角のちがいも気にしない。"""
+    return "".join(normalize_code(text).split())
 
 
 def render_highlight(target, typed):
     parts = []
-    t = "".join(typed.split())
-    g = "".join(target.split())
+    t = squash(typed)
+    g = squash(target)
     for i, ch in enumerate(g):
         if i < len(t):
             color = "#2ECC71" if t[i] == ch else "#E74C3C"

@@ -11,7 +11,8 @@ common.hero("📒 せいせきの履歴", "これまでの記録を見よう！"
 
 st.caption(f"保存先：{history.storage_label()}")
 
-sheet_names = [s for s in history.SHEETS if s != "ログイン" or auth.is_admin()]  # ログインの記録は管理者だけ
+ADMIN_ONLY = {"ログイン", "入力チェック"}   # ログインの記録・ふざけた入力の記録は管理者だけ
+sheet_names = [s for s in history.SHEETS if s not in ADMIN_ONLY or auth.is_admin()]
 sheet = st.radio("ゲームを選んでね", sheet_names, horizontal=True)
 rows = history.read_history(sheet)
 if not rows:
