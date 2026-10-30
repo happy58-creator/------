@@ -91,9 +91,7 @@ if state == "menu":
     with st.container(border=True):
         st.subheader("③ 年れい（判定の ゆるさに つかうよ）")
         levels = list(LEVEL_TOL)
-        level = st.selectbox(
-            "年れい", levels, index=common.age_level_index(len(levels)), label_visibility="collapsed",
-        )
+        level = common.pick("年れい", levels, key="kanji_level_pick", index=common.age_level_index(len(levels)))
         st.caption("年れいが 低いほど、すこしくらい ずれても OKに するよ。")
 
     if st.button("🚀 スタート！", type="primary", use_container_width=True):

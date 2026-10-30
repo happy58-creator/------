@@ -298,7 +298,7 @@ def learn_tab(grade):
     common.anchor("jp-top")
     with st.container(border=True):
         st.markdown("**📑 目次**　えらんで「表示」を押すと、そこまで ジャンプするよ")
-        pick = st.selectbox("目次", list(range(len(items))), key="jp_learn_pick", label_visibility="collapsed",
+        pick = common.pick("📑 目次", list(range(len(items))), key="jp_learn_pick",
                             format_func=lambda i: f"{i + 1}. " + (f"{items[i][1]['emoji']} {items[i][1]['title']}" if items[i][0].startswith("lec_")
                                                                   else f"📜 {items[i][1]['title']}") + done_mark(items[i][0]))
         if st.button("👉 表示", type="primary", use_container_width=True, key="jp_learn_go"):
@@ -333,7 +333,7 @@ def learn_tab(grade):
                         for i, q in enumerate(qz["q"]):
                             st.markdown(f"**{i + 1}.** {q['q']}")
                             if q["type"] == "choice":
-                                st.radio("こたえ", q["opts"], index=None, key=f"jp_lq_{lec['id']}_{i}", label_visibility="collapsed")
+                                st.radio("こたえ", q["opts"], index=None, key=f"jp_lq_{lec['id']}_{i}")
                             else:
                                 st.text_input("こたえ（ひらがな）", key=f"jp_lq_{lec['id']}_{i}", label_visibility="collapsed", placeholder="ひらがなで")
                         if st.form_submit_button("答えを たしかめる", type="primary"):
@@ -396,7 +396,7 @@ if st.session_state.jp_state == "menu":
         if auth.is_admin() or age_grade is None:
             # 管理者（年齢の登録がない人）は、学年をえらべる
             default = st.session_state.get("jp_grade_pick") or age_grade or K.DEFAULT_GRADE
-            grade = st.selectbox("🎓 学年", K.GRADES, index=K.GRADES.index(default),
+            grade = common.pick("🎓 学年", K.GRADES, index=K.GRADES.index(default),
                                  format_func=lambda g: K.GRADE_NAMES[g], key="jp_grade_pick")
         else:
             grade = age_grade
@@ -408,7 +408,7 @@ if st.session_state.jp_state == "menu":
         with st.container(border=True):
             course_ids = K.courses_for(grade)
             if len(course_ids) > 1:
-                course_id = st.selectbox("📚 科目", course_ids, key=f"jp_course_pick_{grade}",
+                course_id = common.pick("📚 科目", course_ids, key=f"jp_course_pick_{grade}",
                                          format_func=lambda c: f"{K.COURSES[c]['name']}（{K.COURSES[c]['desc']}）")
             else:
                 course_id = course_ids[0]

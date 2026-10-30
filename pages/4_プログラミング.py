@@ -213,7 +213,7 @@ if state == "menu":
     with st.container(border=True):
         st.subheader("③ 学ぶテーマを えらんでね")
         topics = ["おまかせ（はじめの一歩）"] + LANGUAGES[lang][1]
-        topic = st.selectbox("テーマ", topics, key=f"pg_topic_{lang}", label_visibility="collapsed")
+        topic = common.pick("テーマ", topics, key=f"pg_topic_{lang}")
 
     if st.button("🚀 AI先生にレッスンを作ってもらう！", type="primary", use_container_width=True):
         topic_name = LANGUAGES[lang][1][0] if topic.startswith("おまかせ") else topic

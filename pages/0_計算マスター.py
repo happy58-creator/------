@@ -135,21 +135,21 @@ if st.session_state.calc_step == "setup":
         with st.container(border=True):
             if auth.is_admin() or age_grade is None:
                 default = ss.get("calc_grade_pick") or age_grade or "小3"
-                grade = st.selectbox("🎓 学年", K.GRADES, index=K.GRADES.index(default),
+                grade = common.pick("🎓 学年", K.GRADES, index=K.GRADES.index(default),
                                      format_func=lambda g: K.GRADE_NAMES[g], key="calc_grade_pick")
             else:
                 grade = age_grade
                 st.markdown(f"🎓 **{K.GRADE_NAMES[grade]}** の問題が出るよ（{ss.auth_age}さい）")
             course_ids = U.courses_for(grade)
             if len(course_ids) > 1:
-                course_id = st.selectbox("📚 科目", course_ids, key=f"calc_course_pick_{grade}",
+                course_id = common.pick("📚 科目", course_ids, key=f"calc_course_pick_{grade}",
                                          format_func=lambda c: f"{U.COURSES[c]['name']}（{U.COURSES[c]['desc']}）")
             else:
                 course_id = course_ids[0]
                 st.caption(f"📚 {U.COURSES[course_id]['name']}：{U.COURSES[course_id]['desc']}")
             units = U.units_for(course_id, grade)
             now_units = U.current_units(course_id, grade)
-            unit = st.selectbox("✏️ 単元", [MIX] + units, key=f"calc_unit_pick_{grade}_{course_id}",
+            unit = common.pick("✏️ 単元", [MIX] + units, key=f"calc_unit_pick_{grade}_{course_id}",
                                 format_func=lambda u: unit_label(u) + ("（前の学年のふくしゅう）" if u != MIX and u not in now_units else ""))
             done = sum(1 for u in units if u in learn_log.learned(SUBJECT))
             st.caption(f"📖 学んだ単元：{done} / {len(units)}（✓ がついているよ）")
@@ -167,7 +167,7 @@ if st.session_state.calc_step == "setup":
             st.markdown("**📑 目次**　えらんで「表示」を押すと、その単元まで ジャンプするよ")
             mine = {"高3": "高2"}.get(age_grade, age_grade)
             first = next((i for i, it in enumerate(items) if it[1] == mine), 0)
-            pick = st.selectbox("単元", list(range(len(items))), index=first, key="calc_learn_pick", label_visibility="collapsed",
+            pick = common.pick("📑 目次", list(range(len(items))), index=first, key="calc_learn_pick",
                                 format_func=lambda i: f"{i + 1}. {items[i][0]}・{unit_name(items[i][3])}"
                                                       + ("　✓" if items[i][3] in learn_log.learned(SUBJECT) else ""))
             if st.button("👉 表示", type="primary", use_container_width=True):

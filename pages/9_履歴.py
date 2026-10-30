@@ -23,7 +23,7 @@ df = pd.DataFrame(rows)
 me = st.session_state.get("player_name")
 if auth.is_admin():
     names = ["みんな"] + sorted(df["名前"].astype(str).unique())
-    who = st.selectbox("だれの記録？（管理者はぜんいん見られます）", names)
+    who = common.pick("だれの記録？", names, key="hist_who")
     if who != "みんな":
         df = df[df["名前"].astype(str) == who]
 else:
@@ -56,7 +56,7 @@ if "詳細" in df.columns:
             extra = r.get("言語") or r.get("コース") or r.get("種類") or ""
             return f"{r['日時']}　{r['名前']}　{r.get('点数', '')}点　{extra}"
 
-        picked = st.selectbox("どの回の結果？（新しい順）", range(len(records)), format_func=lambda i: label(records[i]))
+        picked = common.pick("どの回の結果？（新しい順）", range(len(records)), key=f"hist_pick_{sheet}", format_func=lambda i: label(records[i]))
         pdf = pdfgen.pdf_from_history(records[picked])
         if pdf is None:
             st.warning("この記録は詳細が読みこめませんでした。")

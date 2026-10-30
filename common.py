@@ -305,6 +305,20 @@ def no_keyboard_selects():
     st.html(_NO_KEYBOARD_JS, unsafe_allow_javascript=True)
 
 
+def pick(label, options, key, format_func=str, index=0):
+    """選択式（文字を入力しないので、スマホでキーボードが出ない）。
+    「ラベル：いまの選択 ▾」のボタンを押すと、選択肢の一覧（ラジオボタン）が開く。えらんだ値を返す。"""
+    options = list(options)
+    if not options:
+        return None
+    if st.session_state.get(key) not in options:
+        st.session_state[key] = options[min(max(index or 0, 0), len(options) - 1)]
+    current = st.session_state[key]
+    with st.popover(f"{label}：{format_func(current)}", use_container_width=True):
+        st.radio(label, options, key=key, format_func=format_func, label_visibility="collapsed")
+    return st.session_state[key]
+
+
 def anchor(name):
     """jump_to で飛べる目印"""
     st.markdown(f"<div id='kz-{name}' style='position:relative;top:-70px'></div>", unsafe_allow_html=True)

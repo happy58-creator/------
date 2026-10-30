@@ -156,9 +156,8 @@ if state == "menu":
         )
         st.session_state.ty_mode = "みながらモード" if "みながら" in mode_choice else "あんもくモード"
         levels = list(LEVEL_TARGET)
-        st.session_state.ty_level = st.selectbox(
-            "年れい（点数の「スピード」の目標に使うよ）", levels, index=common.age_level_index(len(levels)),
-        )
+        st.session_state.ty_level = common.pick("年れい", levels, key="ty_level_pick", index=common.age_level_index(len(levels)))
+        st.caption("年れいは、点数の「スピード」の目標に使うよ。")
 
     with st.container(border=True):
         st.subheader("✍️ どんなテーマでもんだいを作る？")
