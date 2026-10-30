@@ -289,8 +289,9 @@ def learn_tab(grade):
     ss = st.session_state
     school = school_of(grade)
     classic_ok = K.GRADES.index(grade) >= 4          # 古典は小5から
-    lectures = [lec for lec in KL.lectures_for(school) if classic_ok or lec["group"] != "古典"]
-    lectures.sort(key=lambda lec: KL.GROUP_ORDER.index(lec["group"]))
+    lectures = [lec for lec in KL.lectures_for(school) if classic_ok or lec.get("group", "古典") != "古典"]
+    order = getattr(KL, "GROUP_ORDER", ["読解", "文法・表現", "言葉・漢字", "古典"])
+    lectures.sort(key=lambda lec: order.index(lec.get("group", "古典")) if lec.get("group", "古典") in order else len(order))
     items = [("lec_" + lec["id"], lec) for lec in lectures]
     if classic_ok:
         items += [("work_" + w["id"], w) for w in KC.candidates("高" if school == "高" else "中", tuple(KC.KIND_NAMES))]
@@ -308,7 +309,7 @@ def learn_tab(grade):
     quizzes = ss.setdefault("jp_lq_map", {})
     section = None
     for n, (uid, obj) in enumerate(items, 1):
-        head = ({"読解": "📖 読解のコツ", "文法・表現": "✏️ 文法・表現", "言葉・漢字": "🈶 言葉・漢字", "古典": "📜 古典のミニ講座"}[obj["group"]]
+        head = ({"読解": "📖 読解のコツ", "文法・表現": "✏️ 文法・表現", "言葉・漢字": "🈶 言葉・漢字", "古典": "📜 古典のミニ講座"}[obj.get("group", "古典")]
                 if uid.startswith("lec_") else "📜 古典の作品を読む")
         if head != section:
             st.markdown(f"### {head}")
@@ -320,7 +321,7 @@ def learn_tab(grade):
                 st.markdown(f"#### {n}. {lec['emoji']} {lec['title']}{done_mark(uid)}")
                 st.markdown(f"💡 {lec['intro']}")
                 st.markdown("**おぼえよう**\n" + "\n".join(f"- {p}" for p in lec["points"]))
-                st.markdown("**📜 作品の中で見てみよう**" if lec["group"] == "古典" else "**👀 例**")
+                st.markdown("**📜 作品の中で見てみよう**" if lec.get("group", "古典") == "古典" else "**👀 例**")
                 for text, note in lec["examples"]:
                     st.markdown(f"> {text}")
                     st.caption("👉 " + note)
