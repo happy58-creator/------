@@ -911,7 +911,16 @@ def abandon_run(profile):
 # ---------------------------------------------------------------------------
 # 戦闘コンポーネントに渡す設定
 # ---------------------------------------------------------------------------
-def assist_config(ally_lv, enemy, extra, rescue=False):
+def assist_chance(n_allies):
+    """アステルがたまたま来る確率：仲間1体で chance（1%）、chance_allies[1]体（4体）以上で chance_min（0.0001%）。あいだは直線"""
+    a = story_data.ASSIST
+    lo_n, hi_n = a.get("chance_allies", (1, 4))
+    hi, lo = a["chance"], a.get("chance_min", a["chance"])
+    n = max(lo_n, min(hi_n, int(n_allies or 1)))
+    return hi + (lo - hi) * (n - lo_n) / (hi_n - lo_n)
+
+
+def assist_config(ally_lv, enemy, extra, rescue=False, n_allies=1):
     """アステルの援護（たまたま来る・精霊の羽で呼ぶ）。Lv.10 とアビリティのステータスで、必殺技を撃つ"""
     a = story_data.ASSIST
     helper = get_ally(a["ally"])
@@ -923,7 +932,7 @@ def assist_config(ally_lv, enemy, extra, rescue=False):
     return {
         "random": not extra and ally_lv != a["ally"],     # たまたま来るのは、エクストラ以外・アステル以外のとき
         "rescue": bool(rescue) and not extra,            # はじめて倒れそうになったとき、必ず助けに来る
-        "chance": a["chance"], "who": helper["name"], "speaker": short_name(a["ally"]), "name": skill["name"],
+        "chance": assist_chance(n_allies), "who": helper["name"], "speaker": short_name(a["ally"]), "name": skill["name"],
         "damage": raw if skill.get("pierce") else damage(raw, enemy["def"]), "damage_break": raw,
         "break_turns": skill.get("break", 0), "scene": skill.get("scene"),
         "immune": [s for ab in helper["abilities"] for s in ab.get("immune", [])],   # 精霊の羽：精霊の加護
@@ -1103,7 +1112,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         },
         "skill": (skill := skill_config(ally_lv, ally, enemy, max_hp, charge)),
         "assist": assist_config(ally_lv, enemy, extra,
-                                rescue=profile is not None and not profile.get("rescue_used", False)),   # アステルの援護
+                                rescue=profile is not None and not profile.get("rescue_used", False),   # アステルの援護
+                                n_allies=len(owned_allies(profile)) if profile is not None else 1),
         # エクストラ（宇宙龍）だけ：HPが半分を切ると覚醒する
         "awaken": awaken_config(ally, max_hp, skill) if extra else None,
         "status": status,
