@@ -53,7 +53,8 @@ def kz_args(config):
            "hit_masks": [story_assets.kz_hit_mask_uri(e) for e in foes]}
     aw = foes[0].get("awaken") if len(foes) == 1 and config.get("awaken") else None
     if aw:
-        awake = {**foes[0], "image": aw["image"], "cutout": aw.get("cutout", True), "name": aw["name"]}
+        awake = {**foes[0], "image": aw["image"], "cutout": aw.get("cutout", foes[0].get("cutout", True)), "name": aw["name"],
+                 "focus": aw.get("focus", foes[0].get("focus"))}
         out["awaken_scene_html"] = story_assets.kz_stage_html([awake], config["area"], bg, scene)
         out["awaken_hit_mask"] = story_assets.kz_hit_mask_uri(awake)
         if aw.get("special"):

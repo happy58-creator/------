@@ -503,6 +503,8 @@
   #party { display:none; gap:6px; max-width:720px; margin:0 auto 6px; pointer-events:auto; }
   #party.on { display:flex; }
   #party .pm { flex:1; min-width:0; display:flex; align-items:center; gap:5px; padding:4px 6px; border-radius:10px; background:rgba(20,16,26,.75); border:1px solid rgba(255,255,255,.15); }
+  #party #autoBtn { flex:none; width:52px; border-radius:10px; border:1px solid rgba(255,255,255,.25); background:rgba(20,16,26,.8); color:#ddd; font:800 10px/1.25 sans-serif; padding:3px 0; }
+  #party #autoBtn.on { background:linear-gradient(#ffd56a,#e09a2a); color:#2a1a00; border-color:#ffe9a8; box-shadow:0 0 10px rgba(255,210,100,.6); }
   #party .pm.act { border-color:#ffe28a; box-shadow:0 0 10px rgba(255,220,120,.5); }
   #party .pm.dead { opacity:.45; filter:grayscale(1); }
   #party .pm img { width:26px; height:26px; border-radius:50%; object-fit:cover; flex:none; }
@@ -698,7 +700,7 @@ function start(args) {
   $("stage").innerHTML = args.scene_html;
   G = {
     round: c.round, cfg: c, enemyHp: c.enemy.max_hp, allyHp: c.ally.hp,
-    phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0,
+    phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0, defDown: 0,
     bag: Object.fromEntries(c.items.map((i) => [i.id, i.count])), used: {},
     taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, startAt: performance.now(), hitMask: null,
     tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {}, equipIcons: args.equip_icons || {},
@@ -854,6 +856,7 @@ function updateBadges() {
   if (G.barrier > 0) html.push(`<span class="badge skill" data-tip="barrier">🔰 障壁 あと${G.barrier}回</span>`);
   if (G.eBreak > 0) html.push(`<span class="badge skill" data-tip="break">💥 敵の防御0 あと${G.eBreak}</span>`);
   if (G.ward > 0) html.push(`<span class="badge skill" data-tip="ward">📜 封炎 あと${G.ward}</span>`);
+  if (G.defDown > 0) html.push(`<span class="badge" style="background:#5a1a1a" data-tip="defdown">🛡️⬇ 防御ダウン あと${G.defDown}</span>`);
   if (G.blessing) html.push(`<span class="badge skill" data-tip="blessing">✨ 精霊の加護</span>`);
   $("badges").innerHTML = html.join("");
   G.shownStatus = now;
@@ -1523,6 +1526,14 @@ async function resolveSpell(sp, rate) {
   const crit = (sp.kind === "attack" || sp.kind === "heal" || sp.kind === "mana") && Math.random() < critChance;
   const cm = crit ? M.magic_crit_mult : 1;
   if (crit) { G.crits++; await banner("会心！", `${sp.name}の効果 ×${M.magic_crit_mult}`, 650, "win"); }
+  if (sp.target === "allies" && sp.kind !== "attack") {          // 味方全員（パーティ全員。1人なら自分）
+    const caster0 = G.mi;
+    fxEl("flash", { background: "rgba(255,255,255,.35)" }); fxEl("ring", { "--c": el.color, "--s": 70 }); particles("#fff3c0", 30, 70);
+    for (const i of (G.party ? aliveMembers() : [null])) { if (i !== null) memberLoad(i); await applySupport(sp, k, rate, cm); await sleep(250); }
+    if (G.party) memberLoad(caster0);
+    updateBars(); updateBadges(); if (G.party) renderParty();
+    return;
+  }
   const caster = G.mi, tgt = G.spellTarget; G.spellTarget = null;
   if (tgt != null && tgt !== caster && sp.kind !== "attack") memberLoad(tgt);
   const T = G.cfg.ally, me2 = $("allyIcon").getBoundingClientRect();
@@ -1706,10 +1717,14 @@ $("app").addEventListener("pointerdown", (ev) => {
   if (i >= 0 && i !== G.sel) selectFoe(i);
 });
 
-async function attackMulti() {
+async function attackMulti(auto) {
   G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
-  await banner("よーい……", G.status.freeze > 0 ? "❄️ 凍えて 連打の時間が短い！" : G.status.wind > 0 ? "🌪️ 突風で 敵がゆれている！" : "", 700);
-  await banner("スタート！", "", 450);
+  if (auto) await banner("オート", `${G.cfg.ally.name.split("、").pop()}の攻撃`, 650);
+  else {
+    await banner("よーい……", G.status.freeze > 0 ? "❄️ 凍えて 連打の時間が短い！" : G.status.wind > 0 ? "🌪️ 突風で 敵がゆれている！"
+      : G.cfg.ally.caster && G.foes.length > 1 ? "🔮 魔法系：光っている敵だけに当たる" : "", 700);
+    await banner("スタート！", "", 450);
+  }
   G.phase = "tapping"; G.tapHits = 0; G.tapDamage = 0;
   for (const f of G.foes) { f.tapDamage = 0; f.tapHits = 0; }
   foeSave();
@@ -1720,13 +1735,13 @@ async function attackMulti() {
   const t0 = performance.now(), dur = attackMs();
   const critRate = currentCrit(), critMult = (G.cfg.magic || {}).crit_mult || 2;
   const brave = G.braveTurns > 0 ? G.braveMult : 1;
-  $("tapzone").onpointerdown = (ev) => {
-    ev.preventDefault();
+  const doTap = (i, x, y) => {
     if (G.phase !== "tapping") return;
     G.taps++;
-    const i = foeAt(ev.clientX, ev.clientY);
+    if (i >= 0 && G.cfg.ally.caster && G.foes.length > 1 && i !== G.sel) i = -1;   // 魔法系：ねらった敵1体にだけ当たる
     const sp = document.createElement("div"); sp.className = "spark" + (i >= 0 ? "" : " miss");
-    sp.style.left = ev.clientX + "px"; sp.style.top = ev.clientY + "px"; $("app").appendChild(sp); setTimeout(() => sp.remove(), 380);
+    sp.style.left = x + "px"; sp.style.top = y + "px"; $("app").appendChild(sp); setTimeout(() => sp.remove(), 380);
+    const ev = { clientX: x, clientY: y };
     if (i < 0) { G.misses++; return; }
     const f = G.foes[i], broken = f.eBreak > 0, t = f.tap;
     const perTap = G.atkTurns > 0 ? (broken ? t.tap_damage_up_break : t.tap_damage_up) : (broken ? t.tap_damage_break : t.tap_damage);
@@ -1739,7 +1754,19 @@ async function attackMulti() {
     $("combo").querySelector(".c").textContent = G.tapHits;
     $("combo").querySelector(".d").textContent = fmt(G.tapDamage) + " ダメージ";
     const el = foeEl(i); el.classList.add("hit"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("hit"), 60);
-    if (navigator.vibrate) navigator.vibrate(8);
+    if (navigator.vibrate && !auto) navigator.vibrate(8);
+  };
+  if (auto) {                                   // オート：決まった回数を、時間いっぱいに散らしてタップ
+    $("tapzone").onpointerdown = (ev) => ev.preventDefault();
+    const n = Math.round(autoTaps() * dur / ((G.cfg.attack_ms) || 3000));
+    const alive = aliveFoes();
+    for (let k = 0; k < n; k++) setTimeout(() => {
+      const i = G.cfg.ally.caster || Math.random() < 0.7 || alive.length < 2 ? G.sel : pick(alive);
+      const c = foeCenter(i); doTap(i, c.x + (Math.random() - 0.5) * 50, c.y + (Math.random() - 0.5) * 70);
+    }, (k + Math.random() * 0.8) * (dur - 60) / n);
+  } else $("tapzone").onpointerdown = (ev) => {
+    ev.preventDefault();
+    doTap(foeAt(ev.clientX, ev.clientY), ev.clientX, ev.clientY);
   };
   await new Promise((resolve) => {
     const tick = () => {
@@ -1811,8 +1838,10 @@ function bodyPoints(img, m) {
     if (m.data[(y * m.w + x) * 4] > 127) pts.push([g.ox + (x + .5) / m.w * g.dw, g.oy + (y + .5) / m.h * g.dh]);
   return pts.filter((p) => p[0] >= 0 && p[1] >= 0 && p[0] <= window.innerWidth && p[1] <= window.innerHeight);
 }
+function aimSize(sp) { const M = G.cfg.magic; return Math.round(Math.max(54, Math.min(sp.circle * (M.aim_size || 0.6), window.innerWidth * 0.5))); }
 async function aimPhase(sp) {
   const M = G.cfg.magic, A = M.aim || { weak: 1.5, full: 1, part: 0.8, miss: 0.1 };
+  if (G.autoNow) return autoAim(sp);
   const img = curTarget();
   const mask = G.multi && G.foes.length > 1 ? G.foes[G.cur].mask : G.hitMask;
   const pts = img ? bodyPoints(img, mask) : [];
@@ -1822,7 +1851,7 @@ async function aimPhase(sp) {
   const cand = pts.filter((p) => p[1] < y0 + (y1 - y0) * 0.6 && p[1] > y0 + (y1 - y0) * 0.1 && Math.abs(p[0] - (x0 + x1) / 2) < (x1 - x0) * 0.22);
   const wp = pick(cand.length ? cand : pts);
   const el = elemOf(sp), box = $("aim"), ring = box.querySelector(".aring"), dot = box.querySelector(".wdot");
-  const size = Math.round(Math.max(70, Math.min(sp.circle * (M.aim_size || 0.6), window.innerWidth * 0.6)));
+  const size = aimSize(sp);
   box.style.setProperty("--c", el.color);
   ring.style.width = ring.style.height = size + "px";
   dot.style.left = wp[0] + "px"; dot.style.top = wp[1] + "px";
@@ -1835,8 +1864,9 @@ async function aimPhase(sp) {
   await new Promise((resolve) => {
     const tick = () => {
       const t = (performance.now() - t0) / 1000;
-      cx = W / 2 + W * 0.34 * Math.sin(1.7 * t + ph1);
-      cy = H * 0.42 + H * 0.2 * Math.sin(2.4 * t + ph2);
+      const v = M.aim_speed || 1;
+      cx = W / 2 + W * 0.34 * Math.sin(1.7 * v * t + ph1);
+      cy = H * 0.42 + H * 0.2 * Math.sin(2.4 * v * t + ph2);
       ring.style.left = cx + "px"; ring.style.top = cy + "px";
       if (stopped || t * 1000 >= (M.aim_ms || 4000)) resolve(); else requestAnimationFrame(tick);
     };
@@ -1856,6 +1886,144 @@ async function aimPhase(sp) {
   return mult;
 }
 
+// ---------------------------------------------------------------------------
+// サブのオート（リーダー以外を自動で動かす）
+// ---------------------------------------------------------------------------
+function foeCenter(i) {
+  const el = foeEl(i); if (!el) return { x: window.innerWidth / 2, y: window.innerHeight * 0.4 };
+  const r = el.getBoundingClientRect(), f = G.foes[i], m = f && (G.foes.length === 1 ? G.hitMask : f.mask);
+  return { x: r.left + r.width * (m ? m.cx : 0.5), y: r.top + r.height * (m ? m.cy : 0.5) };
+}
+// 1ターンの連打の回数：中央値のまわりでばらつく（AUTO_TAPS の範囲）
+function autoTaps() {
+  const [lo, hi] = G.cfg.magic.auto_taps || [25, 110], med = G.cfg.ally.auto_median || 50;
+  const u = Math.max(1e-6, Math.random()), v = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  return Math.max(lo, Math.min(hi, Math.round(med * Math.exp(0.32 * z))));
+}
+// ねらい：円の大きさに応じた確率で結果を決める
+async function autoAim(sp) {
+  const M = G.cfg.magic, A = M.aim, P = M.auto_aim || { weak: 0.2, full: 0.31, part: 0.39, miss: 0.1 };
+  const s = Math.pow(aimSize(sp) / (M.auto_aim_ref || aimSize(sp)), 2);      // 面積の比
+  const weak = Math.min(0.6, P.weak * s), miss = Math.max(0.02, Math.min(0.4, P.miss / s));
+  const rest = Math.max(0, 1 - weak - miss), full = rest * P.full / (P.full + P.part);
+  const r = Math.random();
+  const key = r < weak ? "weak" : r < weak + full ? "full" : r < 1 - miss ? "part" : "miss";
+  const label = { weak: "弱点ヒット！", full: "命中！", part: "かすった", miss: "はずれ…" }[key];
+  const c = enemyCenter(); fxEl("ring", { "--c": key === "weak" ? "#ff2a2a" : "#ffffff", "--s": 30, left: c.x + "px" });
+  popAt(c.x, c.y - 40, `${label} ×${A[key]}`, key === "weak" ? "big" : "info");
+  await sleep(700);
+  return A[key];
+}
+// 何をするか：魔法系は回復・攻撃の魔法、戦士系は連打（たまに強化の魔法）
+function autoPlan() {
+  const sps = (G.cfg.spells || []).filter((sp) => G.mp >= spellCost(sp) && !spellBlocked(sp));
+  memberSave();
+  const alive = aliveMembers(), low = alive.filter((i) => G.members[i].st.allyHp < G.members[i].ally.max_hp * 0.4);
+  const has = (f) => sps.filter(f);
+  if (G.members.some((m) => m.dead)) { const rv = has((sp) => sp.kind === "revive"); if (rv.length) return { spell: rv[0], target: G.members.findIndex((m) => m.dead) }; }
+  if (low.length) {
+    const all = has((sp) => sp.target === "allies" && sp.kind === "heal");
+    if (all.length && low.length >= 2) return { spell: all[0] };
+    const one = has((sp) => sp.target === "ally" && (sp.kind === "heal" || sp.kind === "full"));
+    if (one.length) { const t = low.sort((a, b) => G.members[a].st.allyHp / G.members[a].ally.max_hp - G.members[b].st.allyHp / G.members[b].ally.max_hp)[0];
+                      return { spell: one[one.length - 1], target: t }; }
+    if (all.length) return { spell: all[0] };
+  }
+  if (Object.values(G.status).some((t) => t > 0)) { const cu = has((sp) => sp.kind === "cure" && sp.target !== "ally"); if (cu.length && Math.random() < 0.5) return { spell: cu[0] }; }
+  const atk = has((sp) => sp.kind === "attack");
+  if (G.cfg.ally.caster && atk.length) {
+    const many = aliveFoes().length >= 2, e = G.cfg.enemy;
+    const score = (sp) => (sp.power || 60) * (sp.target === "enemies" ? (many ? aliveFoes().length : 1) * (G.cfg.magic.all_rate || 0.45) : G.cfg.magic.single_mult || 1.5)
+                          * (sp.element && sp.element === e.weak ? 1.5 : sp.element && sp.element === e.resist_elem ? 0.5 : 1);
+    const best = atk.slice().sort((a, b) => score(b) - score(a))[0];
+    if (Math.random() < 0.85) return { spell: best };
+  }
+  if (!G.cfg.ally.caster) {
+    const buff = has((sp) => (sp.kind === "brave" && !(G.braveTurns > 0)) || (sp.kind === "protect" && sp.target === "allies" && !(G.guardTurns > 0)));
+    if (buff.length && Math.random() < 0.3) return { spell: pick(buff), target: buff[0].target === "ally" ? G.mi : null };
+  }
+  return {};
+}
+async function autoCast(sp, target) {
+  G.spellTarget = target != null ? target : null;
+  $("magicSheet").classList.remove("open"); $("sheet").classList.remove("open");
+  G.phase = "chant"; setButtons(false); updateSkill();
+  const cost = spellCost(sp); G.mp -= cost; G.usedMp += cost; G.casts++; updateBars();
+  const M = G.cfg.magic, need = chantNeed(), ms = need / M.chant_tps * 1000;
+  const inside = Math.round(autoTaps() * ms / (G.cfg.attack_ms || 3000));
+  const el = elemOf(sp); fxEl("ring", { "--c": el.color, "--s": 50 }); particles(el.color, 16, 40);
+  G.chantTaps += inside;
+  const rate = Math.max(M.chant_min, Math.min(1, inside / need));
+  await banner(`オート：${sp.name}`, `詠唱率 ${Math.round(rate * 100)}%`, 900);
+  G.phase = "spell"; G.autoNow = true;
+  try { await resolveSpell(sp, rate); } finally { G.autoNow = false; }
+  if (G.magTurns > 0) G.magTurns--;
+  updateBars(); updateBadges();
+  await sleep(900);
+  await afterAction();
+}
+async function autoAct() {
+  if (!G || G.phase !== "player" || !G.autoSub || !G.party || G.mi === 0) return;
+  if (G.cfg.skill && !G.skillUsed && G.charge >= G.cfg.skill.charge) { await useSkill(); if (G.phase !== "player") return; }
+  if (G.status.thunder > 0) { G.phase = "pass"; setButtons(false); await sleep(G.cfg.pause_ms); return nextOrEnemy(); }
+  const plan = autoPlan();
+  if (plan.spell) return autoCast(plan.spell, plan.target);
+  return attackMulti(true);
+}
+function loadAuto() { try { return localStorage.getItem("story_auto_sub") === "1"; } catch (e) { return false; } }
+function saveAuto(v) { try { localStorage.setItem("story_auto_sub", v ? "1" : "0"); } catch (e) { /* 保存できなくても動く */ } }
+
+// 回復・強化の魔法を、いま入っている人（G.mi）にかける（味方全員の魔法で使う）
+async function applySupport(sp, k, rate, cm) {
+  const T = G.cfg.ally, me = $("allyIcon").getBoundingClientRect(), mx = me.left + me.width / 2 + 60;
+  if (sp.kind === "heal" || sp.kind === "mana" || sp.kind === "full") {
+    const before = G.allyHp;
+    G.allyHp = Math.min(T.max_hp, G.allyHp + (sp.kind === "full" ? T.max_hp * rate : T.max_hp * (sp.heal || 0) * k * rate * cm));
+    if (sp.mp_heal) G.mp = Math.min(T.max_mp, G.mp + T.max_mp * sp.mp_heal * k * rate * cm);
+    popAt(mx, me.top, "+" + fmt(G.allyHp - before), "heal");
+  } else if (sp.kind === "cure") {
+    for (const id of Object.keys(G.status)) G.status[id] = 0;
+  } else if (sp.kind === "protect") {
+    G.guardTurns = Math.max(G.guardTurns, Math.max(1, Math.round(sp.turns * (0.5 + 0.5 * k) * rate)));
+    popAt(mx, me.top, "防御2倍", "heal");
+  } else if (sp.kind === "brave") {
+    G.braveTurns = Math.max(1, Math.round(sp.turns * (0.5 + 0.5 * k) * rate)); G.braveMult = 1 + sp.power * k * rate;
+    popAt(mx, me.top, `攻撃×${Math.round(G.braveMult * 100) / 100}`, "info");
+  } else if (sp.kind === "haste") {
+    G.hasteSpellTurns = Math.max(1, Math.round(sp.turns * rate)); G.hasteSpellMs = Math.round(sp.seconds * 1000);
+    popAt(mx, me.top, `連打 +${sp.seconds}秒`, "info");
+  }
+  updateBars(); updateBadges();
+}
+
+// 魔法の演出（属性ごと。強い魔法・全体の魔法ほど派手に）
+async function magicFx(sp, el) {
+  const big = sp.target === "enemies" || sp.power >= 90, c = el.color;
+  fxEl("flash", { background: `color-mix(in srgb, ${c} 45%, transparent)` });
+  if (sp.element === "fire") {
+    EFFECTS.fire(c); particles("#ffd36a", 26, 55);
+    if (big) { setTimeout(() => { fxEl("pillar", { "--c": c }); EFFECTS.fire("#ff5a1a"); }, 220); }
+  } else if (sp.element === "ice") {
+    shards(c, big ? 34 : 20); fxEl("ring", { "--c": c, "--s": 45 });
+    if (big) setTimeout(() => { shards("#ffffff", 24); fxEl("flash", { background: "rgba(200,240,255,.5)" }); }, 260);
+  } else if (sp.element === "thunder") {
+    EFFECTS.thunder(c); setTimeout(() => EFFECTS.thunder("#ffffff"), 150);
+    if (big) setTimeout(() => { EFFECTS.thunder(c); fxEl("flash", { background: "rgba(255,250,200,.7)" }); }, 320);
+  } else if (sp.element === "light") {
+    fxEl("pillar", { "--c": c }); fxEl("rays", { "--c": c });
+    if (big) setTimeout(() => { fxEl("pillar", { "--c": "#ffffff" }); rising(c, 30); }, 260);
+  } else if (sp.element === "dark") {
+    fxEl("implode"); fxEl("vignette", { "--c": "rgba(40,0,60,.75)" });
+    setTimeout(() => { fxEl("ring", { "--c": c, "--s": 60 }); particles(c, 24, 55); }, 380);
+  } else {
+    EFFECTS.cosmic(c);
+    if (big) setTimeout(() => { fxEl("ring", { "--c": c, "--s": 80 }); particles("#ffffff", 30, 75); }, 250);
+  }
+  if (big) { $("stage").classList.add("quake"); setTimeout(() => $("stage").classList.remove("quake"), 700); }
+  await sleep(big ? 700 : 450);
+}
+
 // 攻撃魔法1回ぶん（いま G.cur にいる敵へ）
 async function spellHit(sp, rate, cm, el, M, fx, aim) {
   const e = G.cfg.enemy;
@@ -1865,10 +2033,7 @@ async function spellHit(sp, rate, cm, el, M, fx, aim) {
   const def = G.eBreak > 0 ? 0 : e.def * M.def_rate;
   const dmg = raw * (1 - def / (def + M.defense_k));
   if (fx) {
-    const kind = { fire: "fire", thunder: "thunder", ice: "magic", light: "radiance", dark: "void", none: "magic" }[sp.element] || "magic";
-    (EFFECTS[kind] || EFFECTS.magic)(el.color);
-    if (sp.target === "enemies" || sp.power >= 130) setTimeout(() => { fxEl("ring", { "--c": el.color, "--s": 60 }); particles(el.color, 20, 60); }, 250);
-    await sleep(420);
+    await magicFx(sp, el);
     shake();
     if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
   }
@@ -1947,6 +2112,7 @@ async function enemyTurnMulti() {
   }
   if (!G.party && G.guardTurns > 0) G.guardTurns--;
   if (!G.party && G.ward > 0) G.ward--;
+  if (!G.party && G.defDown > 0) G.defDown--;
   foeLoad(G.foes[keep] && !G.foes[keep].dead ? keep : G.sel);
   markSel(); updateBars(); updateBadges();
   const as = G.cfg.assist;
@@ -1957,6 +2123,19 @@ async function enemyTurnMulti() {
   playerTurn();
 }
 
+// 防御ダウン中は受けるダメージが増える（防御力が半分のときの倍率。キャラごとに計算済み）
+function ddMult() { return G.defDown > 0 ? (G.cfg.ally.defdown_mult || 1.3) : 1; }
+// ボスの全体攻撃：立っている全員に（1人あたり rate 倍）。最後の1人以外が倒れたら戦闘不能に
+async function aoeHit(rate) {
+  const idx = G.party ? aliveMembers() : [null];
+  for (const i of idx) {
+    if (i !== null) memberLoad(i);
+    const r = $("allyIcon").getBoundingClientRect(), e = G.cfg.enemy;
+    hurt((G.guardTurns > 0 ? e.hit_damage_guard : e.hit_damage) * rate * ddMult(), r.left + r.width / 2 + 70, r.top - 10);
+    await sleep(320);
+    if (G.party && G.allyHp <= 1e-9 && aliveMembers().length > 1) await memberFell();
+  }
+}
 // 敵1体の攻撃1回。"won"（援護で勝った）/ "lose" / "saved"（倒れそうになって立ち上がった）/ ""
 async function foeAttack(i) {
   if (G.party) pickTarget();
@@ -2016,6 +2195,10 @@ async function foeAttack(i) {
     EFFECTS.cosmic("#d27bff"); fxEl("vignette", { "--c": "rgba(40,0,60,.85)" }); await sleep(380); shake();
     hurt(G.cfg.ally.max_hp * sp.damage_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
     newStatus = inflict("black_flame");
+    if (sp.def_down && G.allyHp > 1e-9) {                 // 業火：防御力ダウン
+      G.defDown = Math.max(G.defDown, sp.def_down_turns || 3);
+      setTimeout(() => popAt(window.innerWidth / 2, window.innerHeight * 0.5, `🛡️⬇ 防御力 ${Math.round(sp.def_down * 100)}%ダウン！`, "info"), 500);
+    }
   } else {
     if (espell) {
       const kind = { fire: "fire", thunder: "thunder", ice: "magic", dark: "void", wind: "ghost" }[espell.element] || "magic";
@@ -2023,8 +2206,18 @@ async function foeAttack(i) {
     } else (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color);
     if (heavyNow) { fxEl("vignette", { "--c": "rgba(255,40,40,.6)" }); fxEl("flash", { background: "rgba(255,120,120,.35)" }); }
     await sleep(380); shake();
-    const base = G.guardTurns > 0 ? e.hit_damage_guard : e.hit_damage;
-    hurt(base * mult * (heavyNow ? e.heavy : 1), r.left + r.width / 2 + 70, r.top - 10);
+    const base = (G.guardTurns > 0 ? e.hit_damage_guard : e.hit_damage) * ddMult();
+    const bc = G.cfg.boss_attack;
+    if (e.aoe && bc && !heavyNow && Math.random() < bc.aoe_chance) {        // ボス：全体攻撃
+      popAt(window.innerWidth / 2, window.innerHeight * 0.4, "🌀 全体攻撃！", "info");
+      fxEl("vignette", { "--c": "rgba(255,60,60,.45)" });
+      await aoeHit(bc.aoe_rate * mult);
+    } else if (e.aoe && bc && !heavyNow) {                                // ボス：1人への強い一撃
+      hurt(base * mult * bc.single_rate, r.left + r.width / 2 + 70, r.top - 10);
+      popAt(window.innerWidth / 2, window.innerHeight * 0.4, "⚔️ 強烈な一撃！", "info");
+    } else {
+      hurt(base * mult * (heavyNow ? e.heavy : 1), r.left + r.width / 2 + 70, r.top - 10);
+    }
     if (heavyNow) popAt(window.innerWidth / 2, window.innerHeight * 0.4, "💥 重い一撃！", "info");
     if (preStatus) newStatus = inflict(preStatus);
   }
@@ -2052,7 +2245,7 @@ async function foeAttack(i) {
 // ほかの人の数字は G.members[i].st にしまっておく（memberLoad で入れかえる）
 // ---------------------------------------------------------------------------
 const MKEYS = ["allyHp", "mp", "status", "charge", "skillUsed", "usedItem", "atkTurns", "guardTurns", "critTurns", "critBonus", "magTurns", "magMult",
-               "hasteItemTurns", "hasteItemMs", "hasteSpellTurns", "hasteSpellMs", "braveTurns", "braveMult", "boost", "barrier", "ward", "blessing"];
+               "hasteItemTurns", "hasteItemMs", "hasteSpellTurns", "hasteSpellMs", "braveTurns", "braveMult", "boost", "barrier", "ward", "blessing", "defDown"];
 function initParty(c, args) {
   G.party = !!(c.party && c.party.length);
   G.mi = 0; G.actQ = [];
@@ -2073,9 +2266,15 @@ function initParty(c, args) {
              status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0, freeze: 0, wind: 0 },
              charge: (m.skill && m.skill.start) || 0, skillUsed: false, usedItem: false, atkTurns: 0, guardTurns: 0, critTurns: 0, critBonus: 0,
              magTurns: 0, magMult: 1, hasteItemTurns: 0, hasteItemMs: 0, hasteSpellTurns: 0, hasteSpellMs: 0, braveTurns: 0, braveMult: 1,
-             boost: 1, barrier: 0, ward: 0, blessing: false };
+             boost: 1, barrier: 0, ward: 0, blessing: false, defDown: 0 };
   }
   $("party").classList.add("on");
+  G.autoSub = loadAuto();
+  $("party").onclick = (ev) => {
+    if (!ev.target.closest("#autoBtn")) return;
+    G.autoSub = !G.autoSub; saveAuto(G.autoSub); renderParty();
+    if (G.autoSub && G.phase === "player" && G.mi !== 0) setTimeout(autoAct, 300);
+  };
   renderParty();
 }
 function memberSave() {
@@ -2115,7 +2314,7 @@ function renderParty() {
     return `<div class="pm${i === G.mi ? " act" : ""}${m.dead ? " dead" : ""}"><img src="${m.icon || ""}" alt="">` +
       `<div class="bars"><div class="nm">${esc(m.ally.name.split("、").pop())}</div>` +
       (m.dead ? `<div class="dl">戦闘不能</div>` : `<div class="hb"><div style="width:${hp}%"></div></div><div class="mb"><div style="width:${mp}%"></div></div>`) + `</div></div>`;
-  }).join("");
+  }).join("") + `<button type="button" id="autoBtn" class="${G.autoSub ? "on" : ""}" title="リーダー以外を自動で動かす">サブ<br>${G.autoSub ? "オート" : "手動"}</button>`;
 }
 // 自分のターン（パーティ）：立っている人が順番に1回ずつ。全員が動いたら敵のターン
 function partyTurn() {
@@ -2123,7 +2322,7 @@ function partyTurn() {
   if (!G.actQ.length) {
     // 新しいターン：防御アップ・封炎は全員ぶん1減らす
     memberSave();
-    for (const m of G.members) { if (m.st.guardTurns > 0 && G.turn > 0) m.st.guardTurns--; if (m.st.ward > 0 && G.turn > 0) m.st.ward--; }
+    for (const m of G.members) { if (m.st.guardTurns > 0 && G.turn > 0) m.st.guardTurns--; if (m.st.ward > 0 && G.turn > 0) m.st.ward--; if (m.st.defDown > 0 && G.turn > 0) m.st.defDown--; }
     Object.assign(G, G.members[G.mi].st);
     G.actQ = aliveMembers(); G.turn++;
   }
@@ -2133,6 +2332,7 @@ function partyTurn() {
   G.phase = "player"; G.usedItem = false; G.skillUsed = false;
   setButtons(true); updateSkill(); updateBars(); updateBadges(); renderParty();
   if (G.members.length > 1) { const r = $("allyIcon").getBoundingClientRect(); popAt(r.left + r.width / 2 + 90, r.top - 20, `${G.cfg.ally.name.split("、").pop()}のターン`, "info"); }
+  if (G.autoSub && i !== 0) { setButtons(false); setTimeout(autoAct, 1000); }
 }
 function nextOrEnemy() {
   if (G.party && (G.actQ || []).some((i) => !G.members[i].dead)) return playerTurn();
@@ -2566,7 +2766,7 @@ async function awaken() {
   $("enemyName").textContent = `Lv.${e.lv} ${A.name}`;
   await banner("覚醒", `${A.name} ― ${A.title}`, 1700, "lose");
   // 4. 減っているHPの一部を回復
-  const heal = (e.max_hp - G.enemyHp) * A.heal_rate;
+  const heal = A.heal_to ? Math.max(0, e.max_hp * A.heal_to - G.enemyHp) : (e.max_hp - G.enemyHp) * A.heal_rate;   // 風の番人：全体の80%まで
   if (heal > 0) {
     G.enemyHp = Math.min(e.max_hp, G.enemyHp + heal); updateBars();
     const c = enemyCenter(); popAt(c.x, c.y, "+" + fmt(heal), "heal");

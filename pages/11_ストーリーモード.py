@@ -492,9 +492,10 @@ def view_ally_picker():
   width: 100% !important; height: 100% !important; min-height: 0 !important; opacity: 0 !important; cursor: zoom-in !important; }
 </style>""")
     with box(BOX_H, key="story_picker", offset=110):
-        for row in range(0, len(story_data.ALLIES), 5):
+        mine = [a for a in story_data.ALLIES if a["lv"] in owned]       # 持っているキャラだけ（全員は攻略で見られる）
+        for row in range(0, len(mine), 5):
             cols = st.columns(5)
-            for col, ally in zip(cols, story_data.ALLIES[row:row + 5]):
+            for col, ally in zip(cols, mine[row:row + 5]):
                 lv = ally["lv"]
                 have = lv in owned
                 style = "" if have else "filter:grayscale(1) brightness(.45)"
@@ -534,9 +535,9 @@ header[data-testid="stHeader"] { display: none !important; }
 [data-testid="stMainBlockContainer"], .block-container { padding-top: .5rem !important; padding-bottom: .5rem !important; }
 /* 横並びのまま（スマホでも縦に積まない） */
 .st-key-story_head [data-testid="stHorizontalBlock"], .st-key-story_menu [data-testid="stHorizontalBlock"],
-.st-key-story_panel [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; align-items: center; }
-.st-key-story_panel [data-testid="stHorizontalBlock"] { align-items: flex-start; }
-.st-key-story_head [data-testid="stColumn"], .st-key-story_menu [data-testid="stColumn"], .st-key-story_panel [data-testid="stColumn"] {
+[class*="st-key-story_panel"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; align-items: center; }
+[class*="st-key-story_panel"] [data-testid="stHorizontalBlock"] { align-items: flex-start; }
+.st-key-story_head [data-testid="stColumn"], .st-key-story_menu [data-testid="stColumn"], [class*="st-key-story_panel"] [data-testid="stColumn"] {
   min-width: 0 !important; }
 .st-key-story_head h3 { margin: 0 !important; padding: 0 !important; font-size: 1.35rem !important; white-space: nowrap; }
 .st-key-story_head button { min-height: 32px !important; }
@@ -548,15 +549,15 @@ header[data-testid="stHeader"] { display: none !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(2) { min-width: 72px !important; }
 .st-key-story_menu [data-testid="stColumn"]:nth-child(3), .st-key-story_menu [data-testid="stColumn"]:nth-child(4) { min-width: 52px !important; }
 /* 画像（と装備のアイコン）の下：「装備」は少し離し、「装備」「アクセサリ」「アイテム」のあいだはつめる */
-.st-key-story_panel .st-key-_story_inv_equip { margin-top: 8px !important; }
-.st-key-story_panel .st-key-_story_inv_acc, .st-key-story_panel .st-key-_story_inv_item, .st-key-story_panel .st-key-_story_inv_spells { margin-top: 2px !important; }
+[class*="st-key-story_panel"] [class*="st-key-_story_inv_equip"] { margin-top: 8px !important; }
+[class*="st-key-story_panel"] [class*="st-key-_story_inv_acc"], [class*="st-key-story_panel"] [class*="st-key-_story_inv_item"], [class*="st-key-story_panel"] [class*="st-key-_story_inv_spells"] { margin-top: 2px !important; }
 /* 「キャラクター変更」はアビリティから少し離す */
-.st-key-story_panel .st-key-_story_change { margin-top: 12px !important; }
-.st-key-story_panel .st-key-_story_inv_equip button, .st-key-story_panel .st-key-_story_inv_acc button, .st-key-story_panel .st-key-_story_inv_item button,
-.st-key-story_panel .st-key-_story_inv_spells button {
+[class*="st-key-story_panel"] .st-key-_story_change { margin-top: 12px !important; }
+[class*="st-key-story_panel"] [class*="st-key-_story_inv_equip"] button, [class*="st-key-story_panel"] [class*="st-key-_story_inv_acc"] button, [class*="st-key-story_panel"] [class*="st-key-_story_inv_item"] button,
+[class*="st-key-story_panel"] [class*="st-key-_story_inv_spells"] button {
   white-space: nowrap !important; font-size: 12px !important; padding: 2px 2px !important; min-height: 34px !important; }
-.st-key-story_panel .st-key-_story_inv_equip p, .st-key-story_panel .st-key-_story_inv_acc p, .st-key-story_panel .st-key-_story_inv_item p,
-.st-key-story_panel .st-key-_story_inv_spells p { white-space: nowrap !important; font-size: 12px !important; }
+[class*="st-key-story_panel"] [class*="st-key-_story_inv_equip"] p, [class*="st-key-story_panel"] [class*="st-key-_story_inv_acc"] p, [class*="st-key-story_panel"] [class*="st-key-_story_inv_item"] p,
+[class*="st-key-story_panel"] [class*="st-key-_story_inv_spells"] p { white-space: nowrap !important; font-size: 12px !important; }
 .st-ctitle { margin: 0 0 6px; line-height: 1.35; }
 .st-ctitle b { font-size: 1.3rem; display: block; }
 .st-ctitle span { font-size: .9rem; opacity: .8; }
@@ -571,21 +572,40 @@ header[data-testid="stHeader"] { display: none !important; }
 .st-key-story_detail_btns [data-testid="stHorizontalBlock"] > div,
 .st-key-story_picker [data-testid="stHorizontalBlock"] > div { min-width: 0 !important; width: auto !important; flex: 1 1 0 !important; }
 .st-key-story_detail_btns button { min-height: 40px !important; padding: 4px 6px !important; }
-.st-key-story_panel button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
+[class*="st-key-story_panel"] button { padding: 4px 4px !important; min-height: 36px !important; font-size: 12px !important; }
 /* ホーム：キャラの画像・装備品の行・アクセサリの行を押せるように（透明なボタンを重ねる） */
-.st-key-story_tap_pic, .st-key-story_tap_gear, .st-key-story_tap_acc { position: relative !important; gap: 0 !important; cursor: pointer; }
-.st-key-story_panel [data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 4px !important; }
+[class*="st-key-story_tap_pic"], [class*="st-key-story_tap_gear"], [class*="st-key-story_tap_acc"] { position: relative !important; gap: 0 !important; cursor: pointer; }
+[class*="st-key-story_panel"] [data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 4px !important; }
 /* Streamlit の文字のかたまりは下に -1rem の余白があり、すき間をつめると上の部品と重なるので 0 にする */
-.st-key-story_tap_pic [data-testid="stMarkdown"], .st-key-story_tap_gear [data-testid="stMarkdown"], .st-key-story_tap_acc [data-testid="stMarkdown"],
-.st-key-story_tap_pic [data-testid="stMarkdownContainer"], .st-key-story_tap_gear [data-testid="stMarkdownContainer"],
-.st-key-story_tap_acc [data-testid="stMarkdownContainer"] { margin: 0 !important; }
-.st-key-story_tap_pic [data-testid="stElementContainer"], .st-key-story_tap_gear [data-testid="stElementContainer"],
-.st-key-story_tap_acc [data-testid="stElementContainer"] { margin: 0 !important; }
+[class*="st-key-story_tap_pic"] [data-testid="stMarkdown"], [class*="st-key-story_tap_gear"] [data-testid="stMarkdown"], [class*="st-key-story_tap_acc"] [data-testid="stMarkdown"],
+[class*="st-key-story_tap_pic"] [data-testid="stMarkdownContainer"], [class*="st-key-story_tap_gear"] [data-testid="stMarkdownContainer"],
+[class*="st-key-story_tap_acc"] [data-testid="stMarkdownContainer"] { margin: 0 !important; }
+[class*="st-key-story_tap_pic"] [data-testid="stElementContainer"], [class*="st-key-story_tap_gear"] [data-testid="stElementContainer"],
+[class*="st-key-story_tap_acc"] [data-testid="stElementContainer"] { margin: 0 !important; }
 [class*="st-key-_story_tap_"] { position: absolute !important; inset: 0 !important; z-index: 3; margin: 0 !important; }
 [class*="st-key-_story_tap_"] > div, [class*="st-key-_story_tap_"] .stButton, [class*="st-key-_story_tap_"] button {
   width: 100% !important; height: 100% !important; min-height: 0 !important; }
 [class*="st-key-_story_tap_"] button { opacity: 0 !important; padding: 0 !important; cursor: pointer !important; }
-.st-key-story_tap_pic:hover img, .st-key-story_tap_gear:hover, .st-key-story_tap_acc:hover { filter: brightness(1.12); }
+[class*="st-key-story_tap_pic"]:hover img, [class*="st-key-story_tap_gear"]:hover, [class*="st-key-story_tap_acc"]:hover { filter: brightness(1.12); }
+/* ホーム：上のリーダー・サブのわく */
+.pslots { display: flex; gap: 6px; margin: 2px 0 4px; }
+.pslot { flex: 1; min-width: 0; display: flex; gap: 6px; align-items: center; padding: 5px 6px; border-radius: 12px;
+  border: 1px dashed rgba(233,214,166,.35); background: rgba(20,16,26,.35); cursor: pointer; }
+.pslot.on { border: 1px solid rgba(255,226,138,.65); background: rgba(60,46,20,.45); }
+.pslot img, .pslot .pempty { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; flex: none; }
+.pslot .pempty { display: flex; align-items: center; justify-content: center; border: 1px dashed rgba(233,214,166,.4); opacity: .6; }
+.pslot div { min-width: 0; line-height: 1.2; }
+.pslot small { display: block; font-size: 10px; color: #ffe28a; white-space: nowrap; }
+.pslot b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pslot span { display: block; font-size: 10px; opacity: .7; white-space: nowrap; }
+/* ホーム：キャラのカードを横にスライド */
+.st-key-story_cards [data-testid="stHorizontalBlock"]:not([class*="st-key-story_panel"] [data-testid="stHorizontalBlock"]) {
+  flex-wrap: nowrap !important; overflow-x: auto !important; scroll-snap-type: x mandatory; gap: 10px !important;
+  padding-bottom: 6px; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.st-key-story_cards [data-testid="stHorizontalBlock"]:not([class*="st-key-story_panel"] [data-testid="stHorizontalBlock"]) > [data-testid="stColumn"] {
+  flex: 0 0 min(90%, 600px) !important; width: auto !important; min-width: 0 !important; scroll-snap-align: center; }
+.card-role { font-size: 12px; font-weight: 800; color: #b9ab90; margin: -4px 0 -6px; }
+.card-role.on { color: #ffe28a; }
 /* 準備画面：装備・アクセサリ・アイテムのボタン */
 .st-key-story_ready { max-width: 560px; margin: 0 auto; width: 100%; }
 .st-key-story_ready button { min-height: 48px !important; font-size: 15px !important; }
@@ -626,6 +646,111 @@ def story_header(title="⚔️ ストーリーモード", back=None):
                 go(view)
 
 
+
+def party_slots_html(party):
+    """ホームの上：リーダー・サブ・サブのわく（押すと、そのキャラのカードへ）"""
+    cells = []
+    for i in range(L.MAX_PARTY):
+        role = "👑 リーダー" if i == 0 else "サブ"
+        if i < len(party):
+            p_lv = party[i]
+            cells.append(f"<div class='pslot on' data-lv='{p_lv}'><img src='{story_assets.ally_icon_uri(p_lv)}'>"
+                         f"<div><small>{role}</small><b>{short_name(p_lv)}</b><span>Lv.{L.ally_level(profile, p_lv)}</span></div></div>")
+        else:
+            cells.append(f"<div class='pslot'><div class='pempty'>＋</div><div><small>{role}</small><b>あき</b><span>カードで追加</span></div></div>")
+    return "<div class='pslots'>" + "".join(cells) + "</div>"
+
+
+def ally_card(lv, party, run):
+    """ホームのキャラのカード（画像・装備・ステータス・パーティのボタン）"""
+    leader = party[0]
+    role = "👑 リーダー" if lv == leader else "🤝 サブ" if lv in party else ""
+    with st.container(border=True, key=f"story_panel_{lv}"):
+        st.markdown(f"<div class='card-role{' on' if role else ''}'>{role or '　'}</div>", unsafe_allow_html=True)
+        pic, gear_row, acc_row, right = ally_panel_parts(lv, split=True)
+        col_pic, col_info = st.columns([3, 7])
+        with col_pic:
+            # 画像・装備品の行・アクセサリの行の上に、透明なボタンを重ねる（押すと、くわしい説明・装備・アクセサリの画面）
+            with st.container(key=f"story_tap_pic_{lv}"):
+                st.markdown(pic, unsafe_allow_html=True)
+                if st.button("くわしく", key=f"_story_tap_pic_{lv}"):
+                    st.session_state.story_detail = lv
+                    st.session_state.story_detail_back = "home"
+                    st.session_state.story_card_focus = lv
+                    go("ally_detail")
+            with st.container(key=f"story_tap_gear_{lv}"):
+                st.markdown(gear_row, unsafe_allow_html=True)
+                if st.button("装備", key=f"_story_tap_gear_{lv}"):
+                    st.session_state.story_view_ally = st.session_state.story_card_focus = lv
+                    open_inventory("equip", "home")
+            with st.container(key=f"story_tap_acc_{lv}"):
+                st.markdown(acc_row, unsafe_allow_html=True)
+                if st.button("アクセサリ", key=f"_story_tap_acc_{lv}"):
+                    st.session_state.story_view_ally = st.session_state.story_card_focus = lv
+                    open_inventory("acc", "home")
+            loadout_buttons("home", "_story_inv", lv=lv, suffix=f"_{lv}")
+        col_info.markdown(right, unsafe_allow_html=True)
+        if run:
+            return
+        subs = party[1:]
+        col_a, col_b = st.columns(2)
+        if lv == leader:
+            col_a.button("👑 リーダー", key=f"_story_lead_{lv}", width="stretch", disabled=True)
+        elif col_a.button("👑 リーダーにする", key=f"_story_lead_{lv}", width="stretch"):
+            old = leader
+            new_subs = [old if x == lv else x for x in subs] if lv in subs else subs
+            choose_ally(lv)
+            set_party_safe(lv, new_subs)
+            st.session_state.story_card_focus = lv
+            st.rerun()
+        if lv == leader:
+            col_b.button("🤝 サブ", key=f"_story_sub_{lv}", width="stretch", disabled=True)
+        elif lv in subs:
+            if col_b.button("➖ サブから外す", key=f"_story_sub_{lv}", width="stretch"):
+                set_party_safe(leader, [x for x in subs if x != lv])
+                st.session_state.story_card_focus = lv
+                st.rerun()
+        elif col_b.button("➕ サブに入れる", key=f"_story_sub_{lv}", width="stretch", type="primary"):
+            if len(subs) >= L.MAX_PARTY - 1:
+                st.session_state.story_notice = f"サブは{L.MAX_PARTY - 1}人までだよ。先にだれかを外してね。"
+            else:
+                set_party_safe(leader, subs + [lv])
+            st.session_state.story_card_focus = lv
+            st.rerun()
+
+
+def set_party_safe(leader, subs):
+    try:
+        L.set_party(profile, leader, subs)
+        save()
+    except ValueError as e:
+        st.session_state.story_notice = f"できなかったよ：{e}"
+
+
+def scroll_cards(lv):
+    """カードの列を、lv のカードの位置までスライドしておく（ボタンを押して画面が作り直されても、元の位置に）。
+    上のわく（リーダー・サブ）を押すと、そのキャラのカードへ"""
+    import streamlit.components.v1 as components
+    st.session_state.story_scroll_n = st.session_state.get("story_scroll_n", 0) + 1
+    components.html(f"""<script>
+(() => {{
+  const doc = window.parent.document, want = {int(lv)}, n = {st.session_state.story_scroll_n};
+  const strip = () => doc.querySelector('.st-key-story_cards [data-testid="stHorizontalBlock"]');
+  const go = (v, smooth) => {{
+    const s = strip(), c = doc.querySelector('.st-key-story_panel_' + v);
+    if (!s || !c) return false;
+    const col = c.closest('[data-testid="stColumn"], [data-testid="column"]') || c;
+    const sr = s.getBoundingClientRect(), cr = col.getBoundingClientRect();
+    if (!cr.width) return false;
+    s.scrollTo({{ left: s.scrollLeft + cr.left - sr.left - (sr.width - cr.width) / 2, behavior: smooth ? 'smooth' : 'auto' }});
+    return true;
+  }};
+  let k = 0; const t = setInterval(() => {{ if (go(want, false) || ++k > 40) clearInterval(t); }}, 60);
+  doc.querySelectorAll('.pslot[data-lv]').forEach((el) => {{ el.onclick = () => go(+el.dataset.lv, true); }});
+}})();
+</script><!-- {st.session_state.story_scroll_n} -->""", height=0)
+
+
 def view_home():
     story_header()
     # 上のメニュー：クエスト（画面の約20%）・称号・攻略（約10%ずつ）を横に並べる
@@ -653,42 +778,26 @@ def view_home():
         st.session_state.story_ally = 1
     lv = st.session_state.story_ally
 
-    with st.container(border=True, key="story_panel"):
-        pic, gear_row, acc_row, right = ally_panel_parts(lv, split=True)
-        col_pic, col_info = st.columns([3, 7])
-        with col_pic:
-            # 画像・装備品の行・アクセサリの行の上に、透明なボタンを重ねる（押すと、くわしい説明・装備・アクセサリの画面）
-            with st.container(key="story_tap_pic"):
-                st.markdown(pic, unsafe_allow_html=True)
-                if st.button("くわしく", key="_story_tap_pic"):
-                    st.session_state.story_detail = lv
-                    st.session_state.story_detail_back = "home"
-                    go("ally_detail")
-            with st.container(key="story_tap_gear"):
-                st.markdown(gear_row, unsafe_allow_html=True)
-                if st.button("装備", key="_story_tap_gear"):
-                    open_inventory("equip", "home")
-            with st.container(key="story_tap_acc"):
-                st.markdown(acc_row, unsafe_allow_html=True)
-                if st.button("アクセサリ", key="_story_tap_acc"):
-                    open_inventory("acc", "home")
-        with col_pic:                                # 画像の下：装備・アクセサリ・アイテム（縦に並べる）
-            loadout_buttons("home", "_story_inv")
-        col_info.markdown(right, unsafe_allow_html=True)
-        if run:
-            st.caption(f"📌 挑戦中：{run_title(run)} {stage_label(run)}"
-                       "（「クエスト」から続きを遊べるよ。挑戦中はキャラを変えられないよ）")
-            if not st.session_state.story_confirm_new:
-                if st.button("⏹ クエストを中断", key="_story_home_abandon", width="stretch"):
-                    st.session_state.story_confirm_new = True
-                    st.rerun()
-        else:
-            party = L.party_for(profile, lv)
-            if st.button(f"👥 パーティ編成（{len(party)} / {L.MAX_PARTY}）：" + "・".join(short_name(x) for x in party),
-                         key="_story_party", width="stretch"):
-                go("party")
-            if st.button("🔄 キャラクター変更", key="_story_change", width="stretch"):
-                go("ally_picker")
+    party = L.run_party(run) if run else L.party_for(profile, lv)
+    st.markdown(party_slots_html(party), unsafe_allow_html=True)
+    cards = party if run else owned
+    focus = st.session_state.get("story_card_focus")
+    if focus not in cards:
+        focus = lv
+    st.markdown("<div style='text-align:center;font-size:12px;opacity:.75;margin:2px 0'>◀ 左右にスライドして、キャラを見る・パーティを組む ▶</div>",
+                unsafe_allow_html=True)
+    with st.container(key="story_cards"):
+        for col, c_lv in zip(st.columns(len(cards)), cards):
+            with col:
+                ally_card(c_lv, party, run)
+    scroll_cards(focus)
+    if run:
+        st.caption(f"📌 挑戦中：{run_title(run)} {stage_label(run)}"
+                   "（「クエスト」から続きを遊べるよ。挑戦中はパーティを変えられないよ）")
+        if not st.session_state.story_confirm_new:
+            if st.button("⏹ クエストを中断", key="_story_home_abandon", width="stretch"):
+                st.session_state.story_confirm_new = True
+                st.rerun()
     if run and st.session_state.story_confirm_new:
         confirm_abandon(run, "今の挑戦を中断して終わらせますか？（負け扱い。ここまでのアビリティはもらえて、アイテムはすべて倉庫に戻ります）")
 
@@ -710,16 +819,27 @@ def open_inventory(mode, back):
     go("inventory")
 
 
-def loadout_buttons(back, prefix, counts=False):
-    """装備・アクセサリ・アイテムの3つのボタン（ホームの画像の下と、出発前の準備画面で使う）"""
-    lv = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
+def focus_ally():
+    """装備・魔法の画面で見るキャラ（ホームのカードで押したキャラ。なければリーダー）"""
+    leader = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
+    lv = st.session_state.get("story_view_ally")
+    ok = L.run_party(profile["run"]) if profile["run"] else L.owned_allies(profile)
+    return lv if lv in ok else leader
+
+
+def loadout_buttons(back, prefix, counts=False, lv=None, suffix=""):
+    """装備・アクセサリ・アイテムの3つのボタン（ホームのカードの画像の下と、出発前の準備画面で使う）"""
+    if lv is None:
+        lv = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
     gear, acc = L.split_equipped(profile, lv)
     bag = L.bag_total(profile["run"]["bag"]) if profile["run"] else sum(L.pack_counts(profile).values())
     nums = {"equip": f"{len(gear)} / {story_data.MAX_GEAR_SLOTS}", "acc": f"{len(acc)} / {story_data.MAX_ACCESSORY_SLOTS}",
             "item": f"{bag} / {story_data.MAX_CARRY_ITEMS}"}
     nums["spells"] = f"{len(L.known_spells(profile, lv))}"
     for mode, label in INV_BUTTONS:
-        if st.button(label + (f"（{nums[mode]}）" if counts else ""), key=f"{prefix}_{mode}", width="stretch"):
+        if st.button(label + (f"（{nums[mode]}）" if counts else ""), key=f"{prefix}_{mode}{suffix}", width="stretch"):
+            st.session_state.story_view_ally = lv
+            st.session_state.story_card_focus = lv
             if mode == "spells":
                 st.session_state.story_spells_back = back
                 go("spells")
@@ -782,13 +902,13 @@ def view_ready():
         q = st.session_state.get("story_quest", "main")
         compact_title((L.quest_label(q) + " " if q == L.KZ else "") + f"{diff['name']}（{L.stage_count(diff['id'], q)}ステージ）",
                       "パーティ：" + "・".join(f"{short_name(x)}（Lv.{L.ally_level(profile, x)}）" for x in L.party_for(profile, lv)) + " で挑戦するよ")
-        loadout_buttons("ready", "_story_ready", counts=True)
+        loadout_buttons("ready", "_story_ready", counts=True, lv=lv)
         st.write("")
         if st.button("⚔️ 出発", key="_story_go", type="primary", width="stretch"):
             L.start_run(profile, lv, diff["id"], quest=st.session_state.get("story_quest", "main"))
             new_rewards(None)
             go_battle()
-        st.caption("キャラはホームの「キャラクター変更」で変えられるよ。")
+        st.caption("リーダーとサブは、ホームのカードで変えられるよ。")
 
 
 def view_continue(run):
@@ -841,7 +961,7 @@ def confirm_abandon(run, text):
 # 倉庫とリュック・攻略
 # ---------------------------------------------------------------------------
 def view_inventory():
-    lv = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
+    lv = focus_ally()
     round_id = st.session_state.story_round
     st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)    # 画面いっぱいに広げる
     notice = st.session_state.get("story_inventory_notice")
@@ -1313,7 +1433,7 @@ def view_spells():
     back = st.session_state.get("story_spells_back") or "home"
     story_header("🔮 魔法", ("◀ もどる", back))
     show_notice()
-    lv = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
+    lv = focus_ally()
     stats = L.ally_stats(lv, profile)
     cut = story_data.MP_COST_CUT * L.mag_coef(stats["mag"])
     compact_title(f"{short_name(lv)}（Lv.{L.ally_level(profile, lv)}）",
