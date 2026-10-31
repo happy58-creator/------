@@ -276,7 +276,7 @@ ITEMS = [
     #   boss      : 宝箱・ログインボーナスには出ない。ボス（最後のステージ・エクストラ）を倒したときだけ
     {"id": "ether",          "icon": "💧", "name": "エーテル",         "heal_rate": 0.0, "mp_rate": 0.3, "cure": [], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 15, "new_item": True},
     {"id": "hi_ether",       "icon": "🔷", "name": "ハイエーテル",     "heal_rate": 0.0, "mp_rate": 1.0, "cure": [], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 0, "new_item": True, "boss": True},
-    {"id": "last_elixir",    "icon": "🌈", "name": "ラストエリクサー", "heal_rate": 1.0, "mp_rate": 1.0,
+    {"id": "last_elixir",    "icon": "🌈", "name": "ラストエリクサー", "heal_rate": 1.0, "mp_rate": 1.0, "all": True,
      "cure": ["poison", "thunder", "fire", "black_flame", "darkness", "shadow", "freeze"], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 0, "new_item": True, "boss": True},
     {"id": "life_leaf",      "icon": "🍃", "name": "いのちの葉",       "heal_rate": 0.0, "revive": 0.3, "cure": [], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 8, "new_item": True},
     {"id": "phoenix_down",   "icon": "🪶", "name": "不死鳥の羽",       "heal_rate": 0.0, "revive": 1.0, "cure": [], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 0, "new_item": True, "boss": True},
@@ -480,6 +480,13 @@ MAGIC_COEF_K = 10
 MP_COST_CUT = 0.2
 SPELL_POWER = {"small": 60, "mid": 90, "big": 130, "huge": 180}   # 1ターン60回当てる前提（魔力＝攻撃力なら、小で連打1ターン分）
 SPELL_ALL_RATE = 0.7
+# 敵1体の攻撃魔法：詠唱のあとに「ねらい」。動く円を、タップで止める（止めなければ AIM_MS で止まる）
+#   円の中に弱点（赤い点）→ AIM_RATES["weak"]、敵の体が全部入る → "full"、体の一部 → "part"、何も入らない → "miss"
+#   そのぶん、敵1体の魔法の威力は SPELL_SINGLE_MULT 倍。円の直径は詠唱の円 × AIM_SIZE
+SPELL_SINGLE_MULT = 1.5
+AIM_RATES = {"weak": 1.5, "full": 1.0, "part": 0.8, "miss": 0.1}
+AIM_MS = 4000
+AIM_SIZE = 0.6
 MAGIC_DEF_RATE = 0.5
 ELEMENT_WEAK = 1.5
 ELEMENT_RESIST = 0.5
@@ -609,6 +616,9 @@ KZ_TURNS = {     # ふつうのステージ（最初, 最後）・中ボス・�
 }
 KZ_DAMAGE = {"stage": (0.35, 0.55), "midboss": 0.85, "boss": 1.4, "extra": 1.9}
 KZ_EXTRA_TURNS = 1.5
+# 挑戦の後半ほど強く：ステージの進み t（最初0 → 最後1）で、HP・攻撃力に (1 + KZ_RAMP × t^1.5) をかける
+#   （挑戦のあいだに装備・アイテム・仲間がそろい、パーティ3人で戦うことを見こんで、後半をきびしくする）
+KZ_RAMP = {"hp": 5.0, "atk": 1.5}
 KZ_ROLES = {   # hp・atk は同じステージの中での分け方の比。def は防御力の倍率
     "zako":    {"hp": 1.0, "atk": 1.0, "def": 1.0},
     "healer":  {"hp": 0.8, "atk": 0.6, "def": 0.9},
@@ -700,3 +710,25 @@ KZ_EXTRA_ENEMY = {
                            "line": "……魔法陣よ、すべてを裂け"}},
 }
 KZ_END_LINE = "……番人が倒れたか。だが、柱はまだ立っている"
+
+
+# ---------------------------------------------------------------------------
+# 闇の回廊も、1ステージに敵が何体も（風哭きの森と同じしくみ・同じ強さの決め方）
+#   MAIN_GROUPS：そのステージのいつもの敵（キー）を「リーダー」にして、pool から残りの数だけ足す。
+#     lead は画面に出す姿（Lv.5〜7 は切り抜いた絵 *_cut を使う）。bg はその背景（assets/story/backgrounds/bg_*.webp）
+#   ここにない敵（1枚絵の Lv.8・10・11）は1体だけで出る（最後のステージはボス、それ以外は中ボスの強さ）
+#   強さの目安（KZ_TURNS・KZ_DAMAGE）は風哭きの森と同じ。最後のステージがボス
+# ---------------------------------------------------------------------------
+MAIN_GROUPS = {
+    "enemy_01": {"bg": "corridor", "lead": "enemy_01", "pool": ["enemy_01", "kz_01"], "count": _C((1, 2), (2, 2), (2, 3), (3, 3))},
+    "enemy_02": {"bg": "prison", "lead": "enemy_02", "pool": ["enemy_01", "enemy_02", "kz_01"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    "enemy_03": {"bg": "catacomb", "lead": "enemy_03", "pool": ["enemy_01", "enemy_02", "kz_06"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    "enemy_04": {"bg": "altar", "lead": "enemy_04", "pool": ["enemy_03", "kz_08", "enemy_01"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    "enemy_05": {"bg": "catacomb", "lead": "enemy_05_cut", "pool": ["kz_07", "kz_13", "enemy_04"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    "enemy_06": {"bg": "prison", "lead": "enemy_06_cut", "pool": ["enemy_02", "kz_04", "enemy_04"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    "enemy_07": {"bg": "altar", "lead": "enemy_07_cut", "pool": ["kz_08", "kz_14", "kz_06"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    "enemy_09": {"bg": "nebula", "lead": "enemy_09", "pool": ["kz_15", "kz_07", "kz_13"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+}
+# 切り抜いた姿（元の敵と同じ名前・セリフ。base は元の敵のキー）
+MAIN_CUTS = {"enemy_05_cut": "enemy_05", "enemy_06_cut": "enemy_06", "enemy_07_cut": "enemy_07"}
+KZ_ROLES["leader"] = {"hp": 1.6, "atk": 1.3, "def": 1.15}

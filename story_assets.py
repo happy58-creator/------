@@ -275,7 +275,7 @@ def stage_html(enemy):
         fit = ""
         if enemy.get("fit") == "cover":   # 横長の絵などは、画面を埋めるように拡大して focus の位置を見せる
             fit = f' style="object-fit:cover;object-position:{enemy.get("focus", "50% 50%")}"'
-        body = f'<img class="st-photo st-target" src="{uri}" alt="{enemy["name"]}" draggable="false"{fit}>'
+        body = f'<img class="st-photo st-target" data-idx="0" src="{uri}" alt="{enemy["name"]}" draggable="false"{fit}>'
     else:
         layers = f'<img class="st-bg" src="{image_uri(f"backgrounds/bg_{scene}.webp")}" alt="" draggable="false">' + layers
         shadow = "" if enemy["floating"] else '<div class="st-shadow"></div>'
@@ -288,14 +288,20 @@ def stage_html(enemy):
 _KZ_SLOTS = {1: [(50, 74, 96)], 2: [(29, 62, 60), (71, 62, 60)], 3: [(19, 54, 44), (50, 60, 46), (81, 54, 44)]}
 
 
-def kz_stage_html(foes, area):
-    """foes は敵のデータの一覧（1〜3体）。1枚絵の敵（cutout=False）は1体だけで出る"""
+def kz_stage_html(foes, area, bg_file=None, scene=None):
+    """foes は敵のデータの一覧（1〜3体）。1枚絵の敵（cutout=False）は1体だけで出る。
+    bg_file を渡さなければ、風哭きの森のエリア area の背景。scene を渡すと、その背景の動く光（_SCENE_LAYERS）も重ねる"""
     if len(foes) == 1 and not foes[0].get("cutout", True):
         e = foes[0]
         uri = image_uri(f"enemies/{e['image']}")
         return (f'<div class="st-scene image" data-enemy="{Path(e["image"]).stem}"><img class="st-photo-bg" src="{uri}" alt="" draggable="false">'
                 f'<img class="st-photo st-target" data-idx="0" src="{uri}" alt="{e["name"]}" draggable="false"></div>')
-    bg = image_uri(f"backgrounds/{story_data.KZ_AREAS[area]['bg']}")
+    if not bg_file and area not in story_data.KZ_AREAS:      # 闇の回廊の1体だけのステージ：その敵の背景
+        if foes[0].get("scene", "image") == "image":
+            return stage_html(foes[0])
+        bg_file, scene = f"bg_{foes[0]['scene']}.webp", foes[0]["scene"]
+    bg = image_uri("backgrounds/" + (bg_file or story_data.KZ_AREAS[area]["bg"]))
+    layers = "".join(f'<div class="st-layer {name}"></div>' for name in _SCENE_LAYERS.get(scene or "", []))
     body = []
     for i, (e, (left, height, maxw)) in enumerate(zip(foes, _KZ_SLOTS[len(foes)])):
         floating = " floating" if e.get("floating") else ""
@@ -304,7 +310,7 @@ def kz_stage_html(foes, area):
         body.append(f'<img class="st-enemy st-target kz-foe{floating}" data-idx="{i}" src="{src}" '
                     f'alt="{e["name"]}" draggable="false" style="left:{left}%;height:{height}%;max-width:{maxw}%;z-index:{z}">')
     return (f'<div class="st-scene kz {area}" data-enemy="{Path(foes[0]["image"]).stem}">'
-            f'<img class="st-bg" src="{bg}" alt="" draggable="false">{"".join(body)}</div>')
+            f'<img class="st-bg" src="{bg}" alt="" draggable="false">{layers}{"".join(body)}</div>')
 
 
 def kz_hit_mask_uri(e):

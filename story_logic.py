@@ -76,8 +76,44 @@ def kz_enemy(key):
     return next(e for e in story_data.KZ_ENEMIES + [story_data.KZ_EXTRA_ENEMY] if e["id"] == key)
 
 
-def roll_group(stage, difficulty_id, rng=random):
-    """風哭きの森のステージで出る敵の ID（1〜3体）"""
+def main_group(stage, difficulty_id):
+    """闇の回廊のステージの組み合わせ（MAIN_GROUPS。なければ None＝1体だけ）"""
+    return story_data.MAIN_GROUPS.get(enemy_key(stages_for(difficulty_id)[stage - 1]))
+
+
+def group_enemy(key):
+    """敵のデータ（風哭きの森・闇の回廊・切り抜いた姿のどれでも）"""
+    if key in story_data.MAIN_CUTS:
+        base = enemy_by_key(story_data.MAIN_CUTS[key])
+        return {**base, "image": f"{key}.webp", "cutout": True, "floating": False, "base": enemy_key(base)}
+    return dict(enemy_by_key(key))
+
+
+def stage_group(quest, stage, difficulty_id, keys):
+    """ステージの敵みんなのデータ（役割 role つき）"""
+    if quest == KZ:
+        return [kz_enemy(k) for k in keys]
+    g = main_group(stage, difficulty_id)
+    out = []
+    for i, k in enumerate(keys):
+        e = group_enemy(k)
+        if i == 0:
+            e["role"] = "leader" if g else ("boss" if stage == stage_count(difficulty_id) else "midboss")
+        elif not k.startswith("kz_"):
+            e["role"] = "zako"
+        e["id"] = k
+        out.append(e)
+    return out
+
+
+def roll_group(stage, difficulty_id, rng=random, quest=KZ):
+    """ステージで出る敵の ID（1〜3体）"""
+    if quest != KZ:
+        g = main_group(stage, difficulty_id)
+        if not g:
+            return [enemy_key(stages_for(difficulty_id)[stage - 1])]
+        n = rng.randint(*g["count"][difficulty_id])
+        return [g["lead"]] + [rng.choice(g["pool"]) for _ in range(n - 1)]
     st = story_data.KZ_STAGES[stage - 1]
     lo, hi = st["count"][difficulty_id]
     n = rng.randint(lo, hi)
@@ -96,7 +132,7 @@ def kz_ref_player(difficulty_id):
     return {"atk": st["atk"] + a, "def": st["def"] + d, "hp": st["hp"] + h}
 
 
-def kz_group_stats(group, stage, difficulty_id):
+def kz_group_stats(group, stage, difficulty_id, quest=KZ):
     """風哭きの森のステージの敵みんなのステータス（目標のターン数と受けるダメージから逆算。KZ_TURNS の説明を参照）
 
     group は敵のデータの一覧、stage はステージ番号（エクストラは EXTRA）"""
@@ -110,12 +146,13 @@ def kz_group_stats(group, stage, difficulty_id):
     dmg = story_data.KZ_DAMAGE
     if extra:
         turns, frac = t_boss * story_data.KZ_EXTRA_TURNS, dmg["extra"]
-    elif stage == story_data.KZ_STAGE_COUNT:
+    elif stage == stage_count(difficulty_id, quest):
         turns, frac = t_boss, dmg["boss"]
     elif any(r.get("boss") for r in roles):
         turns, frac = t_mid, dmg["midboss"]
     else:
-        u = (min(stage, 8) - 1) / 7
+        last = stage_count(difficulty_id, quest) - 2
+        u = (min(stage, last) - 1) / max(1, last - 1)
         turns, frac = t0 + (t1 - t0) * u, dmg["stage"][0] + (dmg["stage"][1] - dmg["stage"][0]) * u
     defs = [base["def"] * diff["enemy_def"] * r["def"] for r in roles]
     cuts = [r.get("phys_cut", 1.0) for r in roles]
@@ -123,10 +160,14 @@ def kz_group_stats(group, stage, difficulty_id):
     aw = [r["atk"] for r in roles]
     # 敵みんなを倒すのに turns ターン：1体ずつ倒すとして、それぞれの「何ターンぶん」を役割の比で分ける
     out = []
-    per_turn = frac * P["hp"] / turns * 1.3            # 倒した敵は攻撃しなくなるので、少し多めにしておく
+    count = stage_count(difficulty_id, quest)
+    t = 1.0 if extra else (stage - 1) / max(1, count - 1)
+    ramp_hp = 1 + story_data.KZ_RAMP["hp"] * t ** 1.5
+    ramp_atk = 1 + story_data.KZ_RAMP["atk"] * t ** 1.5
+    per_turn = frac * P["hp"] / turns * 1.3 * ramp_atk  # 倒した敵は攻撃しなくなるので、少し多めにしておく
     for e, r, d, cut, h, a in zip(group, roles, defs, cuts, hw, aw):
         t_i = turns * h / sum(hw)
-        hp = t_i * story_data.KZ_TAPS * damage(P["atk"], d) * cut * 0.85   # 1体ずつ倒すときのむだ（倒しきった後の余り）のぶん少し減らす
+        hp = t_i * story_data.KZ_TAPS * damage(P["atk"], d) * 0.85 * ramp_hp   # 0.85：1体ずつ倒すときのむだ。石の体（剣が半分）でもHPは同じ＝魔法の出番
         hit = per_turn * a / sum(aw) / (2 if e.get("double") else 1)
         atk = hit / max(0.05, 1 - reduction(P["def"]))
         out.append({"hp": float(round(hp)), "atk": round(atk, 1), "def": round(d, 1), "phys_cut": cut})
@@ -157,12 +198,11 @@ def enemy_by_key(key):
 
 def run_group(run):
     """挑戦で次に戦う敵（一覧）"""
-    if run_quest(run) != KZ:
-        return [stage_enemy(EXTRA if run.get("extra") else run["stage"], run["difficulty"])]
+    q = run_quest(run)
     if run.get("extra"):
-        return [story_data.KZ_EXTRA_ENEMY]
-    keys = run.get("group") or roll_group(run["stage"], run["difficulty"])
-    return [kz_enemy(k) for k in keys]
+        return [story_data.KZ_EXTRA_ENEMY if q == KZ else story_data.EXTRA_ENEMY]
+    keys = run.get("group") or roll_group(run["stage"], run["difficulty"], quest=q)
+    return stage_group(q, run["stage"], run["difficulty"], keys)
 
 
 def run_enemy(run):
@@ -315,35 +355,42 @@ def item_effect_text(item):
         return (f"倉庫で「使う」と、いまのキャラが「{spell['name']}」（{spell_short_text(item['spell'])}）を覚える。"
                 f"魔導書の魔法は1人{story_data.MAX_BOOK_SPELLS}つまで")
     if item.get("assist"):
-        return ("戦闘で使うとHP・MP全回復・状態異常をすべて治し、その戦闘のあいだ精霊の加護（毒・雷・火にかからない）。"
-                "さらにアステルが援護に来る。倒れそうになったときにも使える")
-    parts = []
+        return ("【使った人】戦闘で使うとHP・MP全回復・状態異常をすべて治し、その戦闘のあいだ精霊の加護（毒・雷・火にかからない）。"
+                "さらにアステルが援護に来る。最後の1人が倒れそうになったときにも使える")
     if item.get("revive"):
-        return ("倒れそうになったときに使うと、" + ("HP全回復で" if item["revive"] >= 1 else f"最大HPの{item['revive']:.0%}で")
-                + "立ち上がる（ふだんは使えない）")
+        return ("【戦闘不能の味方1人】" + ("HP全回復で" if item["revive"] >= 1 else f"最大HPの{item['revive']:.0%}で")
+                + "復活する。最後の1人が倒れそうになったときにも使える")
+    who = "【味方全員】" if item.get("all") else "【味方1人】"
+    heal = []
     if item["heal_rate"] >= 1:
-        parts.append("HPを全回復")
+        heal.append("HPを全回復")
     elif item["heal_rate"]:
-        parts.append(f"最大HPの{item['heal_rate']:.0%}を回復")
+        heal.append(f"最大HPの{item['heal_rate']:.0%}を回復")
     if item.get("mp_rate", 0) >= 1:
-        parts.append("MPを全回復")
+        heal.append("MPを全回復")
     elif item.get("mp_rate"):
-        parts.append(f"最大MPの{item['mp_rate']:.0%}を回復")
-    if item.get("crit"):
-        parts.append(f"自分の攻撃{item['crit_turns']}回ぶん会心率+{item['crit']:.0%}")
-    if item.get("mag_mult"):
-        parts.append(f"自分の行動{item['mag_turns']}回ぶん魔力{item['mag_mult']:g}倍")
-    if item.get("haste"):
-        parts.append(f"自分の攻撃{item['haste_turns']}回ぶん連打の時間+{item['haste']:g}秒")
-    if item.get("ward"):
-        parts.append(f"{item['ward']}ターン黒炎にかからない（かかっている黒炎は続く）")
+        heal.append(f"最大MPの{item['mp_rate']:.0%}を回復")
     if item["cure"]:
-        parts.append("・".join(story_data.STATUS_EFFECTS[c]["name"] for c in item["cure"]) + "を治す")
+        heal.append("・".join(story_data.STATUS_EFFECTS[c]["name"] for c in item["cure"]) + "を治す")
+    buff = []
+    if item.get("crit"):
+        buff.append(f"攻撃{item['crit_turns']}回ぶん会心率+{item['crit']:.0%}")
+    if item.get("mag_mult"):
+        buff.append(f"行動{item['mag_turns']}回ぶん魔力{item['mag_mult']:g}倍")
+    if item.get("haste"):
+        buff.append(f"攻撃{item['haste_turns']}回ぶん連打の時間+{item['haste']:g}秒")
+    if item.get("ward"):
+        buff.append(f"{item['ward']}ターン黒炎にかからない（かかっている黒炎は続く）")
     if item["guard"]:
-        parts.append(f"{item['guard']}ターン防御力2倍")
+        buff.append(f"{item['guard']}ターン防御力2倍")
     if item["atk_bonus"]:
-        parts.append(f"自分の攻撃{item['atk_turns']}回ぶん攻撃力+{item['atk_bonus']}")
-    return "・".join(parts)
+        buff.append(f"攻撃{item['atk_turns']}回ぶん攻撃力+{item['atk_bonus']}")
+    out = []
+    if heal:
+        out.append(who + "・".join(heal))
+    if buff:
+        out.append("【使った人】" + "・".join(buff))
+    return "　".join(out)
 
 
 def roll_charm_value(roll, stage, count, rng=random):
@@ -834,7 +881,8 @@ def spell_numbers(spell_id, stats):
     k = mag_coef(mag)
     out = {"cost": spell_cost(spell_id, mag, max_mp), "taps": chant_taps(mag), "circle": chant_circle(spell_id)}
     if sp["kind"] == "attack":
-        out["power"] = mag * story_data.SPELL_POWER[sp["tier"]] * (story_data.SPELL_ALL_RATE if sp["target"] == "enemies" else 1)
+        out["power"] = mag * story_data.SPELL_POWER[sp["tier"]] * (story_data.SPELL_ALL_RATE if sp["target"] == "enemies"
+                                                                    else story_data.SPELL_SINGLE_MULT)
     elif sp["kind"] in ("heal", "mana", "revive"):
         out["heal"] = max_hp * sp["heal"] * k
         if sp.get("mp_heal"):
@@ -950,8 +998,8 @@ def start_run(profile, ally_lv, difficulty_id, carried=None, quest="main"):
 def begin_stage(profile):
     """ステージを始めるときのチェックポイント（いまのHPとかばん）を残す"""
     run = profile["run"]
-    if run_quest(run) == KZ and run.get("group_stage") != run["stage"]:     # 風哭きの森：このステージの敵を決める（やり直しても同じ）
-        run["group"] = roll_group(run["stage"], run["difficulty"])
+    if not run.get("extra") and (run.get("group_stage") != run["stage"] or not run.get("group")):   # このステージの敵を決める（やり直しても同じ）
+        run["group"] = roll_group(run["stage"], run["difficulty"], quest=run_quest(run))
         run["group_stage"] = run["stage"]
     run["checkpoint"] = {"hp": run["hp"], "mp": run.get("mp"), "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0),
                          "members": copy.deepcopy(run.get("members") or {})}
@@ -1075,8 +1123,9 @@ def clear_stage(profile, rng=random):
     quest = run_quest(run)
     rewards["foes"] = len(run_group(run))
     for foe in run_group(run):
-        if enemy_key(foe) not in profile["defeated"]:
-            profile["defeated"].append(enemy_key(foe))
+        key = foe.get("base") or enemy_key(foe)
+        if key not in profile["defeated"]:
+            profile["defeated"].append(key)
     ultra = story_data.ULTRA_REWARDS.get(enemy_key(enemy))
     if ultra:
         attr_diff = story_data.ULTRA_ATTR_SWORDS.get(ultra)          # 沈黙の魔剣：属性を抽選
@@ -1381,7 +1430,7 @@ def spell_config(spell_id):
 def kz_foe_config(e, st, ally, idx, stage_label, party_stats=None):
     """風哭きの森の敵1体ぶんの、戦闘画面に渡す数字"""
     return {
-        "idx": idx, "key": enemy_key(e), "lv": stage_label if stage_label != EXTRA else "???", "name": e["name"],
+        "idx": idx, "key": enemy_key(e), "lv": e.get("lv", stage_label if stage_label != EXTRA else "???"), "name": e["name"],
         "title": e.get("title", ""), "lines": e["lines"], "effect": e["effect"],
         "max_hp": st["hp"], "atk": st["atk"], "def": st["def"],
         "gimmicks": [g for g in e["gimmicks"] if g != "meteor"], "meteor": "meteor" in e["gimmicks"],
@@ -1429,12 +1478,11 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
     profile を渡すと、アビリティと装備の補正を入れる。bag を渡すと、戦闘中に使えるアイテムを入れる。
     """
     kz_group = None
-    if quest == KZ:
+    if quest == KZ or stage_no != EXTRA:          # 敵が何体も出るステージ（闇の回廊のエクストラだけは今までどおり）
         kz_group = ([story_data.KZ_EXTRA_ENEMY] if stage_no == EXTRA
-                    else [kz_enemy(k) for k in (group or roll_group(stage_no, difficulty_id))])
-        kz_stage = story_data.KZ_EXTRA_ENEMY["base_stage"] if stage_no == EXTRA else stage_no
+                    else stage_group(quest, stage_no, difficulty_id, group or roll_group(stage_no, difficulty_id, quest=quest)))
         enemy_data = kz_group[0]
-        kz_stats = kz_group_stats(kz_group, EXTRA if stage_no == EXTRA else stage_no, difficulty_id)
+        kz_stats = kz_group_stats(kz_group, EXTRA if stage_no == EXTRA else stage_no, difficulty_id, quest)
         enemy = kz_stats[0]
     else:
         enemy_data = stage_enemy(stage_no, difficulty_id)
@@ -1485,7 +1533,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
          "heal": max_hp * i["heal_rate"], "cure": list(i["cure"]), "ward": i.get("ward", 0), "guard": i["guard"],
          "atk_turns": i["atk_turns"] if i["atk_bonus"] else 0,
          "mp": max_mp * i.get("mp_rate", 0), "revive": i.get("revive", 0),
-         "heal_rate": i["heal_rate"], "mp_rate": i.get("mp_rate", 0),
+         "heal_rate": i["heal_rate"], "mp_rate": i.get("mp_rate", 0), "all": bool(i.get("all")),
          "crit": i.get("crit", 0), "crit_turns": i.get("crit_turns", 0),
          "mag_mult": i.get("mag_mult", 0), "mag_turns": i.get("mag_turns", 0),
          "haste_ms": int(i.get("haste", 0) * 1000), "haste_turns": i.get("haste_turns", 0),
@@ -1566,6 +1614,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "chant_min": story_data.CHANT_MIN_RATE, "crit_mult": story_data.CRIT_MULT,
             "magic_crit_mult": story_data.MAGIC_CRIT_MULT, "magic_crit_rate": story_data.MAGIC_CRIT_RATE,
             "haste_max_ms": int(story_data.HASTE_MAX * 1000),
+            "single_mult": story_data.SPELL_SINGLE_MULT, "aim": story_data.AIM_RATES, "aim_ms": story_data.AIM_MS,
+            "aim_size": story_data.AIM_SIZE,
             "elements": {k or "none": v for k, v in story_data.ELEMENTS.items()},
         },
         "enemy_spells": {k: {**v, "color": story_data.ELEMENTS[v["element"]]["color"]} for k, v in story_data.ENEMY_SPELLS.items()},
@@ -1618,8 +1668,15 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             out["awaken"]["hits"] = [{"hit_damage": damage(aw["atk"], a["def"]), "hit_damage_guard": damage(aw["atk"], a["def"] * story_data.GUARD_MULTIPLIER)}
                                      for a in party_stats]
     if kz_group:
-        out["quest"] = KZ
-        out["area"] = "extra" if extra else story_data.KZ_STAGES[stage_no - 1]["area"]
+        out["quest"] = quest
+        if quest == KZ:
+            out["area"] = "extra" if extra else story_data.KZ_STAGES[stage_no - 1]["area"]
+            out["bg_file"] = story_data.KZ_AREAS[out["area"]]["bg"]
+        else:
+            g = main_group(stage_no, difficulty_id)
+            out["area"] = g["bg"] if g else "image"
+            out["bg_file"] = f"bg_{g['bg']}.webp" if g else None
+            out["scene"] = g["bg"] if g else None
         out["foes"] = [kz_foe_config(e, kz_stats[n], ally, n, EXTRA if extra else stage_no, party_stats) for n, e in enumerate(kz_group)]
         for f in out["foes"]:          # 敵の攻撃で受けるダメージは、受ける人の防御で変わる
             f["hits"] = [{"hit_damage": damage(f["atk"], a["def"]), "hit_damage_guard": damage(f["atk"], a["def"] * story_data.GUARD_MULTIPLIER)}
@@ -1629,8 +1686,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         for k in ("tap_damage", "tap_damage_up", "tap_damage_break", "tap_damage_up_break"):
             out["ally"][k] = out["foes"][0]["tap"][k]
         out["heavy_every"] = story_data.KZ_HEAVY_EVERY
-        out["end_line"] = story_data.KZ_END_LINE if not extra and stage_no == count else ""
-        out["intro"] = "" if extra else story_data.KZ_STAGES[stage_no - 1].get("intro", "")
+        out["end_line"] = story_data.KZ_END_LINE if quest == KZ and not extra and stage_no == count else ""
+        out["intro"] = "" if extra or quest != KZ else story_data.KZ_STAGES[stage_no - 1].get("intro", "")
     return out
 
 

@@ -78,6 +78,13 @@ TIPS = [
     ("魔法と詠唱", "「魔法」をえらぶと詠唱が始まる。画面の円の中を連打した数で、魔法の強さ（詠唱率）が決まる。円の外のタップは数えない。"
                "強い魔法ほど円が小さく、魔力が高いキャラほど少ない連打で満点になる。まったく押さなくても10%は効く。"
                "魔法を使ったターンは攻撃できない。MPはステージをクリアすると少し回復し、戦いが終わると全回復する。"),
+    ("ねらい（敵1体の魔法）", "敵1体の攻撃魔法は、詠唱のあとに円が画面を動きまわる。タップで止めよう。"
+                      "円の中に赤い点（弱点）があれば1.5倍、敵の体が全部入れば1倍、一部なら0.8倍、何も入らなければ0.1倍。"),
+    ("パーティ", "ホームの「パーティ編成」で、仲間を2人までつれていける（3人まで）。1人ずつ順番に動き、敵は毎回だれか1人をねらう。"
+             "倒れた仲間は戦闘不能になり、いのちの葉・不死鳥の羽・リバイブでしか戻らない（ホームに戻れば元どおり）。"
+             "回復のアイテムや魔法は、だれに使うかえらべる。経験値は全員が同じだけもらえる。敵の強さは人数で変わらない。"),
+    ("敵が何体も", "1ステージに敵が何体も出る。自分のターンに敵をタップすると、魔法・必殺技でねらう敵が変わる。"
+               "連打は当てた敵にそれぞれダメージが入る。回復役の敵は先に倒そう。敵全体の魔法は全員に当たる。"),
     ("弱点と耐性", "Lv.5 より強い敵には、魔法の弱点（1.5倍）と耐性（半分）がある。弱点は戦闘画面の上に出るけど、耐性は使ってみないとわからない。"
                "剣の攻撃は属性に関係ないので、弱点の魔法がなくても必ず倒せる。魔導書で好きな属性の魔法を覚えよう。"),
     ("会心", "連打の1回ごとに、会心率でその1回のダメージが2倍になる（敵の防御は効いたまま）。魔法は会心率の半分の確率で1.5倍。会心の薬で上げられる。"),
@@ -189,11 +196,14 @@ def section_allies(profile):
         lv = ally["lv"]
         low, high = L.base_stats(lv, 1), L.base_stats(lv, story_data.LEVEL_MAX)
         stats = (f"HP {low['hp']:g}→{high['hp']:g}　攻撃力 {low['atk']:g}→{high['atk']:g}　"
-                 f"防御力 {low['def']:g}→{high['def']:g}（Lv.1→Lv.{story_data.LEVEL_MAX}）")
+                 f"防御力 {low['def']:g}→{high['def']:g}　MP {low['mp']:g}→{high['mp']:g}　魔力 {low['mag']:g}→{high['mag']:g}"
+                 f"（Lv.1→Lv.{story_data.LEVEL_MAX}）　会心率 {(ally.get('magic') or {}).get('crit', 0):.0%}")
         skill = ally["skill"]
         body = (f"{esc(ALLY_TEXT.get(lv, ''))}<br><b>仲間になるには：</b>{esc(join_text(ally))}"
                 f"<br><b>必殺技：</b>{esc(skill['name'])}（コンボ{skill['charge']}でチャージ）― {esc(skill['text'])}"
-                f"<br><b>アビリティ：</b>{esc(ability_text(ally))}（たくさん遊ぶと順に解放）")
+                f"<br><b>アビリティ：</b>{esc(ability_text(ally))}（たくさん遊ぶと順に解放）"
+                f"<br><b>覚える魔法：</b>" + esc("、".join(f"Lv.{sp['level']} {L.get_spell(sp['id'])['name']}（{L.spell_short_text(sp['id'])}）"
+                                                     for sp in L.level_spells(lv, 1))))
         if lv in owned:
             mark = f"✅ 仲間（いま Lv.{L.ally_level(profile, lv)}）"
         else:
@@ -290,6 +300,21 @@ def section_enemies(profile):
                 chips += '<span class="chip">天変地異：雷が効かない</span>'
             parts.append(card(story_assets.thumb_uri(f"enemies/{enemy['image']}", 240), f"Lv.{enemy['lv']} {esc(enemy['name'])}",
                               where + beaten, esc(ENEMY_TEXT.get(key, "")), chips=chips))
+    # 風哭きの森の敵（倒すと姿がわかる）
+    parts.append(f"<h4 style='color:#9fe8b9;margin:18px 0 6px'>{story_data.KZ_QUEST['icon']} {story_data.KZ_QUEST['name']}の敵</h4>")
+    role_name = {"zako": "ザコ", "healer": "回復役（仲間を回復する。先に倒そう）", "tank": "盾役（HPが多い）", "fast": "すばやい",
+                 "mage": "魔法使い", "stone": "石の体（剣が半分しか効かない。魔法で）", "midboss": "中ボス", "boss": "ボス", "extra": "エクストラ"}
+    for e in story_data.KZ_ENEMIES + [story_data.KZ_EXTRA_ENEMY]:
+        key = e["id"]
+        seen_it = key in defeated
+        weak = story_data.ELEMENTS[e["weak"]] if e.get("weak") else None
+        traits = [role_name.get(e["role"], "")] + (["1ターンに2回攻撃"] if e.get("double") else []) + (["力をためて重い一撃"] if e.get("heavy") else [])
+        body = "・".join(t for t in traits if t) + (f"<br><b>弱点：</b>{weak['icon']}{weak['name']}の魔法" if weak and seen_it else "")
+        if e.get("awaken") and seen_it:
+            body += f"<br><b>覚醒：</b>HPが半分を切ると「{esc(e['awaken']['name'])}」に変わる"
+        pic = story_assets.thumb_uri(f"enemies/{e['image']}", 240) if seen_it else story_assets.silhouette_uri(key)
+        parts.append(card(pic, esc(e["name"]) if seen_it else "？？？", ("✅ 倒した" if seen_it else "まだ見ぬ敵"),
+                          body if seen_it else "倒すと、くわしいことがわかる。", chips=status_chips([g for g in e["gimmicks"] if g != "meteor"]) if seen_it else ""))
     extra = story_data.EXTRA_ENEMY
     chips = status_chips(extra["gimmicks"]) + '<span class="chip">天変地異：雷が効かない</span>'
     parts.append(card(story_assets.thumb_uri(f"enemies/{extra['image']}", 300), f"Lv.??? {esc(extra['name'])}",

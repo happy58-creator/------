@@ -47,16 +47,21 @@ html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-tes
 
 def kz_args(config):
     """風哭きの森：敵が何体もいる画面と、それぞれの当たりマスク（覚醒・大技の絵も）"""
-    foes = [story_logic.enemy_by_key(f["key"]) for f in config["foes"]]
-    out = {"scene_html": story_assets.kz_stage_html(foes, config["area"]),
+    foes = [story_logic.group_enemy(f["key"]) for f in config["foes"]]
+    bg, scene = config.get("bg_file"), config.get("scene")
+    out = {"scene_html": story_assets.kz_stage_html(foes, config["area"], bg, scene),
            "hit_masks": [story_assets.kz_hit_mask_uri(e) for e in foes]}
     aw = foes[0].get("awaken") if len(foes) == 1 and config.get("awaken") else None
     if aw:
         awake = {**foes[0], "image": aw["image"], "cutout": aw.get("cutout", True), "name": aw["name"]}
-        out["awaken_scene_html"] = story_assets.kz_stage_html([awake], config["area"])
+        out["awaken_scene_html"] = story_assets.kz_stage_html([awake], config["area"], bg, scene)
         out["awaken_hit_mask"] = story_assets.kz_hit_mask_uri(awake)
         if aw.get("special"):
             out["awaken_special_image"] = story_assets.image_uri(f"enemies/{aw['special']['image']}")
+    ms = foes[0].get("meteor_scene") if len(foes) == 1 else None      # メテオの絵（闇の回廊の Lv.10・11）
+    if ms and "meteor" in foes[0].get("gimmicks", []):
+        out["meteor_scene"] = {"name": ms["name"], "focus": ms.get("focus", "50% 50%"),
+                               "image": story_assets.image_uri(f"enemies/{ms['image']}")}
     return out
 
 

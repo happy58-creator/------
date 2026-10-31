@@ -742,27 +742,30 @@ def view_quest_list():
     if st.session_state.story_ally not in owned:
         st.session_state.story_ally = 1
     compact_title("クエスト一覧", "遊ぶクエストをえらんでね")
+    with st.container(key="story_quests"):
+        for q, label, sub in (("main", "🏰 闇の回廊", "はじまりのクエスト。迷宮の奥に、終焉の創造主が待つ"),
+                              (L.KZ, f"{story_data.KZ_QUEST['icon']} {story_data.KZ_QUEST['name']}", story_data.KZ_QUEST["sub"])):
+            done = sum(1 for d in story_data.DIFFICULTIES if L.mode_key(q, d["id"]) in profile["cleared_modes"])
+            if st.button(f"{label}　―　{sub}" + (f"　🏆{done}/4" if done else ""), key=f"_story_q_{q}", width="stretch"):
+                st.session_state.story_quest = q
+                go("quest_modes")
+    st.caption("負けても、そのステージの最初から何度でもやり直せるよ。進み具合は自動で保存されるよ。")
+
+
+def view_quest_modes():
+    """クエストをえらんだあと：モード（難易度）をえらぶ"""
+    story_header("🗺️ モードをえらぶ", ("◀ もどる", "quest"))
+    q = st.session_state.get("story_quest", "main")
+    name = f"{story_data.KZ_QUEST['icon']} {story_data.KZ_QUEST['name']}" if q == L.KZ else "🏰 闇の回廊"
+    compact_title(name, "1ステージに敵が何体も出るよ。強い敵ほど、仲間と協力しよう")
     rec = {"easy": "推奨Lv.1〜3", "normal": "推奨Lv.3〜5", "hard": "推奨Lv.5〜8", "very_hard": "推奨Lv.8〜10"}
     with st.container(key="story_quests"):
-        st.markdown("**🏰 闇の回廊**")
         for diff in story_data.DIFFICULTIES:
-            label = f"{diff['name']}（{L.stage_count(diff['id'])}ステージ）"
-            if diff["id"] in profile["cleared_modes"]:
+            label = f"{diff['name']}（{L.stage_count(diff['id'], q)}ステージ・{rec[diff['id']]}）"
+            if L.mode_key(q, diff["id"]) in profile["cleared_modes"]:
                 label += "　🏆クリア"
-            if st.button(label, key=f"_story_diff_{diff['id']}", width="stretch"):
+            if st.button(label, key=f"_story_mode_{q}_{diff['id']}", width="stretch"):
                 st.session_state.story_difficulty = diff["id"]
-                st.session_state.story_quest = "main"
-                go("ready")
-        q = story_data.KZ_QUEST
-        st.markdown(f"**{q['icon']} {q['name']}** <span style='font-size:13px;opacity:.75'>― {q['sub']}（1ステージに敵が何体も出るよ）</span>",
-                    unsafe_allow_html=True)
-        for diff in story_data.DIFFICULTIES:
-            label = f"{diff['name']}（{story_data.KZ_STAGE_COUNT}ステージ・{rec[diff['id']]}）"
-            if L.mode_key(L.KZ, diff["id"]) in profile["cleared_modes"]:
-                label += "　🏆クリア"
-            if st.button(label, key=f"_story_kz_{diff['id']}", width="stretch"):
-                st.session_state.story_difficulty = diff["id"]
-                st.session_state.story_quest = L.KZ
                 go("ready")
     st.caption("負けても、そのステージの最初から何度でもやり直せるよ。進み具合は自動で保存されるよ。")
 
@@ -771,7 +774,7 @@ def view_ready():
     """出発前の準備：装備・アクセサリ・アイテムを整えて「出発」"""
     if profile["run"]:
         go("quest")
-    story_header("🧭 出発の準備", ("◀ もどる", "quest"))
+    story_header("🧭 出発の準備", ("◀ もどる", "quest_modes"))
     show_notice()
     lv = st.session_state.story_ally
     diff = L.get_difficulty(st.session_state.story_difficulty)
@@ -926,6 +929,9 @@ def view_battle():
     run = profile["run"]
     round_id = st.session_state.story_round
     stage_no = L.EXTRA if run.get("extra") else run["stage"]
+    if not run.get("extra") and run.get("group_stage") != run["stage"]:     # 敵の組み合わせがまだ決まっていなければ決める
+        run["group"] = L.roll_group(run["stage"], run["difficulty"], quest=L.run_quest(run))
+        run["group_stage"] = run["stage"]
     st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)
     config = L.battle_config(round_id, stage_no, run["difficulty"], run["ally"], run["hp"], profile, run["bag"],
                              charge=run.get("charge", 0), ally_mp=L.run_mp(profile), quest=L.run_quest(run), group=run.get("group"),
@@ -1360,7 +1366,7 @@ def learn_action(lv, book, replace):
 
 {
     "home": view_home, "quest": view_quest, "ready": view_ready, "ally_detail": view_ally_detail, "ally_picker": view_ally_picker,
-    "inventory": view_inventory, "guide": view_guide, "titles": view_titles, "shop": view_shop, "spells": view_spells, "party": view_party,
+    "inventory": view_inventory, "guide": view_guide, "titles": view_titles, "shop": view_shop, "spells": view_spells, "party": view_party, "quest_modes": view_quest_modes,
     "battle": view_battle, "between": view_between, "retry": view_retry,
     "extra_lost": view_extra_lost, "end": view_end,
 }[st.session_state.story_view]()

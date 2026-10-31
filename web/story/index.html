@@ -467,6 +467,9 @@
   #chant .count .c { font:900 46px/1 ui-sans-serif,system-ui,sans-serif; color:#ffd36a; text-shadow:0 3px 0 #6b3a00, 0 0 18px rgba(255,180,60,.6); }
   #chant .count .d { font:700 12px/1.3 sans-serif; color:#ffe0b0; }
   #app.chanting .hud.bottom, #app.chanting #gearBtn, #app.chanting #quit { visibility:hidden; }
+  /* 連打中は味方のステータスを隠す（敵に重なってタップが効かなくならないように） */
+  #app.tapping .hud.bottom { visibility:hidden; }
+  #stage .kz-foe { bottom:24% !important; }
   #chant .bars { position:absolute; left:16px; right:16px; bottom:calc(max(16px, env(safe-area-inset-bottom)) + 24px); max-width:720px; margin:0 auto;
     display:flex; flex-direction:column; gap:8px; pointer-events:none; font:12px sans-serif; }
   #chant .bars .r { display:flex; align-items:center; gap:8px; }
@@ -516,6 +519,17 @@
   #pick .opt { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; border:1px solid rgba(110,210,150,.5); background:rgba(80,190,120,.12); color:var(--ink); font:inherit; text-align:left; cursor:pointer; }
   #pick .opt:disabled { opacity:.35; }
   #pick .opt img { width:38px; height:38px; border-radius:50%; object-fit:cover; }
+
+  /* ねらい（敵1体の魔法） */
+  #aim { position:absolute; inset:0; z-index:58; display:none; touch-action:none; }
+  #aim.on { display:block; }
+  #aim .aring { position:absolute; margin:0; animation:none; border-radius:50%; border:3px solid var(--c); transform:translate(-50%,-50%); pointer-events:none;
+    background:color-mix(in srgb, var(--c) 14%, transparent); box-shadow:0 0 24px var(--c); }
+  #aim .wdot { position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%; background:#ff2a2a; pointer-events:none;
+    box-shadow:0 0 0 3px rgba(255,255,255,.85), 0 0 18px #ff2a2a; animation:wdot .6s ease-in-out infinite alternate; }
+  @keyframes wdot { to { transform:scale(1.35); } }
+  #aim .hint { position:absolute; left:0; right:0; top:calc(max(10px, env(safe-area-inset-top)) + 92px); text-align:center; pointer-events:none; }
+  #aim .hint span { display:inline-block; padding:6px 16px; border-radius:18px; background:rgba(20,12,30,.85); border:1px solid var(--c); font-weight:900; color:#fff; }
 </style>
 <style id="sceneCss"></style>
 </head>
@@ -584,6 +598,7 @@
     <div class="scroll"><div class="spells" id="spellList"></div>
     <div class="note" id="magicNote" style="max-width:720px;margin:8px auto 0"></div></div>
   </div>
+  <div id="aim"><div class="hint"><span>円が敵に重なったらタップ！ 赤い点は弱点</span></div><div class="aring"></div><div class="wdot"></div></div>
   <div id="chant">
     <div class="title"><span></span></div>
     <div class="ring"></div>
@@ -1425,7 +1440,7 @@ function openMagic() {
   $("magicMp").textContent = `MP ${Math.floor(G.mp + 1e-9)} / ${Math.round(G.cfg.ally.max_mp)}`;
   const need = chantNeed();
   $("magicNote").textContent = `えらぶと「詠唱」。円の中を ${need}回 連打で満点（約${(need / G.cfg.magic.chant_tps).toFixed(1)}秒）。` +
-    (G.cfg.enemy.weak ? `弱点の${G.cfg.magic.elements[G.cfg.enemy.weak].name}は1.5倍！` : "") + " 魔法を使うと、このターンは攻撃できないよ。";
+    (G.cfg.enemy.weak ? `弱点の${G.cfg.magic.elements[G.cfg.enemy.weak].name}は1.5倍！` : "") + " 敵1体の魔法は、詠唱のあと動く円をタップで止めてねらう（赤い点が弱点）。魔法を使うと、このターンは攻撃できないよ。";
   $("sheet").classList.remove("open");
   $("magicSheet").classList.add("open");
 }
@@ -1524,7 +1539,8 @@ async function resolveSpell(sp, rate) {
     for (const i of aliveFoes()) { foeLoad(i); await spellHit(sp, rate, cm, el, M, i === aliveFoes()[0]); }
     foeLoad(G.foes[keep].dead ? (aliveFoes()[0] ?? keep) : keep);
   } else if (sp.kind === "attack") {
-    await spellHit(sp, rate, cm, el, M, true);
+    const aim = sp.target === "enemy" ? await aimPhase(sp) : 1;     // 敵1体：ねらい
+    await spellHit(sp, rate, cm, el, M, true, aim);
   } else if (false) {
     const elemMult = sp.element !== "none" && sp.element === e.weak ? M.weak : sp.element !== "none" && sp.element === e.resist_elem ? M.resist : 1;
     const raw = curMag() * sp.power * (sp.target === "enemies" ? M.all_rate : 1) * rate * cm * elemMult;
@@ -1778,9 +1794,72 @@ async function attackMulti() {
   await afterAction();
 }
 
+// ねらい：動く円をタップで止める。円の中に弱点（赤い点）→×1.5、体が全部→×1.0、一部→×0.8、何もない→×0.1
+function maskGeom(img) {
+  const r = img.getBoundingClientRect(), nw = img.naturalWidth || 1, nh = img.naturalHeight || 1, cs = getComputedStyle(img);
+  const s = cs.objectFit === "cover" ? Math.max(r.width / nw, r.height / nh) : Math.min(r.width / nw, r.height / nh);
+  const dw = nw * s, dh = nh * s;
+  const pos = cs.objectPosition.split(" ").map((v) => v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
+  const fy = img.classList.contains("st-enemy") ? 1 : pos[1];
+  return { ox: r.left + (r.width - dw) * pos[0], oy: r.top + (r.height - dh) * fy, dw, dh };
+}
+function bodyPoints(img, m) {
+  const g = maskGeom(img), pts = [];
+  if (!m) { for (let y = 0.1; y < 1; y += 0.08) for (let x = 0.1; x < 1; x += 0.08) pts.push([g.ox + x * g.dw, g.oy + y * g.dh]); return pts; }
+  const step = Math.max(1, Math.floor(Math.max(m.w, m.h) / 48));
+  for (let y = 0; y < m.h; y += step) for (let x = 0; x < m.w; x += step)
+    if (m.data[(y * m.w + x) * 4] > 127) pts.push([g.ox + (x + .5) / m.w * g.dw, g.oy + (y + .5) / m.h * g.dh]);
+  return pts.filter((p) => p[0] >= 0 && p[1] >= 0 && p[0] <= window.innerWidth && p[1] <= window.innerHeight);
+}
+async function aimPhase(sp) {
+  const M = G.cfg.magic, A = M.aim || { weak: 1.5, full: 1, part: 0.8, miss: 0.1 };
+  const img = curTarget();
+  const mask = G.multi && G.foes.length > 1 ? G.foes[G.cur].mask : G.hitMask;
+  const pts = img ? bodyPoints(img, mask) : [];
+  if (!pts.length) return 1;
+  const ys = pts.map((p) => p[1]), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const xs = pts.map((p) => p[0]), x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const cand = pts.filter((p) => p[1] < y0 + (y1 - y0) * 0.6 && p[1] > y0 + (y1 - y0) * 0.1 && Math.abs(p[0] - (x0 + x1) / 2) < (x1 - x0) * 0.22);
+  const wp = pick(cand.length ? cand : pts);
+  const el = elemOf(sp), box = $("aim"), ring = box.querySelector(".aring"), dot = box.querySelector(".wdot");
+  const size = Math.round(Math.max(70, Math.min(sp.circle * (M.aim_size || 0.6), window.innerWidth * 0.6)));
+  box.style.setProperty("--c", el.color);
+  ring.style.width = ring.style.height = size + "px";
+  dot.style.left = wp[0] + "px"; dot.style.top = wp[1] + "px";
+  $("app").classList.add("chanting");
+  box.classList.add("on");
+  const W = window.innerWidth, H = window.innerHeight, ph1 = Math.random() * 6, ph2 = Math.random() * 6;
+  let cx = W / 2, cy = H * 0.42, stopped = false;
+  box.onpointerdown = (ev) => { ev.preventDefault(); stopped = true; };
+  const t0 = performance.now();
+  await new Promise((resolve) => {
+    const tick = () => {
+      const t = (performance.now() - t0) / 1000;
+      cx = W / 2 + W * 0.34 * Math.sin(1.7 * t + ph1);
+      cy = H * 0.42 + H * 0.2 * Math.sin(2.4 * t + ph2);
+      ring.style.left = cx + "px"; ring.style.top = cy + "px";
+      if (stopped || t * 1000 >= (M.aim_ms || 4000)) resolve(); else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  box.onpointerdown = null;
+  const R = size / 2, d2 = (p) => (p[0] - cx) ** 2 + (p[1] - cy) ** 2;
+  const weakIn = d2(wp) <= R * R;
+  const inside = pts.filter((p) => d2(p) <= R * R).length;
+  const mult = weakIn ? A.weak : inside === 0 ? A.miss : inside / pts.length >= 0.97 ? A.full : A.part;
+  const label = weakIn ? "弱点ヒット！" : inside === 0 ? "はずれ…" : mult >= A.full ? "命中！" : "かすった";
+  ring.style.boxShadow = weakIn ? "0 0 40px #ff2a2a" : "";
+  popAt(cx, cy, `${label} ×${mult}`, weakIn ? "big" : "info");
+  await sleep(800);
+  box.classList.remove("on"); ring.style.boxShadow = "";
+  $("app").classList.remove("chanting");
+  return mult;
+}
+
 // 攻撃魔法1回ぶん（いま G.cur にいる敵へ）
-async function spellHit(sp, rate, cm, el, M, fx) {
+async function spellHit(sp, rate, cm, el, M, fx, aim) {
   const e = G.cfg.enemy;
+  cm *= (aim == null ? 1 : aim) * (sp.target === "enemy" ? (M.single_mult || 1) : 1);
   const elemMult = sp.element !== "none" && sp.element === e.weak ? M.weak : sp.element !== "none" && sp.element === e.resist_elem ? M.resist : 1;
   const raw = curMag() * sp.power * (sp.target === "enemies" ? M.all_rate : 1) * rate * cm * elemMult;
   const def = G.eBreak > 0 ? 0 : e.def * M.def_rate;
@@ -2152,7 +2231,7 @@ function openSheet() {
     const canRevive = G.party && G.members.some((m) => m.dead);
     const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0 || (reviveOnly && !canRevive);
     const icon = G.icons[it.id] ? `<img src="${G.icons[it.id]}" alt="">` : "";
-    b.innerHTML = `${icon}<span class="n">×${n}</span><b>${it.name}</b><small>${desc}</small>`;
+    b.innerHTML = `${icon}<span class="n">×${n}</span><b>${it.name}</b><small>${esc(it.text || desc)}</small>`;
     b.onclick = () => useItem(it);
     list.appendChild(b);
   }
@@ -2165,7 +2244,7 @@ async function useItem(it) {
   if (reviveOnly && !(G.party && G.members.some((m) => m.dead))) return;
   // パーティ：回復・蘇生のアイテムは、使う人をえらぶ
   let target = null;
-  const targeted = G.party && !it.assist && (it.heal_rate > 0 || it.mp_rate > 0 || (it.cure && it.cure.length) || reviveOnly);
+  const targeted = G.party && !it.assist && !it.all && (it.heal_rate > 0 || it.mp_rate > 0 || (it.cure && it.cure.length) || reviveOnly);
   if (targeted) {
     $("sheet").classList.remove("open");
     G.phase = "pick";
@@ -2205,6 +2284,16 @@ async function useItem(it) {
     updateBars(); updateBadges(); renderParty();
     await sleep(500);
     memberLoad(actor);
+  }
+  if (it.all && G.party) {                       // ラストエリクサー：立っている全員
+    for (const i of aliveMembers()) {
+      if (i === actor) continue;
+      memberLoad(i);
+      G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + G.cfg.ally.max_hp * (it.heal_rate || 0));
+      G.mp = Math.min(G.cfg.ally.max_mp || 0, G.mp + (G.cfg.ally.max_mp || 0) * (it.mp_rate || 0));
+      for (const id of it.cure || []) G.status[id] = 0;
+    }
+    memberLoad(actor); renderParty();
   }
   if (it.crit) { G.critTurns = it.crit_turns; G.critBonus = it.crit; fxEl("flash", { background: "rgba(255,230,90,.25)" }); }
   if (it.mag_mult) { G.magTurns = it.mag_turns; G.magMult = it.mag_mult; fxEl("flash", { background: "rgba(180,110,255,.25)" }); }
