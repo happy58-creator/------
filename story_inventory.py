@@ -27,9 +27,7 @@ STAT_NAMES = {"hp": "HP", "atk": "攻撃力", "def": "防御力"}
 
 
 def equip_effect(equip):
-    if equip["resist"]:
-        return f"{story_data.STATUS_EFFECTS[equip['resist']]['name']}を半分にする"
-    return "・".join(f"{STAT_NAMES[s]}+{equip[s]:g}" for s in ("hp", "atk", "def") if equip[s])
+    return L.equip_effect_text(equip["id"])
 
 
 ATTR_TEXT = L.ATTR_TEXT
@@ -46,7 +44,8 @@ def inventory_config(profile, ally_lv, round_id, mode="equip"):
     items = [
         {"id": i["id"], "name": i["name"], "icon": story_assets.item_thumb(i["id"]),
          "effect": item_effect(i), "store": store.get(i["id"], 0), "pack": pack.get(i["id"], 0),
-         "home_use": bool(i.get("home_use"))}     # 白龍の鱗：倉庫から「使う」
+         "home_use": bool(i.get("home_use")),     # 白龍の鱗・魔導書：倉庫から「使う」
+         "no_pack": i.get("home_use") == "learn"}  # 魔導書はリュックに入れない
         for i in story_data.ITEMS
     ]
     owners = {u: int(lv) for lv, uids in profile["equipped"].items() for u in uids}

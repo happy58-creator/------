@@ -22,11 +22,11 @@ import story_profile
 common.setup_page("ストーリーモード", "⚔️")
 
 USER = st.session_state.get("player_name") or "ななしさん"
-STAT_NAMES = {"hp": "HP", "atk": "攻撃力", "def": "防御力"}
+STAT_NAMES = {"hp": "HP", "atk": "攻撃力", "def": "防御力", "mp": "MP", "mag": "魔力"}
 OUTCOME_NAMES = {"clear": "全クリア", "abandon": "中断"}
 
 common.init_state({
-    "story_view": "home",        # home / quest / ally_detail / inventory / guide / titles / battle / between / retry / extra_lost / end
+    "story_view": "home",        # home / quest / ally_detail / inventory / guide / titles / shop / spells / battle / between / retry / extra_lost / end
     "story_detail": None,        # キャラ一覧で、くわしく見ているキャラ
     "story_ally": 1,
     "story_difficulty": "easy",
@@ -170,6 +170,11 @@ def hp_bar(hp, max_hp):
     st.progress(min(1.0, max(0.0, hp / max_hp)), text=f"❤️ HP {L.display_hp(hp)} / {max_hp:g}")
 
 
+def mp_bar(mp, max_mp):
+    if max_mp > 0:
+        st.progress(min(1.0, max(0.0, mp / max_mp)), text=f"🔮 MP {int(mp)} / {max_mp:g}")
+
+
 def stage_label(run):
     return "EXTRA STAGE" if run.get("extra") else f"ステージ{run['stage']}"
 
@@ -259,6 +264,20 @@ def show_rewards(rewards):
     if not show_recruits(rewards):
         return False
     show_ultra(rewards)
+    if rewards.get("money"):
+        st.markdown(f"{story_data.MONEY_ICON} **{rewards['money']:,} {story_data.MONEY_NAME}** を手に入れた！"
+                    f"（いま {profile.get('money', 0):,}）")
+    if rewards.get("boss_drop"):              # ボスを倒すと特別なアイテム
+        drop = rewards["boss_drop"]
+        where = "リュックへ" if rewards.get("boss_where") == "pack" else "リュックがいっぱいなので倉庫へ"
+        st.success(f"👑 ボスが {L.get_item(drop)['name']} を落とした！ → {where}")
+        st.markdown(f"{item_icon(drop)} <b>{L.get_item(drop)['name']}</b>：{L.item_effect_text(L.get_item(drop))}",
+                    unsafe_allow_html=True)
+    if rewards.get("first_book"):             # はじめての全クリア：魔導書
+        book = rewards["first_book"]
+        st.success(f"📖 はじめての全クリアのごほうび！ {L.get_item(book)['name']} を手に入れた！ → 倉庫へ")
+        st.markdown(f"{item_icon(book)} <b>{L.get_item(book)['name']}</b>：{L.item_effect_text(L.get_item(book))}",
+                    unsafe_allow_html=True)
     if rewards.get("assist_drop"):            # アステルの援護のあとは、特別なアイテムが必ず手に入る
         drop = rewards["assist_drop"]
         where = "リュックへ" if rewards.get("assist_where") == "pack" else "リュックがいっぱいなので倉庫へ"
@@ -315,9 +334,10 @@ def ally_panel_parts(lv, split=False):
     level, progress = L.level_progress(lv, points)
     base, now = L.base_stats(lv, level), L.ally_stats(lv, profile)      # （+）はアビリティと装備のぶん
     stats = []
-    for stat in ("hp", "atk", "def"):
+    for stat in ("hp", "atk", "def", "mp", "mag"):
         extra = now[stat] - base[stat]
         stats.append(f"{STAT_NAMES[stat]} <b>{now[stat]:g}</b>" + (f"<span style='color:#7fd8a0'>（+{extra:g}）</span>" if extra else ""))
+    stats.append(f"会心率 <b>{now['crit']:.0%}</b>")
     exp = ("<div style='font-size:12px;margin-top:4px'>"
            + ("レベル最大！" if level >= story_data.LEVEL_MAX else f"次のレベルまで")
            + "<div style='height:7px;border-radius:4px;background:#2a2228;overflow:hidden'>"
@@ -504,15 +524,18 @@ header[data-testid="stHeader"] { display: none !important; }
 .st-key-story_menu button p, .st-key-story_head button p { white-space: nowrap !important; overflow: hidden; text-overflow: clip; }
 /* スマホでは10%だと字が入らないので、いちばん小さい幅を決めておく */
 .st-key-story_menu [data-testid="stColumn"]:nth-child(1) { min-width: 92px !important; }
-.st-key-story_menu [data-testid="stColumn"]:nth-child(2), .st-key-story_menu [data-testid="stColumn"]:nth-child(3) { min-width: 64px !important; }
+.st-key-story_menu [data-testid="stColumn"]:nth-child(2) { min-width: 72px !important; }
+.st-key-story_menu [data-testid="stColumn"]:nth-child(3), .st-key-story_menu [data-testid="stColumn"]:nth-child(4) { min-width: 52px !important; }
 /* 画像（と装備のアイコン）の下：「装備」は少し離し、「装備」「アクセサリ」「アイテム」のあいだはつめる */
 .st-key-story_panel .st-key-_story_inv_equip { margin-top: 8px !important; }
-.st-key-story_panel .st-key-_story_inv_acc, .st-key-story_panel .st-key-_story_inv_item { margin-top: 2px !important; }
+.st-key-story_panel .st-key-_story_inv_acc, .st-key-story_panel .st-key-_story_inv_item, .st-key-story_panel .st-key-_story_inv_spells { margin-top: 2px !important; }
 /* 「キャラクター変更」はアビリティから少し離す */
 .st-key-story_panel .st-key-_story_change { margin-top: 12px !important; }
-.st-key-story_panel .st-key-_story_inv_equip button, .st-key-story_panel .st-key-_story_inv_acc button, .st-key-story_panel .st-key-_story_inv_item button {
+.st-key-story_panel .st-key-_story_inv_equip button, .st-key-story_panel .st-key-_story_inv_acc button, .st-key-story_panel .st-key-_story_inv_item button,
+.st-key-story_panel .st-key-_story_inv_spells button {
   white-space: nowrap !important; font-size: 12px !important; padding: 2px 2px !important; min-height: 34px !important; }
-.st-key-story_panel .st-key-_story_inv_equip p, .st-key-story_panel .st-key-_story_inv_acc p, .st-key-story_panel .st-key-_story_inv_item p { white-space: nowrap !important; font-size: 12px !important; }
+.st-key-story_panel .st-key-_story_inv_equip p, .st-key-story_panel .st-key-_story_inv_acc p, .st-key-story_panel .st-key-_story_inv_item p,
+.st-key-story_panel .st-key-_story_inv_spells p { white-space: nowrap !important; font-size: 12px !important; }
 .st-ctitle { margin: 0 0 6px; line-height: 1.35; }
 .st-ctitle b { font-size: 1.3rem; display: block; }
 .st-ctitle span { font-size: .9rem; opacity: .8; }
@@ -586,14 +609,19 @@ def view_home():
     story_header()
     # 上のメニュー：クエスト（画面の約20%）・称号・攻略（約10%ずつ）を横に並べる
     with st.container(key="story_menu"):
-        col_quest, col_title, col_guide, _ = st.columns([2, 1, 1, 6])
+        col_quest, col_shop, col_title, col_guide, _ = st.columns([2, 1.3, 1, 1, 4.7])
         if col_quest.button("クエスト", key="_story_quest", type="primary", width="stretch"):
             st.session_state.story_confirm_new = False
             go("quest")
+        if col_shop.button("ショップ", key="_story_shop", width="stretch"):
+            st.session_state.story_shop_back = "home"
+            go("shop")
         if col_title.button("称号", key="_story_titles", width="stretch"):
             go("titles")
         if col_guide.button("攻略", key="_story_guide", width="stretch"):
             go("guide")
+    st.markdown(f"<div style='text-align:right;font-size:14px;margin:-4px 0 2px'>{story_data.MONEY_ICON} "
+                f"<b>{profile.get('money', 0):,}</b> {story_data.MONEY_NAME}</div>", unsafe_allow_html=True)
     show_notice()
 
     run = profile["run"]
@@ -645,7 +673,7 @@ def show_notice():
         st.info(notice)
 
 
-INV_BUTTONS = (("equip", "🛡️ 装備"), ("acc", "💍 アクセサリ"), ("item", "🎒 アイテム"))
+INV_BUTTONS = (("equip", "🛡️ 装備"), ("acc", "💍 アクセサリ"), ("item", "🎒 アイテム"), ("spells", "🔮 魔法"))
 
 
 def open_inventory(mode, back):
@@ -663,8 +691,12 @@ def loadout_buttons(back, prefix, counts=False):
     bag = L.bag_total(profile["run"]["bag"]) if profile["run"] else sum(L.pack_counts(profile).values())
     nums = {"equip": f"{len(gear)} / {story_data.MAX_GEAR_SLOTS}", "acc": f"{len(acc)} / {story_data.MAX_ACCESSORY_SLOTS}",
             "item": f"{bag} / {story_data.MAX_CARRY_ITEMS}"}
+    nums["spells"] = f"{len(L.known_spells(profile, lv))}"
     for mode, label in INV_BUTTONS:
         if st.button(label + (f"（{nums[mode]}）" if counts else ""), key=f"{prefix}_{mode}", width="stretch"):
+            if mode == "spells":
+                st.session_state.story_spells_back = back
+                go("spells")
             open_inventory(mode, back)
 
 
@@ -855,7 +887,7 @@ def view_battle():
     stage_no = L.EXTRA if run.get("extra") else run["stage"]
     st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)
     config = L.battle_config(round_id, stage_no, run["difficulty"], run["ally"], run["hp"], profile, run["bag"],
-                             charge=run.get("charge", 0))
+                             charge=run.get("charge", 0), ally_mp=L.run_mp(profile))
     result = story_battle.battle(config, key=f"story_battle_{round_id}")
     if not result or result.get("round") != round_id:
         return
@@ -939,6 +971,7 @@ def view_between():
     run = profile["run"]
     rewards = st.session_state.story_rewards
     max_hp = L.ally_stats(run["ally"], profile)["hp"]
+    max_mp = L.ally_stats(run["ally"], profile)["mp"]
     notice = st.session_state.pop("story_notice", None)
     if rewards and rewards.get("extra"):
         compact_title("🌟 EXTRA STAGE クリア！", f"{story_data.EXTRA_ENEMY['name']} を たおした！")
@@ -962,6 +995,7 @@ def view_between():
                 st.markdown("**⚠️ EXTRA STAGE**　ただならぬ気配……**？？？** が 行く手をはばんでいる！")
                 st.caption("戦わずに「にげる」こともできるよ（負けにはならない）。")
                 hp_bar(run["hp"], max_hp)
+                mp_bar(L.run_mp(profile), max_mp)
                 if st.button("⚔️ 立ち向かう", type="primary", width="stretch"):
                     go_battle()
         else:
@@ -974,7 +1008,11 @@ def view_between():
                 if enemy["gimmicks"]:
                     st.caption("とくちょう：" + "・".join(
                         f"{story_data.STATUS_EFFECTS[g]['icon']}{story_data.STATUS_EFFECTS[g]['name']}" for g in enemy["gimmicks"]))
+                if enemy.get("weak"):
+                    w = story_data.ELEMENTS[enemy["weak"]]
+                    st.caption(f"弱点：{w['icon']}{w['name']}の魔法")
                 hp_bar(run["hp"], max_hp)
+                mp_bar(L.run_mp(profile), max_mp)
                 if st.button(f"⚔️ {label} へ すすむ", type="primary", width="stretch"):
                     go_battle()
         with col_text:
@@ -984,8 +1022,13 @@ def view_between():
     # 下：もらった物・かばん（箱の中だけスクロール）
     with box(BOX_H - 140, key="sbox_between", offset=340):
         if rewards:
+            healed = []
             if rewards["healed"] > 0:
-                st.caption(f"休けいして HPが {L.display_hp(rewards['healed'])} 回復したよ。")
+                healed.append(f"HPが {L.display_hp(rewards['healed'])}")
+            if rewards.get("mp_healed", 0) >= 1:
+                healed.append(f"MPが {int(rewards['mp_healed'])}")
+            if healed:
+                st.caption(f"休けいして {'、'.join(healed)} 回復したよ。")
             show_rewards(rewards)
         st.markdown("**🎒 かばん**")
         counts = L.bag_counts(run["bag"])
@@ -997,11 +1040,13 @@ def view_between():
                 continue
             col_name, col_use = st.columns([5, 3])
             col_name.markdown(f"{item_icon(item['id'], n, size=32)} {item['name']}", unsafe_allow_html=True)
-            if item["heal_rate"] > 0 and not item.get("assist"):
-                if col_use.button("つかう", key=f"_story_use_{item['id']}", width="stretch",
-                                  disabled=run["hp"] >= max_hp):
+            if (item["heal_rate"] > 0 or item.get("mp_rate")) and not item.get("assist") and not item.get("revive"):
+                full = (item["heal_rate"] <= 0 or run["hp"] >= max_hp) and (not item.get("mp_rate") or L.run_mp(profile) >= max_mp)
+                if col_use.button("つかう", key=f"_story_use_{item['id']}", width="stretch", disabled=full):
                     L.take_from_bag(run["bag"], item["id"])
                     run["hp"] = L.heal(run["hp"], max_hp, item)
+                    if item.get("mp_rate"):
+                        run["mp"] = min(max_mp, L.run_mp(profile) + max_mp * item["mp_rate"])
                     save()
                     st.rerun()
             else:
@@ -1049,6 +1094,9 @@ def end_details(summary, name):
     level_after = L.level_of(summary["ally"], summary["ability_after"])
     if level_after > level_before:
         st.success(f"⬆️ {name} の レベルが {level_before} → {level_after} に上がった！")
+        for sp in L.level_spells(summary["ally"], level_after):
+            if level_before < sp["level"] <= level_after:
+                st.success(f"🔮 新しい魔法「{L.get_spell(sp['id'])['name']}」を覚えた！（{L.spell_short_text(sp['id'])}）")
     if summary["new_abilities"]:
         st.success(f"🎊 新しいアビリティを {summary['new_abilities']}つ 解放した！")
     ability_gauges(summary["ally"], summary["ability_after"])
@@ -1059,9 +1107,167 @@ def end_details(summary, name):
                 unsafe_allow_html=True)
 
 
+
+# ---------------------------------------------------------------------------
+# ショップ（倉庫のアイテムを買う・売る）
+# ---------------------------------------------------------------------------
+SHOP_CSS = """<style>
+.shop-scene { position: relative; width: 100%; max-width: 760px; margin: 0 auto 6px; aspect-ratio: 1536 / 838; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+.shop-scene img { position: absolute; display: block; pointer-events: none; }
+.shop-scene .bg, .shop-scene .front { inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.shop-scene .keeper { height: 62.5%; top: 41.9%; left: 73.8%; transform: translateX(-50%); }
+.shop-scene .say { position: absolute; left: 3%; top: 5%; max-width: 52%; background: rgba(255,250,235,.94); color: #3a2a14; border-radius: 12px;
+  padding: 6px 10px; font-size: clamp(11px, 2.6vw, 14px); line-height: 1.45; font-weight: 700; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
+.shop-money { text-align: center; font-size: 17px; margin: 2px 0 6px; }
+.st-key-story_shop_list [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 6px !important; align-items: center; }
+.st-key-story_shop_list [data-testid="stColumn"] { min-width: 0 !important; }
+.st-key-story_shop_list button { padding: 2px 4px !important; min-height: 36px !important; font-size: 12px !important; white-space: nowrap !important; }
+.st-key-story_shop_list button p { font-size: 12px !important; white-space: nowrap !important; }
+.shop-row { display: flex; gap: 8px; align-items: center; font-size: 13px; line-height: 1.35; }
+.shop-row img { width: 44px; height: 44px; border-radius: 8px; flex: none; object-fit: cover; }
+.shop-row b { font-size: 14px; } .shop-row small { opacity: .75; display: block; }
+.shop-row .p { color: #ffd36a; font-weight: 800; white-space: nowrap; }
+</style>"""
+
+
+def view_shop():
+    back = st.session_state.get("story_shop_back") or "home"
+    story_header("🏪 ショップ", ("◀ もどる", back))
+    st.html(SHOP_CSS)
+    line = st.session_state.setdefault("story_shop_line", __import__("random").choice(story_data.SHOP_LINES))
+    bg = story_assets.thumb_uri("backgrounds/bg_shop.webp", 1100)
+    keeper = story_assets.thumb_uri("shop/shopkeeper.webp", 640)
+    front = story_assets.thumb_uri("shop/bg_shop_front.webp", 1100)
+    if bg:
+        st.markdown("<div class='shop-scene'>"
+                    f"<img class='bg' src='{bg}' alt=''>" + (f"<img class='keeper' src='{keeper}' alt='店主'>" if keeper else "")
+                    + (f"<img class='front' src='{front}' alt=''>" if front else "") + f"<div class='say'>{line}</div></div>",
+                    unsafe_allow_html=True)
+    st.markdown(f"<div class='shop-money'>{story_data.MONEY_ICON} <b>{profile.get('money', 0):,}</b> {story_data.MONEY_NAME}</div>",
+                unsafe_allow_html=True)
+    show_notice()
+    money = profile.get("money", 0)
+    tab_buy, tab_sell = st.tabs(["🛒 買う", "💰 売る"])
+    with tab_buy:
+        st.caption("買った物は倉庫に入るよ。魔導書や強い薬は、ボスが持っているらしい……")
+        with box(BOX_H - 60, key="story_shop_list", offset=470):
+            for item_id in story_data.SHOP_ITEMS:
+                item, price = L.get_item(item_id), L.buy_price(item_id)
+                have = profile["items"].get(item_id, 0)
+                col_text, col_one, col_five = st.columns([6, 2, 2], vertical_alignment="center")
+                col_text.markdown(f"<div class='shop-row'><img src='{story_assets.item_thumb(item_id)}' alt=''><div><b>{item['name']}</b> "
+                                  f"<span class='p'>{price:,}</span><small>{L.item_effect_text(item)}（倉庫 {have}こ）</small></div></div>",
+                                  unsafe_allow_html=True)
+                for col, n in ((col_one, 1), (col_five, 5)):
+                    if col.button(f"{n}こ買う", key=f"_shop_buy_{item_id}_{n}", width="stretch", disabled=money < price * n):
+                        shop_action(L.buy_item, item_id, n)
+    with tab_sell:
+        st.caption("倉庫のアイテムを、半分の値段で買い取るよ（リュックの中の物は売れないよ）。")
+        with box(BOX_H - 60, key="story_shop_sell", offset=470):
+            rows = [(i, profile["items"].get(i["id"], 0)) for i in story_data.ITEMS]
+            rows = [(i, n) for i, n in rows if n > 0 and L.sell_price(i["id"]) > 0]
+            if not rows:
+                st.caption("売れるアイテムは ないよ。")
+            for item, have in rows:
+                price = L.sell_price(item["id"])
+                col_text, col_one, col_all = st.columns([6, 2, 2], vertical_alignment="center")
+                col_text.markdown(f"<div class='shop-row'><img src='{story_assets.item_thumb(item['id'])}' alt=''><div><b>{item['name']}</b> "
+                                  f"<span class='p'>{price:,}</span><small>倉庫 {have}こ</small></div></div>", unsafe_allow_html=True)
+                if col_one.button("1こ売る", key=f"_shop_sell_{item['id']}_1", width="stretch"):
+                    shop_action(L.sell_item, item["id"], 1)
+                if col_all.button(f"全部（{have}）", key=f"_shop_sell_{item['id']}_all", width="stretch"):
+                    shop_action(L.sell_item, item["id"], have)
+
+
+def shop_action(fn, item_id, count):
+    try:
+        st.session_state.story_notice = fn(profile, item_id, count)
+        save()
+    except ValueError as e:
+        st.session_state.story_notice = f"できなかったよ：{e}"
+    st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# 魔法（覚えている魔法と、魔導書）
+# ---------------------------------------------------------------------------
+def spell_line(sid, stats):
+    sp, n = L.get_spell(sid), L.spell_numbers(sid, stats)
+    elem = story_data.ELEMENTS[sp["element"]]
+    extra = ""
+    if "power" in n:
+        extra = f"威力 {n['power']:.0f}"
+    elif "heal" in n:
+        extra = f"HP +{n['heal']:.0f}" + (f"・MP +{n['mp_heal']:.0f}" if n.get("mp_heal") else "")
+    elif sp["kind"] == "brave":
+        extra = f"攻撃×{1 + n['boost']:.2f}（{n['turns']}回）"
+    elif sp["kind"] == "protect":
+        extra = f"{n['turns']}ターン"
+    elif sp["kind"] == "haste":
+        extra = f"+{n['seconds']:g}秒（{n['turns']}回）"
+    return (f"{elem['icon'] if sp['kind'] == 'attack' else '🔮'} <b>{sp['name']}</b>　MP {n['cost']}"
+            f"<br><span style='font-size:12px;opacity:.8'>{L.spell_short_text(sid)}" + (f"　{extra}" if extra else "") + "</span>")
+
+
+def view_spells():
+    back = st.session_state.get("story_spells_back") or "home"
+    story_header("🔮 魔法", ("◀ もどる", back))
+    show_notice()
+    lv = profile["run"]["ally"] if profile["run"] else st.session_state.story_ally
+    stats = L.ally_stats(lv, profile)
+    cut = story_data.MP_COST_CUT * L.mag_coef(stats["mag"])
+    compact_title(f"{short_name(lv)}（Lv.{L.ally_level(profile, lv)}）",
+                  f"MP {stats['mp']:g}　魔力 {stats['mag']:g}（消費MP −{cut:.0%}）　会心率 {stats['crit']:.0%}　詠唱の満点 {L.chant_taps(stats['mag'])}回")
+    with box(BOX_H + 40, key="story_spell_box", offset=200):
+        st.markdown("**レベルで覚える魔法**")
+        for sp in L.level_spells(lv, L.ally_level(profile, lv)):
+            if sp["learned"]:
+                st.markdown(spell_line(sp["id"], stats), unsafe_allow_html=True)
+            else:
+                st.markdown(f"🔒 <b>？？？</b>　<span style='font-size:12px;opacity:.75'>Lv.{sp['level']} で覚える</span>",
+                            unsafe_allow_html=True)
+        books = L.book_spells(profile, lv)
+        st.markdown(f"**魔導書で覚えた魔法（{len(books)} / {story_data.MAX_BOOK_SPELLS}）**")
+        for sid in books:
+            st.markdown(spell_line(sid, stats), unsafe_allow_html=True)
+        for _ in range(story_data.MAX_BOOK_SPELLS - len(books)):
+            st.caption("＋ 空き（下の魔導書で覚えられるよ）")
+        st.markdown("**倉庫の魔導書**")
+        owned = [(b, profile["items"].get(b, 0)) for b in L.book_ids() if profile["items"].get(b, 0) > 0]
+        if not owned:
+            st.caption("魔導書は まだ持っていないよ。ボスを倒したり、はじめて全クリアするともらえるよ。")
+        known = L.known_spells(profile, lv)
+        for book, n in owned:
+            item = L.get_item(book)
+            sid = item["spell"]
+            st.markdown(f"{item_icon(book, n, size=36)} <b>{item['name']}</b> → 「{L.get_spell(sid)['name']}」"
+                        f"<span style='font-size:12px;opacity:.8'>（{L.spell_short_text(sid)}）</span>", unsafe_allow_html=True)
+            if sid in known:
+                st.caption("もう覚えているよ。")
+            elif len(books) < story_data.MAX_BOOK_SPELLS:
+                if st.button(f"📖 {short_name(lv)}が覚える", key=f"_learn_{book}", width="stretch"):
+                    learn_action(lv, book, None)
+            else:
+                cols = st.columns(len(books))
+                for col, old in zip(cols, books):
+                    if col.button(f"「{L.get_spell(old)['name']}」と入れかえ", key=f"_learn_{book}_{old}", width="stretch"):
+                        learn_action(lv, book, old)
+        st.caption("魔力が高いほど、MPが少なくてすみ、詠唱の満点も近くなるよ。魔導書の魔法は、別の魔導書で入れかえられる（忘れた魔法の本は戻らない）。")
+
+
+def learn_action(lv, book, replace):
+    try:
+        st.session_state.story_notice = L.learn_book(profile, lv, book, replace)
+        save()
+    except ValueError as e:
+        st.session_state.story_notice = f"できなかったよ：{e}"
+    st.rerun()
+
+
 {
     "home": view_home, "quest": view_quest, "ready": view_ready, "ally_detail": view_ally_detail, "ally_picker": view_ally_picker,
-    "inventory": view_inventory, "guide": view_guide, "titles": view_titles,
+    "inventory": view_inventory, "guide": view_guide, "titles": view_titles, "shop": view_shop, "spells": view_spells,
     "battle": view_battle, "between": view_between, "retry": view_retry,
     "extra_lost": view_extra_lost, "end": view_end,
 }[st.session_state.story_view]()

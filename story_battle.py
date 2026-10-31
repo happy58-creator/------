@@ -1,6 +1,6 @@
 """戦闘コンポーネント（ブラウザ側で1ステージ分の戦闘を動かし、結果を Python に返す）
 
-ターン制：自分のターン（攻撃かアイテム）→ 敵のターン、を繰り返す。連打・エフェクト・状態異常・
+ターン制：自分のターン（アイテムを1つ使ってから、攻撃か魔法）→ 敵のターン、を繰り返す。連打・エフェクト・状態異常・
 ターンの進行はすべてブラウザの中で処理する（押すたびにサーバーと通信すると、数えもれや遅れが出るため）。
 ダメージの数字は story_logic.battle_config() で計算したものをそのまま使う。
 戦闘が終わると、次の dict を返す（戦闘中は None）。
@@ -10,7 +10,8 @@
      "taps": タップ数, "hits": 当たった数, "misses": 外れた数,
      "damage_dealt": 与えたダメージ, "damage_taken": 受けたダメージ,
      "enemy_attacks": 敵の攻撃回数, "elapsed_ms": かかった時間,
-     "used": {アイテムのid: 使った個数}}
+     "used": {アイテムのid: 使った個数},
+     "ally_mp": 残りMP, "used_mp": 使ったMP, "crits": 会心の回数, "casts": 魔法の回数, "chant_taps": 詠唱で円に当てた回数}
 
 画面いっぱいに表示するため、戦闘中のページでは fullscreen_css() を一緒に出すこと。
 """
@@ -73,7 +74,7 @@ def battle(config, key):
         scene_css=story_assets.SCENE_CSS,
         hit_mask=story_assets.hit_mask_uri(enemy),
         ally_icon=story_assets.ally_icon_uri(config["ally"]["lv"]),
-        item_icons={item["id"]: story_assets.item_icon_uri(item["id"]) for item in config["items"]},
+        item_icons={item["id"]: story_assets.item_thumb(item["id"], 192) for item in config["items"]},
         equip_icons={e["id"]: story_assets.equipment_thumb(e["id"]) for part in ("gear", "acc") for e in config["loadout"][part]},
         status_icons={sid: uri for sid in story_data.STATUS_EFFECTS if (uri := story_assets.status_icon_uri(sid))},
         **awaken,

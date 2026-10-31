@@ -428,6 +428,59 @@
   .gtag { display:inline-flex; gap:5px; align-items:center; font-size:13px; padding:5px 10px; border-radius:999px; background:rgba(120,200,255,.12); border:1px solid rgba(120,200,255,.35); }
   .gtag.imm { background:rgba(255,230,150,.12); border-color:rgba(255,230,150,.45); }
   .gtag img { width:18px; height:18px; }
+
+  /* ---- 魔法：MPバー・魔法ボタン・魔法の一覧・詠唱 ---- */
+  .mprow { display:flex; align-items:center; gap:6px; margin-top:4px; }
+  .mpbar { position:relative; flex:1; height:8px; border-radius:6px; background:#1a1726; border:1px solid rgba(160,140,255,.4); overflow:hidden; }
+  .mpbar .fill { position:absolute; inset:0 auto 0 0; background:linear-gradient(#b4a4ff,#5a3fd6); transition:width .35s ease-out; }
+  .mpnum { font:700 12px/1 ui-monospace,Menlo,monospace; color:#cbbfff; text-shadow:0 1px 3px #000; min-width:92px; text-align:right; }
+  .btn.magic { background:linear-gradient(#d8ccff,#8f78ff); flex:.8; }
+  .buttons .btn { white-space:nowrap; font-size:clamp(15px,4.4vw,19px); padding-left:4px; padding-right:4px; }
+  .weak { font:700 11px/1 sans-serif; padding:3px 8px; border-radius:10px; background:rgba(255,214,106,.18); border:1px solid rgba(255,214,106,.6);
+    color:#ffe59a; margin-left:8px; white-space:nowrap; display:none; }
+  .weak.on { display:inline-block; }
+  #magicSheet { position:absolute; z-index:70; left:0; right:0; bottom:0; transform:translateY(105%); transition:transform .25s ease-out;
+    background:#16111d; border-top:1px solid rgba(190,170,255,.45); border-radius:18px 18px 0 0; padding:14px 14px max(16px, env(safe-area-inset-bottom));
+    max-height:72vh; max-height:72dvh; display:flex; flex-direction:column; box-shadow:0 -12px 30px rgba(0,0,0,.6); }
+  #magicSheet.open { transform:translateY(0); }
+  #magicSheet .scroll { overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain; min-height:0; flex:1 1 auto; }
+  #magicSheet h3 { margin:0 auto 10px; font-size:17px; display:flex; gap:8px; align-items:center; max-width:720px; width:100%; color:#cbbcff; }
+  #magicSheet h3 .mp { margin-left:auto; font:700 13px ui-monospace,Menlo,monospace; color:#b9adff; }
+  #magicSheet h3 button { font:600 13px/1 sans-serif; padding:8px 12px; border-radius:999px; background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,.25); cursor:pointer; }
+  .spells { display:flex; flex-direction:column; gap:8px; max-width:720px; margin:0 auto; }
+  .spellbtn { display:flex; align-items:center; gap:10px; text-align:left; padding:10px 12px; border-radius:14px; color:var(--ink);
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.18); font:inherit; cursor:pointer; }
+  .spellbtn .el { width:38px; height:38px; flex:none; border-radius:50%; display:grid; place-items:center; font-weight:900;
+    background:color-mix(in srgb, var(--c) 30%, #120d16); color:var(--c); border:1px solid var(--c); }
+  .spellbtn b { display:block; font-size:15px; } .spellbtn small { display:block; color:var(--muted); font-size:12px; }
+  .spellbtn .cost { margin-left:auto; font:900 13px ui-monospace,Menlo,monospace; color:#b9adff; white-space:nowrap; }
+  .spellbtn:disabled { opacity:.38; cursor:default; }
+  #chant { position:absolute; inset:0; z-index:58; display:none; touch-action:none; }
+  #chant.on { display:block; }
+  #chant .ring { position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); border-radius:50%; pointer-events:none;
+    border:2px solid var(--c); background:color-mix(in srgb, var(--c) 10%, transparent);
+    box-shadow:0 0 40px color-mix(in srgb, var(--c) 60%, transparent), inset 0 0 40px color-mix(in srgb, var(--c) 40%, transparent); }
+  #chant .ring.pulse { animation:ringPulse .12s ease-out; }
+  @keyframes ringPulse { from{box-shadow:0 0 70px var(--c), inset 0 0 60px var(--c)} }
+  #chant .cap { position:absolute; left:0; right:0; text-align:center; font:700 12px/1.3 sans-serif; color:#ffe6d6; text-shadow:0 1px 4px #000; pointer-events:none; }
+  #chant .count { position:absolute; right:18px; top:30%; text-align:right; pointer-events:none; }
+  #chant .count .c { font:900 46px/1 ui-sans-serif,system-ui,sans-serif; color:#ffd36a; text-shadow:0 3px 0 #6b3a00, 0 0 18px rgba(255,180,60,.6); }
+  #chant .count .d { font:700 12px/1.3 sans-serif; color:#ffe0b0; }
+  #app.chanting .hud.bottom, #app.chanting #gearBtn, #app.chanting #quit { visibility:hidden; }
+  #chant .bars { position:absolute; left:16px; right:16px; bottom:calc(max(16px, env(safe-area-inset-bottom)) + 24px); max-width:720px; margin:0 auto;
+    display:flex; flex-direction:column; gap:8px; pointer-events:none; font:12px sans-serif; }
+  #chant .bars .r { display:flex; align-items:center; gap:8px; }
+  #chant .bars .track { flex:1; height:12px; border-radius:8px; background:#221b21; overflow:hidden; border:1px solid rgba(255,150,90,.5); }
+  #chant .bars .track > div { height:100%; width:0; background:linear-gradient(90deg,#ff9a5a,#ffd36a); }
+  #chant .bars .time > div { background:#e9d6a6; }
+  #chant .bars b { font:900 14px ui-monospace,Menlo,monospace; color:#ffd36a; min-width:44px; text-align:right; }
+  #chant .title { position:absolute; left:0; right:0; top:calc(max(10px, env(safe-area-inset-top)) + 92px); text-align:center; pointer-events:none; }
+  #chant .title span { display:inline-block; padding:6px 18px; border-radius:20px; background:rgba(20,12,30,.85); border:1px solid var(--c);
+    font-weight:900; font-size:19px; color:#fff; letter-spacing:.08em; }
+  .pop.crit-pop { color:#ffe066; font-size:18px; }
+  .spark.crit { width:44px; height:44px; margin:-22px 0 0 -22px; border-color:#ffd36a; box-shadow:0 0 20px rgba(255,211,106,.9); }
+  #reviveList { display:flex; flex-direction:column; gap:8px; margin:0 0 10px; }
+  #reviveList .btn { min-height:48px; font-size:16px; }
 </style>
 <style id="sceneCss"></style>
 </head>
@@ -454,7 +507,7 @@
   <div id="banner"><div class="t"></div><div class="s"></div></div>
 
   <div class="hud top">
-    <div class="row"><span class="ename" id="enemyName"></span><span class="stageno" id="stageNo"></span></div>
+    <div class="row"><span class="ename" id="enemyName"></span><span class="weak" id="enemyWeak" data-tip="weak"></span><span class="stageno" id="stageNo"></span></div>
     <div class="row" style="margin-top:6px">
       <div class="hpbar" id="enemyBar"><div class="lag"></div><div class="fill"></div></div>
       <span class="num" id="enemyNum"></span>
@@ -471,12 +524,14 @@
       <div style="flex:1;min-width:0">
         <div class="row" style="margin:0"><span class="aname" id="allyName"></span><span class="num" id="allyNum" style="margin-left:auto"></span></div>
         <div class="hpbar" id="allyBar" style="margin-top:6px"><div class="lag"></div><div class="fill"></div></div>
+        <div class="mprow" id="mpRow"><div class="mpbar" id="mpBar"><div class="fill"></div></div><span class="mpnum" id="mpNum"></span></div>
       </div>
     </div>
     <div class="badges" id="badges"></div>
     <div class="buttons">
       <button class="btn attack" id="btnAttack" type="button" disabled>⚔️ 攻撃</button>
       <button class="btn end" id="btnEnd" type="button">⏭️ ターンを終える</button>
+      <button class="btn magic" id="btnMagic" type="button" disabled>🔮 魔法</button>
       <button class="btn item" id="btnItem" type="button" disabled>🧪 アイテム</button>
     </div>
     <div class="note" id="hint" style="text-align:center;min-height:1.2em"></div>
@@ -488,6 +543,22 @@
     <div class="note" id="itemNote"></div></div>
   </div>
 
+  <div id="magicSheet">
+    <h3><span>魔法をえらぶ</span><span class="mp" id="magicMp"></span><button type="button" id="magicClose">とじる</button></h3>
+    <div class="scroll"><div class="spells" id="spellList"></div>
+    <div class="note" id="magicNote" style="max-width:720px;margin:8px auto 0"></div></div>
+  </div>
+  <div id="chant">
+    <div class="title"><span></span></div>
+    <div class="ring"></div>
+    <div class="cap"></div>
+    <div class="count"><div class="c">0</div><div class="d"></div></div>
+    <div class="bars">
+      <div class="r"><span style="color:#ffd2bd;font-weight:700">詠唱率</span><div class="track rate"><div></div></div><b class="rateNum">0%</b></div>
+      <div class="r"><span style="color:#bfb196">のこり</span><div class="track time"><div></div></div><b class="timeNum" style="color:#f4ecda;font-size:12px">0秒</b></div>
+      <div style="text-align:center;color:#ffe0b0;font-weight:700;font-size:14px">円の中を連打して、魔力をためよう！</div>
+    </div>
+  </div>
   <div id="tip"></div>
   <div id="gearSheet">
     <h3><span>いまの装備</span><button type="button" id="gearClose">とじる</button></h3>
@@ -496,10 +567,10 @@
 
   <div id="revive" class="dialog"><div>
     <img class="ricon" alt="">
-    <p><b>このままでは倒れてしまう……！</b><br>精霊の羽を使いますか？<br><small>HP全回復・状態異常を全部治す・精霊の加護、そしてアステルが援護に来る</small></p>
+    <p><b>このままでは倒れてしまう……！</b><br><span id="reviveAsk">アイテムを使いますか？</span><br><small id="reviveSub"></small></p>
+    <div id="reviveList"></div>
     <div class="buttons">
       <button class="btn ghost" id="reviveNo" type="button">使わない</button>
-      <button class="btn attack" id="reviveYes" type="button">🪶 使う</button>
     </div>
   </div></div>
   <div id="confirm"><div>
@@ -578,7 +649,11 @@ function start(args) {
     bag: Object.fromEntries(c.items.map((i) => [i.id, i.count])), used: {},
     taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, startAt: performance.now(), hitMask: null,
     tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {}, equipIcons: args.equip_icons || {},
-    status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0 },   // 残りターン
+    status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0, freeze: 0 },   // 残りターン
+    // 魔法・会心
+    mp: c.ally.mp != null ? c.ally.mp : (c.ally.max_mp || 0), usedMp: 0, crits: 0, chantTaps: 0, casts: 0,
+    critTurns: 0, critBonus: 0, magTurns: 0, magMult: 1, hasteItemTurns: 0, hasteItemMs: 0, hasteSpellTurns: 0, hasteSpellMs: 0,
+    braveTurns: 0, braveMult: 1,
     // 剣の属性で敵にかかった状態異常
     eDots: {},                                   // { poison: [ターンごとのダメージ, ...] } 先頭から1つずつ入る
     eStatus: { thunder: 0, darkness: 0, darkMult: 1, shadow: 0 },
@@ -599,6 +674,9 @@ function start(args) {
   G.meteorScene = args.meteor_scene || null;            // メテオを撃つときの絵と技名
   if (G.meteorScene) { const pre = new Image(); pre.src = G.meteorScene.image; }
   $("enemyName").textContent = `Lv.${c.enemy.lv} ${c.enemy.name}`;
+  const weak = c.enemy.weak && c.magic ? c.magic.elements[c.enemy.weak] : null;   // 魔法の弱点だけ見せる（耐性は見せない）
+  $("enemyWeak").textContent = weak ? `弱点：${weak.name}` : ""; $("enemyWeak").classList.toggle("on", !!weak);
+  $("mpRow").style.display = c.ally.max_mp > 0 ? "" : "none";
   $("stageNo").textContent = c.extra ? "EXTRA" : `ステージ ${c.stage} / ${c.stage_count}`;
   $("quit").textContent = c.extra ? "にげる" : "やめる";
   $("allyName").textContent = c.ally.name.split("、").pop();
@@ -687,6 +765,9 @@ function updateBars() {
   $("allyIcon").classList.toggle("low", ap <= 30 && ap > 0);
   $("enemyNum").textContent = `${displayHp(G.enemyHp).toLocaleString()} / ${Math.round(e.max_hp).toLocaleString()}`;
   $("allyNum").textContent = `${displayHp(G.allyHp)} / ${Math.round(a.max_hp)}`;
+  const mp = Math.max(0, G.mp), mx = a.max_mp || 0;
+  $("mpBar").querySelector(".fill").style.width = (mx > 0 ? mp / mx * 100 : 0) + "%";
+  $("mpNum").textContent = `MP ${Math.floor(mp + 1e-9)} / ${Math.round(mx)}`;
 }
 
 // 効果があるあいだ、状態アイコンを表示する。
@@ -705,6 +786,10 @@ function updateBadges() {
   for (const [id, turns] of Object.entries(G.status)) add(id, G.statusIcons[id], (G.cfg.status[id] || {}).name || id, turns, "bad");
   add("atk_up", G.icons.atk_up, "攻撃力アップ", G.atkTurns, "buff");
   add("guard_up", G.icons.guard_up, "防御アップ", G.guardTurns, "buff");
+  add("crit_up", G.icons.crit_potion, "会心アップ", G.critTurns, "buff");
+  add("mag_up", G.icons.magic_water, "魔力アップ", G.magTurns, "buff");
+  add("haste", G.icons.gale_sandglass, "連打の時間アップ", Math.max(G.hasteItemTurns, G.hasteSpellTurns), "buff");
+  if (G.braveTurns > 0) html.push(`<span class="badge skill" data-tip="brave">🔥 ブレイブ×${(Math.round(G.braveMult * 100) / 100)} あと${G.braveTurns}</span>`);
   if (G.boost > 1) html.push(`<span class="badge skill" data-tip="boost">⚔️ 次の攻撃×${G.boost}</span>`);
   if (G.barrier > 0) html.push(`<span class="badge skill" data-tip="barrier">🔰 障壁 あと${G.barrier}回</span>`);
   if (G.eBreak > 0) html.push(`<span class="badge skill" data-tip="break">💥 敵の防御0 あと${G.eBreak}</span>`);
@@ -736,6 +821,8 @@ function setButtons(on) {
   $("btnAttack").style.display = on && stunned ? "none" : "";
   $("btnEnd").classList.toggle("on", on && stunned);
   $("btnItem").disabled = !on || G.usedItem || !Object.values(G.bag).some((n) => n > 0);
+  $("btnMagic").disabled = !on || stunned || !(G.cfg.spells || []).length;
+  $("btnMagic").style.display = (G.cfg.spells || []).length ? "" : "none";
   $("hint").textContent = on && stunned ? "⚡ しびれて攻撃できない！ アイテムは使えるよ"
     : on && G.status.darkness > 0 ? "🌘 陰：敵の当たる範囲が狭まっている"
     : on && G.status.shadow > 0 ? "👤 影：攻撃がかわされることがある" : "";
@@ -825,9 +912,10 @@ $("btnEnd").onclick = async () => {
 $("btnItem").onclick = () => { if (G && G.phase === "player" && !G.usedItem) openSheet(); };
 $("sheetClose").onclick = () => $("sheet").classList.remove("open");
 
+let perTapMult = 1;
 async function attack() {
   G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
-  await banner("よーい……", "", 700);
+  await banner("よーい……", G.status.freeze > 0 ? "❄️ 凍えて 連打の時間が短い！" : "", 700);
   await banner("スタート！", "", 450);
   // 連打の受付
   G.phase = "tapping"; G.tapHits = 0; G.tapDamage = 0;
@@ -835,7 +923,9 @@ async function attack() {
   const perTap = G.atkTurns > 0 ? (broken ? a.tap_damage_up_break : a.tap_damage_up) : (broken ? a.tap_damage_break : a.tap_damage);
   $("tapzone").classList.add("on"); $("gearBtn").style.visibility = "hidden"; $("app").classList.add("tapping"); $("tip").style.display = "none"; $("timer").style.display = "block"; $("combo").style.display = "block";
   $("combo").querySelector(".c").textContent = "0"; $("combo").querySelector(".d").textContent = "";
-  const t0 = performance.now(), dur = G.cfg.attack_ms;
+  const t0 = performance.now(), dur = attackMs();
+  const critRate = currentCrit(), critMult = (G.cfg.magic || {}).crit_mult || 2;
+  if (G.braveTurns > 0) perTapMult = G.braveMult; else perTapMult = 1;
   $("tapzone").onpointerdown = (ev) => {
     ev.preventDefault();
     if (G.phase !== "tapping") return;
@@ -844,7 +934,10 @@ async function attack() {
     const sp = document.createElement("div"); sp.className = "spark" + (hit ? "" : " miss");
     sp.style.left = ev.clientX + "px"; sp.style.top = ev.clientY + "px"; $("app").appendChild(sp); setTimeout(() => sp.remove(), 380);
     if (!hit) { G.misses++; return; }                   // 敵以外はノーヒット
-    G.hits++; G.tapHits++; G.tapDamage += perTap;
+    G.hits++; G.tapHits++;
+    const crit = Math.random() < critRate;                 // 会心：その1回が2倍（防御は効いたまま）
+    G.tapDamage += perTap * perTapMult * (crit ? critMult : 1);
+    if (crit) { G.crits++; sp.classList.add("crit"); popAt(ev.clientX, ev.clientY - 30, "会心！", "proc crit-pop"); }
     if (G.cfg.skill) { G.charge = Math.min(G.cfg.skill.charge, G.charge + 1); updateSkill(); }   // 当たった回数でチャージ
     $("combo").querySelector(".c").textContent = G.tapHits;
     $("combo").querySelector(".d").textContent = fmt(G.tapDamage) + " ダメージ";
@@ -884,12 +977,23 @@ async function attack() {
     if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
     if (G.enemyHp > 1e-9) await procWeapons(G.tapDamage);
   }
-  // 攻撃力アップ・陰・影は、実際に攻撃した回数で減る（かわされた攻撃も数える）
+  // 攻撃力アップ・陰・影・凍え・会心アップ・連打の時間アップ・ブレイブは、実際に攻撃した回数で減る（かわされた攻撃も数える）
   if (G.atkTurns > 0) G.atkTurns--;
   if (G.status.darkness > 0) G.status.darkness--;
   if (G.status.shadow > 0) G.status.shadow--;
+  if (G.status.freeze > 0) G.status.freeze--;
+  if (G.critTurns > 0) G.critTurns--;
+  if (G.hasteItemTurns > 0) G.hasteItemTurns--;
+  if (G.hasteSpellTurns > 0) G.hasteSpellTurns--;
+  if (G.braveTurns > 0) G.braveTurns--;
+  if (G.magTurns > 0) G.magTurns--;
   updateBadges();
   await sleep(1100);
+  await afterAction();
+}
+
+// 自分の行動（攻撃・魔法）のあと：倒したら勝ち。メテオの予告。そして敵のターン
+async function afterAction() {
   if (G.enemyHp <= 1e-9) return finish("win");
   // メテオ：敵のHPが半分を切ったら予告を出し、次の敵のターンの攻撃をメテオにする（1回だけ）
   if (G.cfg.enemy.meteor && !G.meteorUsed && !G.meteorPending && G.enemyHp < G.cfg.enemy.max_hp * G.cfg.meteor.trigger_rate) {
@@ -900,6 +1004,15 @@ async function attack() {
   await sleep(G.cfg.pause_ms);
   enemyTurn();
 }
+
+// 連打の時間：基本 ＋ 時間アップ（合わせて最大3秒） − 凍え
+function attackMs() {
+  const M = G.cfg.magic || {};
+  const extra = Math.min(M.haste_max_ms || 3000, (G.hasteItemTurns > 0 ? G.hasteItemMs : 0) + (G.hasteSpellTurns > 0 ? G.hasteSpellMs : 0));
+  const slow = G.status.freeze > 0 ? ((G.cfg.status.freeze || {}).slow_ms || 0) : 0;
+  return Math.max(1000, G.cfg.attack_ms + extra - slow);
+}
+function currentCrit() { return (G.cfg.ally.crit || 0) + (G.critTurns > 0 ? G.critBonus : 0); }
 
 // ---------------------------------------------------------------------------
 // 必殺技（当たった回数でチャージ。たまったら、自分のターンにアイコンを押して使う）
@@ -1009,16 +1122,42 @@ async function saveFromDown() {
     $("allyIcon").classList.remove("down");
     return (await astelAssist("rescue")) ? "won" : "saved";
   }
-  // 精霊の羽を持っていれば、使うか聞く
-  const feather = G.cfg.items.find((i) => i.assist);
-  if (feather && G.bag[feather.id] > 0) {
-    $("revive").querySelector(".ricon").src = G.icons[feather.id] || "";
+  // 立ち上がれるアイテム（精霊の羽・不死鳥の羽・いのちの葉）を持っていれば、使うか聞く
+  const choices = G.cfg.items.filter((i) => (i.assist || i.revive > 0) && G.bag[i.id] > 0);
+  if (!choices.length) return "";
+  const first = choices[0];
+  $("revive").querySelector(".ricon").src = G.icons[first.id] || "";
+  $("reviveSub").textContent = choices.length > 1 ? "どれを使うかえらんでね" : (first.assist ? "HP・MP全回復・状態異常を全部治す・精霊の加護、そしてアステルが援護に来る" : first.text || "");
+  $("reviveAsk").textContent = choices.length > 1 ? "アイテムを使いますか？" : `${first.name}を使いますか？`;
+  const listEl = $("reviveList"); listEl.innerHTML = "";
+  const chosen = await new Promise((res) => {
+    for (const it of choices) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "btn attack";
+      b.textContent = `${it.name}を使う（のこり${G.bag[it.id]}）`;
+      b.onclick = () => res(it);
+      listEl.appendChild(b);
+    }
+    $("reviveNo").onclick = () => res(null);
     $("revive").classList.add("on");
-    const yes = await new Promise((res) => { $("reviveYes").onclick = () => res(true); $("reviveNo").onclick = () => res(false); });
-    $("revive").classList.remove("on");
-    if (!yes) return "";
-    G.bag[feather.id]--; G.used[feather.id] = (G.used[feather.id] || 0) + 1;
+  });
+  $("revive").classList.remove("on");
+  if (!chosen) return "";
+  G.bag[chosen.id]--; G.used[chosen.id] = (G.used[chosen.id] || 0) + 1;
+  if (!chosen.assist) {                                   // いのちの葉・不死鳥の羽：その割合のHPで立ち上がる（状態異常も消える）
+    G.allyHp = G.cfg.ally.max_hp * chosen.revive;
+    for (const id of Object.keys(G.status)) G.status[id] = 0;
+    $("allyIcon").classList.remove("down");
+    const ic = $("allyIcon").getBoundingClientRect();
+    fxEl("flash", { background: "rgba(255,200,120,.45)" }); particles("#ffd9a0", 24, 50);
+    popAt(ic.left + ic.width / 2 + 60, ic.top, chosen.revive >= 1 ? "全回復！" : "立ち上がった！", "heal");
+    updateBars(); updateBadges();
+    await sleep(900);
+    return "saved";
+  }
+  const feather = chosen;
+  {
     G.allyHp = G.cfg.ally.max_hp;                         // 全回復
+    if (feather.mp > 0) G.mp = G.cfg.ally.max_mp;
     for (const id of feather.cure || []) G.status[id] = 0;
     G.blessing = true;
     G.cfg.ally.immune = [...new Set([...(G.cfg.ally.immune || []), ...(as.immune || [])])];
@@ -1170,6 +1309,12 @@ const TIPS = {
   break: ["概念崩し", "敵の防御が0になっている"],
   ward: ["封炎", "新しく黒炎にかからない（かかっている黒炎は続く）"],
   blessing: ["精霊の加護", "この戦闘のあいだ、毒・雷・火にかからない"],
+  freeze: ["凍え", "次の攻撃（連打）の時間が短くなる。万能薬・浄化の魔法陣・キュアで治る"],
+  crit_up: ["会心アップ", "会心（1回のタップが2倍）が出やすい"],
+  mag_up: ["魔力アップ", "魔力が上がり、魔法が強く・MPが少なくてすむ"],
+  haste: ["連打の時間アップ", "連打できる時間がのびている（合わせて3秒まで）"],
+  brave: ["ブレイブ", "攻撃（連打）のダメージが上がっている"],
+  weak: ["弱点", "この属性の魔法は1.5倍のダメージ。剣の攻撃には関係ない"],
   foe_poison: ["敵：毒", "剣の毒で、敵が毎ターンダメージを受けている"],
   foe_fire: ["敵：火", "剣の火で、敵が毎ターンダメージを受けている"],
   foe_black_flame: ["敵：黒炎", "剣の黒炎で、敵が毎ターンダメージを受けている"],
@@ -1197,16 +1342,176 @@ for (const box of ["badges", "enemyBadges"]) {
 }
 document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest("[data-tip]")) $("tip").style.display = "none"; });
 
+
+// ---------------------------------------------------------------------------
+// 魔法（式は story_logic.py / story_data.py と同じ。魔力の水で魔力が変わるので、ここで計算する）
+//   魔力係数 = 2×魔力÷(魔力+10)   消費MP = 基本×(1−0.2×係数) の切り上げ   満点の回数 = 120×(1−0.35×係数)
+//   攻撃 = 魔力 × 威力 × 詠唱率 × 属性 × 会心（敵の防御は半分だけ効く）  回復・強化 = 基本 × 係数 × 詠唱率
+// ---------------------------------------------------------------------------
+function curMag() { return (G.cfg.ally.mag || 0) * (G.magTurns > 0 ? G.magMult : 1); }
+function magCoef(m) { const k = G.cfg.magic.coef_k; m = Math.max(0, m); return 2 * m / (m + k); }
+function spellCost(sp) {
+  const M = G.cfg.magic, cut = 1 - M.cost_cut * magCoef(curMag());
+  if (sp.mp_rate) return Math.max(1, Math.ceil(G.cfg.ally.max_mp * Math.max(sp.mp_floor, sp.mp_rate * cut) - 1e-9));
+  return Math.max(1, Math.ceil(sp.mp * cut - 1e-9));
+}
+function chantNeed() { const M = G.cfg.magic; return Math.ceil(M.chant_max * (1 - M.chant_cut * magCoef(curMag())) - 1e-9); }
+function elemOf(sp) { return (G.cfg.magic.elements || {})[sp.element] || { name: "無", icon: "🔷", color: "#9fc0ff" }; }
+function spellBlocked(sp) {
+  if (sp.kind === "revive") return "仲間がいるときに使える";
+  if (sp.kind === "full" && G.allyHp >= G.cfg.ally.max_hp - 1e-9) return "HPは満タンだよ";
+  return "";
+}
+function openMagic() {
+  const list = $("spellList"); list.innerHTML = "";
+  for (const sp of G.cfg.spells || []) {
+    const el = elemOf(sp), cost = spellCost(sp), why = spellBlocked(sp);
+    const b = document.createElement("button"); b.type = "button"; b.className = "spellbtn";
+    b.style.setProperty("--c", el.color);
+    b.disabled = G.mp < cost || !!why;
+    const mark = sp.kind === "attack" ? el.name : { heal: "回", mana: "回", full: "回", cure: "治", revive: "蘇", protect: "守", brave: "攻", haste: "速" }[sp.kind] || "魔";
+    b.innerHTML = `<span class="el">${mark}</span><span style="flex:1;min-width:0"><b>${esc(sp.name)}</b><small>${esc(why || (G.mp < cost ? "MPが足りないよ（" + sp.text + "）" : sp.text))}</small></span><span class="cost">MP ${cost}</span>`;
+    b.onclick = () => castSpell(sp);
+    list.appendChild(b);
+  }
+  $("magicMp").textContent = `MP ${Math.floor(G.mp + 1e-9)} / ${Math.round(G.cfg.ally.max_mp)}`;
+  const need = chantNeed();
+  $("magicNote").textContent = `えらぶと「詠唱」。円の中を ${need}回 連打で満点（約${(need / G.cfg.magic.chant_tps).toFixed(1)}秒）。` +
+    (G.cfg.enemy.weak ? `弱点の${G.cfg.magic.elements[G.cfg.enemy.weak].name}は1.5倍！` : "") + " 魔法を使うと、このターンは攻撃できないよ。";
+  $("sheet").classList.remove("open");
+  $("magicSheet").classList.add("open");
+}
+$("btnMagic").onclick = () => { if (G && G.phase === "player" && !(G.status.thunder > 0)) openMagic(); };
+$("magicClose").onclick = () => $("magicSheet").classList.remove("open");
+
+async function castSpell(sp) {
+  if (!G || G.phase !== "player" || G.status.thunder > 0) return;
+  const cost = spellCost(sp);
+  if (G.mp < cost || spellBlocked(sp)) return;
+  $("magicSheet").classList.remove("open"); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
+  G.phase = "chant"; setButtons(false); updateSkill();
+  G.mp -= cost; G.usedMp += cost; G.casts++; updateBars();
+  const el = elemOf(sp), need = chantNeed(), ms = Math.round(need / G.cfg.magic.chant_tps * 1000);
+  const ch = $("chant"), ring = ch.querySelector(".ring");
+  const size = Math.min(sp.circle, window.innerWidth * 0.9, window.innerHeight * 0.5);
+  ch.style.setProperty("--c", el.color);
+  ring.style.width = ring.style.height = size + "px";
+  ch.querySelector(".title span").textContent = `詠唱中…${sp.name}`;
+  ch.querySelector(".cap").style.top = `calc(46% + ${size / 2 + 8}px)`;
+  ch.querySelector(".cap").textContent = "この円の中だけ数えるよ";
+  ch.querySelector(".count .c").textContent = "0";
+  ch.querySelector(".count .d").textContent = `／ ${need}回で満点`;
+  ch.querySelector(".rate > div").style.width = "0%"; ch.querySelector(".rateNum").textContent = "0%";
+  $("gearBtn").style.visibility = "hidden"; $("app").classList.add("tapping", "chanting"); $("tip").style.display = "none";
+  await banner(sp.name, "円の中を連打して詠唱！", 900);
+  let inside = 0;
+  ch.classList.add("on");
+  ch.onpointerdown = (ev) => {
+    ev.preventDefault();
+    if (G.phase !== "chant") return;
+    const r = ring.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const ok = Math.hypot(ev.clientX - cx, ev.clientY - cy) <= r.width / 2;
+    const spk = document.createElement("div"); spk.className = "spark" + (ok ? "" : " miss");
+    spk.style.left = ev.clientX + "px"; spk.style.top = ev.clientY + "px"; $("app").appendChild(spk); setTimeout(() => spk.remove(), 380);
+    if (!ok) return;                                       // 円の外はノーカウント
+    inside++;
+    ch.querySelector(".count .c").textContent = inside;
+    const p = Math.min(1, inside / need);
+    ch.querySelector(".rate > div").style.width = p * 100 + "%"; ch.querySelector(".rateNum").textContent = Math.round(p * 100) + "%";
+    ring.classList.remove("pulse"); void ring.offsetWidth; ring.classList.add("pulse");
+    if (navigator.vibrate) navigator.vibrate(5);
+  };
+  const t0 = performance.now();
+  await new Promise((resolve) => {
+    const tick = () => {
+      const p = Math.min(1, (performance.now() - t0) / ms);
+      ch.querySelector(".time > div").style.width = (1 - p) * 100 + "%";
+      ch.querySelector(".timeNum").textContent = ((1 - p) * ms / 1000).toFixed(1) + "秒";
+      if (p < 1) requestAnimationFrame(tick); else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+  G.phase = "spell";
+  ch.classList.remove("on"); ch.onpointerdown = null;
+  $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping", "chanting");
+  G.chantTaps += inside;
+  const rate = Math.max(G.cfg.magic.chant_min, Math.min(1, inside / need));
+  await banner(`詠唱率 ${Math.round(rate * 100)}%`, rate >= 1 ? "満点！" : rate <= G.cfg.magic.chant_min + 1e-9 ? "最低でも少しは効くよ" : "", 750);
+  await resolveSpell(sp, rate);
+  if (G.magTurns > 0) G.magTurns--;                      // 魔力アップは行動の回数で減る
+  updateBars(); updateBadges();
+  await sleep(1000);
+  await afterAction();
+}
+
+async function resolveSpell(sp, rate) {
+  const M = G.cfg.magic, a = G.cfg.ally, e = G.cfg.enemy, el = elemOf(sp), k = magCoef(curMag());
+  const me = $("allyIcon").getBoundingClientRect(), mx = me.left + me.width / 2 + 60;
+  const critChance = currentCrit() * M.magic_crit_rate;
+  const crit = (sp.kind === "attack" || sp.kind === "heal" || sp.kind === "mana") && Math.random() < critChance;
+  const cm = crit ? M.magic_crit_mult : 1;
+  if (crit) { G.crits++; await banner("会心！", `${sp.name}の効果 ×${M.magic_crit_mult}`, 650, "win"); }
+  if (sp.kind === "attack") {
+    const elemMult = sp.element !== "none" && sp.element === e.weak ? M.weak : sp.element !== "none" && sp.element === e.resist_elem ? M.resist : 1;
+    const raw = curMag() * sp.power * (sp.target === "enemies" ? M.all_rate : 1) * rate * cm * elemMult;
+    const def = G.eBreak > 0 ? 0 : e.def * M.def_rate;
+    const dmg = raw * (1 - def / (def + M.defense_k));
+    const fx = { fire: "fire", thunder: "thunder", ice: "magic", light: "radiance", dark: "void", none: "magic" }[sp.element] || "magic";
+    (EFFECTS[fx] || EFFECTS.magic)(el.color);
+    if (sp.target === "enemies" || sp.power >= 65) setTimeout(() => { fxEl("ring", { "--c": el.color, "--s": 60 }); particles(el.color, 20, 60); }, 250);
+    await sleep(420);
+    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    shake();
+    const c = enemyCenter(); popAt(c.x, c.y, fmt(dmg), "big");
+    if (elemMult > 1) popAt(c.x, c.y + 80, `${el.icon} 弱点！`, "proc");
+    else if (elemMult < 1) popAt(c.x, c.y + 80, "いまひとつ…", "proc");
+    hitEnemy(dmg); updateBars();
+    if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+  } else if (sp.kind === "heal" || sp.kind === "mana" || sp.kind === "full") {
+    const before = G.allyHp, mpBefore = G.mp;
+    const amount = sp.kind === "full" ? a.max_hp * rate : a.max_hp * sp.heal * k * rate * cm;
+    G.allyHp = Math.min(a.max_hp, G.allyHp + amount);
+    if (sp.mp_heal) G.mp = Math.min(a.max_mp, G.mp + a.max_mp * sp.mp_heal * k * rate * cm);
+    fxEl("flash", { background: "rgba(120,255,170,.28)" }); fxEl("ring", { "--c": "#7dffae", "--s": 30 });
+    popAt(mx, me.top, "+" + fmt(G.allyHp - before), "heal");
+    if (G.mp > mpBefore) setTimeout(() => popAt(mx, me.top - 40, `MP +${fmt(G.mp - mpBefore)}`, "proc"), 300);
+  } else if (sp.kind === "cure") {
+    for (const id of Object.keys(G.status)) G.status[id] = 0;
+    fxEl("flash", { background: "rgba(200,255,220,.35)" });
+    popAt(mx, me.top, "状態異常が治った！", "heal");
+  } else if (sp.kind === "protect") {
+    const turns = Math.max(1, Math.round(sp.turns * (0.5 + 0.5 * k) * rate));
+    G.guardTurns = Math.max(G.guardTurns, turns);
+    fxEl("flash", { background: "rgba(120,180,255,.3)" }); fxEl("circle", { "--c": "#7fc8ff" });
+    popAt(mx, me.top, `防御2倍（${turns}ターン）`, "heal");
+  } else if (sp.kind === "brave") {
+    const turns = Math.max(1, Math.round(sp.turns * (0.5 + 0.5 * k) * rate));
+    G.braveTurns = turns; G.braveMult = 1 + sp.power * k * rate;
+    fxEl("flash", { background: "rgba(255,170,80,.3)" });
+    popAt(mx, me.top, `攻撃×${(Math.round(G.braveMult * 100) / 100)}（${turns}回）`, "info");
+  } else if (sp.kind === "haste") {
+    G.hasteSpellTurns = Math.max(1, Math.round(sp.turns * rate)); G.hasteSpellMs = Math.round(sp.seconds * 1000);
+    fxEl("flash", { background: "rgba(200,240,255,.3)" }); particles("#dff6ff", 18, 50);
+    popAt(mx, me.top, `連打 +${sp.seconds}秒（${G.hasteSpellTurns}回）`, "info");
+  }
+  updateBars(); updateBadges();
+}
+
 function openSheet() {
   const list = $("itemList"); list.innerHTML = "";
   for (const it of G.cfg.items) {
     const n = G.bag[it.id] || 0;
     const rate = it.heal / G.cfg.ally.max_hp;
-    const desc = it.assist ? "HP全回復・状態異常を全部治す・精霊の加護・アステルが援護に来る" : [rate >= 0.999 ? "HP全回復" : rate > 0 ? `HP${Math.round(rate * 100)}%回復` : "",
+    const mpr = it.mp && G.cfg.ally.max_mp ? it.mp / G.cfg.ally.max_mp : 0;
+    const reviveOnly = it.revive > 0 && !it.assist;        // いのちの葉・不死鳥の羽：倒れそうなときだけ
+    const desc = it.assist ? "HP・MP全回復・状態異常を全部治す・精霊の加護・アステルが援護に来る" : reviveOnly ? (it.text || "倒れそうなときに使える") : [rate >= 0.999 ? "HP全回復" : rate > 0 ? `HP${Math.round(rate * 100)}%回復` : "",
+                  mpr >= 0.999 ? "MP全回復" : mpr > 0 ? `MP${Math.round(mpr * 100)}%回復` : "",
+                  it.crit ? `会心率+${Math.round(it.crit * 100)}%（${it.crit_turns}回）` : "", it.mag_mult ? `魔力${it.mag_mult}倍（${it.mag_turns}回）` : "",
+                  it.haste_ms ? `連打+${it.haste_ms / 1000}秒（${it.haste_turns}回）` : "",
                   it.guard ? `防御2倍（${it.guard}ターン）` : "", it.atk_turns ? `攻撃力+3（${it.atk_turns}ターン）` : "",
                   it.ward ? `${it.ward}ターン黒炎にかからない` : "",
                   it.cure && it.cure.length ? it.cure.map((s) => (G.cfg.status[s] || {}).name || s).join("・") + "を治す" : ""].filter(Boolean).join("・");
-    const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0;
+    const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0 || reviveOnly;
     const icon = G.icons[it.id] ? `<img src="${G.icons[it.id]}" alt="">` : "";
     b.innerHTML = `${icon}<span class="n">×${n}</span><b>${it.name}</b><small>${desc}</small>`;
     b.onclick = () => useItem(it);
@@ -1216,7 +1521,7 @@ function openSheet() {
   $("sheet").classList.add("open");
 }
 function useItem(it) {
-  if (G.phase !== "player" || G.usedItem || !(G.bag[it.id] > 0)) return;
+  if (G.phase !== "player" || G.usedItem || !(G.bag[it.id] > 0) || (it.revive > 0 && !it.assist)) return;
   G.bag[it.id]--; G.used[it.id] = (G.used[it.id] || 0) + 1; G.usedItem = true;
   $("sheet").classList.remove("open");
   const icon = $("allyIcon").getBoundingClientRect();
@@ -1226,6 +1531,15 @@ function useItem(it) {
     popAt(icon.left + icon.width / 2 + 60, icon.top, "+" + fmt(G.allyHp - before), "heal");
     fxEl("flash", { background: "rgba(120,255,170,.25)" });
   }
+  if (it.mp > 0) {
+    const before = G.mp;
+    G.mp = Math.min(G.cfg.ally.max_mp, G.mp + it.mp);
+    setTimeout(() => popAt(icon.left + icon.width / 2 + 60, icon.top - 40, `MP +${fmt(G.mp - before)}`, "proc"), 250);
+    fxEl("flash", { background: "rgba(150,130,255,.25)" });
+  }
+  if (it.crit) { G.critTurns = it.crit_turns; G.critBonus = it.crit; fxEl("flash", { background: "rgba(255,230,90,.25)" }); }
+  if (it.mag_mult) { G.magTurns = it.mag_turns; G.magMult = it.mag_mult; fxEl("flash", { background: "rgba(180,110,255,.25)" }); }
+  if (it.haste_ms) { G.hasteItemTurns = it.haste_turns; G.hasteItemMs = it.haste_ms; particles("#dff6ff", 14, 40); }
   for (const id of it.cure || []) G.status[id] = 0;     // 万能薬・黒炎払い・魔法陣（ポーション類は治さない）
   if (it.cure && it.cure.length) fxEl("flash", { background: "rgba(200,255,220,.3)" });
   if (it.ward) { G.ward = it.ward; fxEl("ring", { "--c": "#b48cff", "--s": 30 }); }   // 封炎の巻物
@@ -1345,8 +1659,12 @@ async function enemyTurn() {
   // 覚醒した宇宙龍の大技：覚醒して最初の攻撃と、そのあとは決まった確率で
   const special = !!(G.awakened && !G.meteorPending && (G.specialNext || Math.random() < G.cfg.awaken.special.chance));
   G.specialNext = false;
-  bub.style.setProperty("--bubble", e.effect.color);
-  bub.textContent = special ? G.cfg.awaken.special.line : G.meteorPending ? "……星よ、堕ちよ" : pick(e.lines); bub.style.display = "block";
+  // ふつうの攻撃なら、ここで状態異常の抽選をしておく。炎・雷・黒炎・凍えは「魔法」として名前を出す
+  const preStatus = !special && !G.meteorPending && e.gimmicks.length && Math.random() < G.cfg.status_chance ? pick(e.gimmicks) : null;
+  const espell = preStatus && G.cfg.enemy_spells ? G.cfg.enemy_spells[preStatus] : null;
+  bub.style.setProperty("--bubble", espell ? espell.color : e.effect.color);
+  bub.textContent = special ? G.cfg.awaken.special.line : G.meteorPending ? "……星よ、堕ちよ" : espell ? `「${espell.name}」！` : pick(e.lines); bub.style.display = "block";
+  if (espell) { fxEl("ring", { "--c": espell.color, "--s": 40 }); particles(espell.color, 12, 40); }
   await sleep(1100);
   G.enemyAttacks++;
   let newStatus = null;
@@ -1397,12 +1715,15 @@ async function enemyTurn() {
     hurt(G.cfg.ally.max_hp * sp.damage_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
     newStatus = inflict("black_flame");
   } else {
-    (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color);
+    if (espell) {                                    // 敵の魔法：属性のエフェクト
+      const fx = { fire: "fire", thunder: "thunder", ice: "magic", dark: "void" }[espell.element] || "magic";
+      (EFFECTS[fx] || EFFECTS.magic)(espell.color);
+    } else (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color);
     await sleep(380);
     shake();
     hurt((G.guardTurns > 0 ? e.hit_damage_guard : e.hit_damage) * mult, r.left + r.width / 2 + 70, r.top - 10);
-    // 3. 新しい状態異常の抽選（敵が持つ状態異常から1つ）。同じ物は重ならず、残りターンが最初に戻る
-    if (e.gimmicks.length && Math.random() < G.cfg.status_chance) newStatus = inflict(pick(e.gimmicks));
+    // 3. 新しい状態異常（上で抽選した物）。同じ物は重ならず、残りターンが最初に戻る
+    if (preStatus) newStatus = inflict(preStatus);
   }
   if (navigator.vibrate) navigator.vibrate(90);
   if (G.guardTurns > 0) G.guardTurns--;
@@ -1554,7 +1875,8 @@ $("doQuit").onclick = () => { $("confirm").style.display = "none"; finish("quit"
 // ---------------------------------------------------------------------------
 async function finish(result) {
   if (G.phase === "end") return;
-  G.phase = "end"; setButtons(false); $("sheet").classList.remove("open");
+  G.phase = "end"; setButtons(false); $("sheet").classList.remove("open"); $("magicSheet").classList.remove("open");
+  $("chant").classList.remove("on"); $("app").classList.remove("chanting");
   $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping"); $("timer").style.display = "none"; $("combo").style.display = "none"; $("bubble").style.display = "none";
   $("warn").classList.remove("on"); $("stun").classList.remove("on"); $("dark").classList.remove("on"); $("btnEnd").classList.remove("on");
   $("hint").textContent = "";
@@ -1568,6 +1890,7 @@ async function finish(result) {
     ally_hp: Math.max(0, G.allyHp), enemy_hp: Math.max(0, G.enemyHp), turns: G.turn,
     taps: G.taps, hits: G.hits, misses: G.misses, damage_dealt: G.dealt, damage_taken: G.taken,
     enemy_attacks: G.enemyAttacks, used: G.used, elapsed_ms: Math.round(elapsed), charge: G.charge,
+    ally_mp: Math.max(0, G.mp), used_mp: G.usedMp, crits: G.crits, casts: G.casts, chant_taps: G.chantTaps,
     assist: G.assistRescue ? "rescue" : G.assistRandom ? "random" : G.assistFeather ? "feather" : null,
   };
   setTimeout(() => Streamlit.setValue(value), result === "quit" ? 0 : result === "escape" ? 1000 : 1600);   // 結果を少し見せてから Python に返す

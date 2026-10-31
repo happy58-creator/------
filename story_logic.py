@@ -150,7 +150,7 @@ def display_hp(hp):
 # ---------------------------------------------------------------------------
 def new_profile():
     return {
-        "allies": [1],
+        "allies": list(story_data.STARTER_ALLIES),
         "ability": {},
         "equipment": [],
         "next_uid": 1,
@@ -164,6 +164,8 @@ def new_profile():
         "bonus_day": "",         # ログインボーナスをもらった日（YYYY-MM-DD）
         "rescue_used": False,    # はじめて倒れそうになったときの、アステルの救援を受けたか（前から遊んでいる人も対象）
         "last_ally": 1,          # 前回えらんでいたキャラ（ページを開き直しても、このキャラから）
+        "money": 0,              # マニー（ショップで使う）
+        "spells": {},            # 魔導書で覚えた魔法 {"キャラのLv": [魔法ID, ...]}（MAX_BOOK_SPELLS つまで）
         "run": None,
         "starter_items": True,
     }
@@ -171,27 +173,31 @@ def new_profile():
 
 def initial_items():
     """最初にホームに持っているアイテム（いつでも出るアイテムを INITIAL_ITEM_COUNT 個ずつ）"""
-    return {item["id"]: story_data.INITIAL_ITEM_COUNT for item in story_data.ITEMS if not item.get("where") and not item.get("special")}
+    return {item["id"]: story_data.INITIAL_ITEM_COUNT for item in story_data.ITEMS
+            if not item.get("where") and not item.get("special") and not item.get("new_item")}
 
 
 def item_available(item, stage, difficulty_id):
     """そのステージの宝箱から出るアイテムか（where の条件）"""
-    if item.get("special"):
+    if item.get("special") or item.get("boss") or item.get("home_use"):
         return False
     where = item.get("where")
     return not where or (difficulty_id in where and stage >= where[difficulty_id])
 
 
+EQUIP_STATS = ("hp", "atk", "def", "mag", "mp")
+
+
 def equip_bonus(entry):
     """倉庫の装備1つぶんの上がり方 {"hp", "atk", "def"}（ランダムのアクセサリは、決まった数値が足される）"""
     equip = get_equipment(entry["id"])
-    stats = {stat: equip[stat] for stat in ("hp", "atk", "def")}
+    stats = {stat: equip.get(stat, 0) for stat in EQUIP_STATS}
     for stat, value in (entry.get("bonus") or {}).items():
         stats[stat] += value
     return stats
 
 
-STAT_LABELS = {"hp": "HP", "atk": "攻撃力", "def": "防御力"}
+STAT_LABELS = {"hp": "HP", "atk": "攻撃力", "def": "防御力", "mag": "魔力", "mp": "MP"}
 
 
 def equip_effect_text(entry_or_id):
@@ -204,20 +210,37 @@ def equip_effect_text(entry_or_id):
         roll = equip["roll"]
         return f"{STAT_LABELS[roll['stat']]}+{roll['min']}〜{roll['max']}（手に入れたときに決まる）"
     stats = equip_bonus(entry)
-    return "・".join(f"{STAT_LABELS[st]}+{stats[st]:g}" for st in ("hp", "atk", "def") if stats[st])
+    return "・".join(f"{STAT_LABELS[st]}+{stats[st]:g}" for st in EQUIP_STATS if stats[st])
 
 
 def item_effect_text(item):
     if item.get("home_use") == "level_up":
         return "ホームの「アイテム」の画面（倉庫）で使うと、いまのキャラのレベルが1上がる"
+    if item.get("home_use") == "learn":
+        spell = story_data.SPELLS[item["spell"]]
+        return (f"倉庫で「使う」と、いまのキャラが「{spell['name']}」（{spell_short_text(item['spell'])}）を覚える。"
+                f"魔導書の魔法は1人{story_data.MAX_BOOK_SPELLS}つまで")
     if item.get("assist"):
-        return ("戦闘で使うとHP全回復・状態異常をすべて治し、その戦闘のあいだ精霊の加護（毒・雷・火にかからない）。"
+        return ("戦闘で使うとHP・MP全回復・状態異常をすべて治し、その戦闘のあいだ精霊の加護（毒・雷・火にかからない）。"
                 "さらにアステルが援護に来る。倒れそうになったときにも使える")
     parts = []
+    if item.get("revive"):
+        return ("倒れそうになったときに使うと、" + ("HP全回復で" if item["revive"] >= 1 else f"最大HPの{item['revive']:.0%}で")
+                + "立ち上がる（ふだんは使えない）")
     if item["heal_rate"] >= 1:
         parts.append("HPを全回復")
     elif item["heal_rate"]:
         parts.append(f"最大HPの{item['heal_rate']:.0%}を回復")
+    if item.get("mp_rate", 0) >= 1:
+        parts.append("MPを全回復")
+    elif item.get("mp_rate"):
+        parts.append(f"最大MPの{item['mp_rate']:.0%}を回復")
+    if item.get("crit"):
+        parts.append(f"自分の攻撃{item['crit_turns']}回ぶん会心率+{item['crit']:.0%}")
+    if item.get("mag_mult"):
+        parts.append(f"自分の行動{item['mag_turns']}回ぶん魔力{item['mag_mult']:g}倍")
+    if item.get("haste"):
+        parts.append(f"自分の攻撃{item['haste_turns']}回ぶん連打の時間+{item['haste']:g}秒")
     if item.get("ward"):
         parts.append(f"{item['ward']}ターン黒炎にかからない（かかっている黒炎は続く）")
     if item["cure"]:
@@ -245,8 +268,9 @@ def normalize_run(run):
     run.setdefault("extra_won", False)
     run.setdefault("charge", 0)
     run.setdefault("cleared", 0)
+    run.setdefault("mp", None)              # None は「満タン」（MPができる前の挑戦）
     if not run.get("checkpoint"):
-        run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
+        run["checkpoint"] = {"hp": run["hp"], "mp": run["mp"], "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
     return run
 
 
@@ -269,8 +293,9 @@ def normalize_profile(data):
     if isinstance(data, dict) and "titles_seen" not in data:
         profile["titles_seen"] = None     # 称号ができる前のデータ：ページ側で、前の記録から全クリアを拾ってから決める
     profile["run"] = normalize_run(profile["run"])
-    if 1 not in profile["allies"]:
-        profile["allies"].insert(0, 1)
+    for lv in story_data.STARTER_ALLIES:          # 最初から仲間のキャラ（あとから増えた分も足す）
+        if lv not in profile["allies"]:
+            profile["allies"].append(lv)
     if profile.get("last_ally") not in profile["allies"]:
         profile["last_ally"] = 1
     return profile
@@ -555,12 +580,17 @@ def base_stats(ally_lv, level=1):
     for stat in ("hp", "atk", "def"):
         value = ally[stat] + (ally["max"][stat] - ally[stat]) * t
         stats[stat] = float(round(value)) if stat == "hp" else round(value, 1)
+    magic = ally.get("magic") or {"mp": (0, 0), "mag": (0, 0), "crit": 0}
+    for stat in ("mp", "mag"):
+        low, high = magic[stat]
+        stats[stat] = float(round(low + (high - low) * t)) if stat == "mp" else round(low + (high - low) * t, 1)
     return stats
 
 
 def ally_stats(lv, profile=None):
     """味方のステータス（レベル + アビリティ + 装備）。profile がなければ Lv.1 の素のステータス"""
-    stats = {**base_stats(lv, ally_level(profile, lv)), "resist": [], "immune": []}
+    stats = {**base_stats(lv, ally_level(profile, lv)), "resist": [], "immune": [],
+             "crit": (get_ally(lv).get("magic") or {}).get("crit", 0)}
     if profile is None:
         return stats
     for ability in unlocked_abilities(lv, ability_points(profile, lv)):
@@ -576,6 +606,133 @@ def ally_stats(lv, profile=None):
         if equip["resist"]:
             stats["resist"].append(equip["resist"])
     return stats
+
+
+# ---------------------------------------------------------------------------
+# 魔法（式は story_data の説明のとおり。戦闘画面にも同じ式を書いている：web/story/index.html の magic*）
+# ---------------------------------------------------------------------------
+def get_spell(spell_id):
+    return story_data.SPELLS[spell_id]
+
+
+def mag_coef(mag):
+    """魔力係数：魔力10で1、魔力が大きいほど2に近づく"""
+    mag = max(0.0, float(mag))
+    return 2 * mag / (mag + story_data.MAGIC_COEF_K)
+
+
+def spell_cost(spell_id, mag, max_mp):
+    """消費MP（魔力が高いほど少ない）"""
+    import math
+    sp = get_spell(spell_id)
+    cut = 1 - story_data.MP_COST_CUT * mag_coef(mag)
+    if sp.get("mp_rate"):
+        return max(1, math.ceil(max_mp * max(sp["mp_floor"], sp["mp_rate"] * cut)))
+    return max(1, math.ceil(sp["mp"] * cut))
+
+
+def chant_taps(mag):
+    """詠唱の満点の回数"""
+    import math
+    return math.ceil(story_data.CHANT_MAX_TAPS * (1 - story_data.CHANT_MAG_CUT * mag_coef(mag)))
+
+
+def chant_circle(spell_id):
+    """詠唱の円の直径（px）。消費の重い魔法ほど小さい"""
+    sp = get_spell(spell_id)
+    heavy = 1.0 if sp.get("mp_rate") else min(1.0, sp["mp"] / story_data.CHANT_HEAVY_MP)
+    return round(story_data.CHANT_CIRCLE_MAX * (1 - story_data.CHANT_CIRCLE_SHRINK * heavy))
+
+
+def spell_short_text(spell_id):
+    """魔法の短い説明（数字なし）"""
+    sp = get_spell(spell_id)
+    elem = story_data.ELEMENTS[sp["element"]]["name"]
+    who = {"enemy": "敵1体", "enemies": "敵全体", "ally": "味方1人", "allies": "味方全体", "self": "自分"}[sp["target"]]
+    size = {"small": "小", "mid": "中", "big": "大", "huge": "特大"}
+    kind = sp["kind"]
+    if kind == "attack":
+        return f"{who}・{elem}の攻撃（{size[sp['tier']]}）"
+    return who + "・" + {
+        "heal": "HP回復" + ("（大）" if sp.get("heal", 0) >= 0.5 else "（小）"), "mana": "HP小＋MP小 回復", "full": "HP全回復",
+        "cure": "状態異常を治す", "revive": "戦闘不能から復活（仲間がいるとき）", "protect": "防御力2倍",
+        "brave": "攻撃のダメージアップ", "haste": f"連打の時間+{sp.get('seconds', 0):g}秒",
+    }[kind]
+
+
+def level_spells(ally_lv, level):
+    """レベルで覚えている魔法 [(覚えるレベル, 魔法ID), ...]（まだ覚えていない物も、learned=False で返す）"""
+    spells = (get_ally(ally_lv).get("magic") or {}).get("spells", [])
+    return [{"id": sid, "level": need, "learned": level >= need} for need, sid in zip(story_data.SPELL_LEVELS, spells)]
+
+
+def book_spells(profile, ally_lv):
+    return list((profile.get("spells") or {}).get(str(ally_lv), []))
+
+
+def known_spells(profile, ally_lv):
+    """いま使える魔法の ID（レベルで覚えた分 → 魔導書で覚えた分。同じ物は1つ）"""
+    out = [s["id"] for s in level_spells(ally_lv, ally_level(profile, ally_lv)) if s["learned"]]
+    for sid in book_spells(profile, ally_lv) if profile is not None else []:
+        if sid not in out:
+            out.append(sid)
+    return out
+
+
+def learn_book(profile, ally_lv, item_id, replace=None):
+    """倉庫の魔導書を使って魔法を覚える。replace を渡すと、魔導書で覚えた魔法と入れかえる。知らせる文を返す"""
+    item = get_item(item_id)
+    if item.get("home_use") != "learn":
+        raise ValueError("魔導書ではないよ。")
+    if profile["items"].get(item_id, 0) <= 0:
+        raise ValueError("倉庫にないよ。")
+    sid = item["spell"]
+    name = short_name(ally_lv)
+    if sid in known_spells(profile, ally_lv):
+        raise ValueError(f"{name} はもう「{get_spell(sid)['name']}」を覚えているよ。")
+    books = book_spells(profile, ally_lv)
+    if replace:
+        if replace not in books:
+            raise ValueError("入れかえる魔法が見つからないよ。")
+        books[books.index(replace)] = sid
+    elif len(books) >= story_data.MAX_BOOK_SPELLS:
+        raise ValueError(f"魔導書の魔法は{story_data.MAX_BOOK_SPELLS}つまで。ホームの「魔法」で、どれと入れかえるかえらんでね。")
+    else:
+        books.append(sid)
+    profile.setdefault("spells", {})[str(ally_lv)] = books
+    profile["items"][item_id] -= 1
+    if profile["items"][item_id] <= 0:
+        del profile["items"][item_id]
+    old = f"（「{get_spell(replace)['name']}」は忘れた）" if replace else ""
+    return f"📖 {item['name']}を読んだ！ {name} は「{get_spell(sid)['name']}」を覚えた！{old}"
+
+
+def spell_numbers(spell_id, stats):
+    """ホームの「魔法」画面に出す数字（敵の防御・属性・詠唱率は入れない。詠唱100%のとき）"""
+    sp = get_spell(spell_id)
+    mag, max_hp, max_mp = stats["mag"], stats["hp"], stats["mp"]
+    k = mag_coef(mag)
+    out = {"cost": spell_cost(spell_id, mag, max_mp), "taps": chant_taps(mag), "circle": chant_circle(spell_id)}
+    if sp["kind"] == "attack":
+        out["power"] = mag * story_data.SPELL_POWER[sp["tier"]] * (story_data.SPELL_ALL_RATE if sp["target"] == "enemies" else 1)
+    elif sp["kind"] in ("heal", "mana", "revive"):
+        out["heal"] = max_hp * sp["heal"] * k
+        if sp.get("mp_heal"):
+            out["mp_heal"] = max_mp * sp["mp_heal"] * k
+    elif sp["kind"] == "full":
+        out["heal"] = max_hp
+    elif sp["kind"] in ("protect", "brave"):
+        out["turns"] = spell_turns(sp, k)
+        if sp["kind"] == "brave":
+            out["boost"] = sp["power"] * k
+    elif sp["kind"] == "haste":
+        out["seconds"], out["turns"] = sp["seconds"], sp["turns"]
+    return out
+
+
+def spell_turns(sp, k, rate=1.0):
+    """プロテクト・ブレイブが続くターン（魔力で少しのびる。詠唱率が低いと短い）"""
+    return max(1, round(sp["turns"] * (0.5 + 0.5 * k) * rate))
 
 
 # ---------------------------------------------------------------------------
@@ -655,6 +812,7 @@ def start_run(profile, ally_lv, difficulty_id, carried=None):
         "stage": 1,
         "extra": False,
         "hp": ally_stats(ally_lv, profile)["hp"],
+        "mp": ally_stats(ally_lv, profile)["mp"],
         "cleared": 0,
         "bag": new_bag(carried),
         "extra_seen": False,
@@ -669,7 +827,15 @@ def start_run(profile, ally_lv, difficulty_id, carried=None):
 def begin_stage(profile):
     """ステージを始めるときのチェックポイント（いまのHPとかばん）を残す"""
     run = profile["run"]
-    run["checkpoint"] = {"hp": run["hp"], "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
+    run["checkpoint"] = {"hp": run["hp"], "mp": run.get("mp"), "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
+
+
+def run_mp(profile):
+    """挑戦中のいまのMP（記録がなければ満タン。最大MPより多くはならない）"""
+    run = profile["run"]
+    max_mp = ally_stats(run["ally"], profile)["mp"]
+    mp = run.get("mp")
+    return max_mp if mp is None else max(0.0, min(max_mp, float(mp)))
 
 
 def restore_checkpoint(profile, used=None):
@@ -682,6 +848,7 @@ def restore_checkpoint(profile, used=None):
         if n > 0:
             take_from_bag(cp["bag"], item_id, n)
     run["hp"] = cp["hp"]
+    run["mp"] = cp.get("mp")
     run["bag"] = copy.deepcopy(cp["bag"])
     run["charge"] = cp.get("charge", 0)
 
@@ -695,6 +862,8 @@ def apply_battle(profile, result):
         except (ValueError, KeyError, TypeError):
             pass
     run["hp"] = max(0.0, float(result.get("ally_hp", run["hp"])))
+    if result.get("ally_mp") is not None:
+        run["mp"] = max(0.0, float(result["ally_mp"]))
     if result.get("assist") in ("random", "rescue") and result.get("result") == "win":
         run["assist_drop"] = True                  # アステルがたまたま援護した：クリアすると特別なアイテム
     if "charge" in result:                         # 必殺技のチャージはステージをまたいで残す
@@ -764,7 +933,8 @@ def clear_stage(profile, rng=random):
     エクストラ：超激レア装備をもらう。回復・宝箱・仲間入りはなく、クリア数にも数えない。
     """
     run = profile["run"]
-    rewards = {"stage": run["stage"], "extra": bool(run.get("extra")), "healed": 0, "items": [], "sent_home": [],
+    rewards = {"stage": run["stage"], "extra": bool(run.get("extra")), "healed": 0, "mp_healed": 0, "money": 0, "boss_drop": None,
+               "boss_where": None, "first_book": None, "items": [], "sent_home": [],
                "equipment": [], "equipment_uids": [], "ultra": [], "allies": [], "chests": 0, "finished": None, "extra_next": False}
     enemy = run_enemy(run)
     if enemy_key(enemy) not in profile["defeated"]:
@@ -775,7 +945,16 @@ def clear_stage(profile, rng=random):
         uid = add_equipment(profile, ultra, roll_weapon_attrs(ultra, attr_diff, rng, None) if attr_diff else None)   # 最後のステージとして
         rewards["ultra"].append(ultra)
         rewards["ultra_uids"] = rewards.get("ultra_uids", []) + [uid]
+    mult = story_data.MONEY_DIFF.get(run["difficulty"], 1.0)
+    final = not run.get("extra") and run["stage"] >= stage_count(run["difficulty"])
+    if run.get("extra") or final:                 # ボス：特別なアイテムを1つ
+        drop = roll_boss_drop(profile, rng)
+        rewards["boss_drop"] = drop
+        rewards["boss_where"] = "pack" if put_picked(profile, run["bag"], drop) else "store"
     if run.get("extra"):
+        gain = round(story_data.MONEY_EXTRA * mult)
+        profile["money"] = profile.get("money", 0) + gain
+        rewards["money"] = gain
         run["extra"] = False
         run["extra_won"] = True
         for ally in story_data.ALLIES:          # 宇宙龍を倒すと仲間になるキャラ
@@ -793,6 +972,12 @@ def clear_stage(profile, rng=random):
     healed_from = run["hp"]
     run["hp"] = min(max_hp, run["hp"] + max(0.0, max_hp - run["hp"]) * story_data.STAGE_HEAL_RATE)
     rewards["healed"] = run["hp"] - healed_from
+    max_mp, mp_from = ally_stats(run["ally"], profile)["mp"], run_mp(profile)
+    run["mp"] = min(max_mp, mp_from + max(0.0, max_mp - mp_from) * story_data.STAGE_MP_RATE)
+    rewards["mp_healed"] = run["mp"] - mp_from
+    gain = round((story_data.MONEY_STAGE_BASE + story_data.MONEY_STAGE_STEP * stage) * mult)
+    profile["money"] = profile.get("money", 0) + gain
+    rewards["money"] = gain
 
     if run.pop("assist_drop", False):
         drop = rng.choice(story_data.ASSIST["drops"])
@@ -812,6 +997,14 @@ def clear_stage(profile, rng=random):
         profile["allies"].append(lv)
         rewards["allies"].append(lv)
     if stage >= stage_count(run["difficulty"]):
+        if run["difficulty"] not in profile["cleared_modes"]:      # はじめての全クリア：魔導書を1冊
+            book = first_clear_book(profile, rng)
+            if book:
+                profile["items"][book] = profile["items"].get(book, 0) + 1
+                rewards["first_book"] = book
+        bonus = round(story_data.MONEY_CLEAR_BONUS * mult)
+        profile["money"] = profile.get("money", 0) + bonus
+        rewards["money"] += bonus
         rewards["finished"] = finish_run(profile, "clear")
     else:
         if not run["extra_seen"] and rng.random() < story_data.EXTRA_CHANCE:
@@ -820,6 +1013,25 @@ def clear_stage(profile, rng=random):
             rewards["extra_next"] = True
         begin_stage(profile)    # 次のステージのチェックポイント（ステージ間でアイテムを使ったら、戦闘の前にもう一度残す）
     return rewards
+
+
+def book_ids():
+    return [i["id"] for i in story_data.ITEMS if i.get("home_use") == "learn"]
+
+
+def roll_boss_drop(profile, rng=random):
+    """ボスを倒したときの特別なアイテム（"book" は魔導書のどれか）"""
+    table = story_data.BOSS_DROPS
+    kind = rng.choices(list(table), list(table.values()))[0]
+    return rng.choice(book_ids()) if kind == "book" else kind
+
+
+def first_clear_book(profile, rng=random):
+    """はじめて全クリアしたときの魔導書（倉庫にも、だれかが覚えてもいない物から。全部あれば何でも）"""
+    learned = {sid for ids in (profile.get("spells") or {}).values() for sid in ids}
+    books = book_ids()
+    fresh = [b for b in books if profile["items"].get(b, 0) <= 0 and get_item(b)["spell"] not in learned]
+    return rng.choice(fresh or books)
 
 
 def finish_run(profile, outcome, run=None):
@@ -946,6 +1158,8 @@ def use_home_item(profile, ally_lv, item_id):
         raise ValueError("このアイテムは戦闘で使うよ。")
     if profile["items"].get(item_id, 0) <= 0:
         raise ValueError("倉庫にないよ。")
+    if item["home_use"] == "learn":
+        return learn_book(profile, ally_lv, item_id)
     if item["home_use"] == "level_up":
         level = ally_level(profile, ally_lv)
         if level >= story_data.LEVEL_MAX:
@@ -1006,7 +1220,15 @@ def skill_config(ally_lv, ally, enemy, max_hp, charge=0):
     return skill
 
 
-def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None, charge=0):
+def spell_config(spell_id):
+    """戦闘画面に渡す魔法1つ（ダメージ・消費MPは魔力で変わるので、画面側で計算する）"""
+    sp = get_spell(spell_id)
+    return {"id": spell_id, **{k: v for k, v in sp.items()}, "element": sp["element"] or "none",
+            "power": story_data.SPELL_POWER.get(sp.get("tier"), 0), "circle": chant_circle(spell_id),
+            "text": spell_short_text(spell_id)}
+
+
+def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None, charge=0, ally_mp=None):
     """戦闘コンポーネントに渡す設定（JSON にそのまま変換できる dict）
 
     stage_no はステージ番号（1から）か EXTRA。charge は必殺技のチャージ（挑戦の run["charge"]）。
@@ -1044,13 +1266,22 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
                           "hit_scale": darkness["resist_hit_scale"] if "darkness" in resist else darkness["hit_scale"]}
     status["shadow"] = {"name": shadow["name"], "icon": shadow["icon"], "turns": shadow["turns"],
                         "evade_rate": shadow["evade_rate"] * rate("shadow")}
+    freeze = effects["freeze"]
+    status["freeze"] = {"name": freeze["name"], "icon": freeze["icon"], "turns": freeze["turns"],
+                        "slow_ms": int(freeze["slow_seconds"] * rate("freeze") * 1000)}
 
     counts = bag_counts(bag) if bag else {}
+    max_mp = ally["mp"]
     items = [
         {"id": i["id"], "name": i["name"], "icon": i["icon"], "count": counts.get(i["id"], 0),
          "heal": max_hp * i["heal_rate"], "cure": list(i["cure"]), "ward": i.get("ward", 0), "guard": i["guard"],
-         "atk_turns": i["atk_turns"] if i["atk_bonus"] else 0}
-        for i in story_data.ITEMS if not i.get("home_use")
+         "atk_turns": i["atk_turns"] if i["atk_bonus"] else 0,
+         "mp": max_mp * i.get("mp_rate", 0), "revive": i.get("revive", 0),
+         "crit": i.get("crit", 0), "crit_turns": i.get("crit_turns", 0),
+         "mag_mult": i.get("mag_mult", 0), "mag_turns": i.get("mag_turns", 0),
+         "haste_ms": int(i.get("haste", 0) * 1000), "haste_turns": i.get("haste_turns", 0),
+         "text": item_effect_text(i)}
+        for i in story_data.ITEMS if not i.get("home_use") and (counts.get(i["id"], 0) > 0 or not i.get("boss"))
     ]
     for entry in items:                      # 精霊の羽：使うとアステルの援護
         entry["assist"] = bool(get_item(entry["id"]).get("assist"))
@@ -1093,6 +1324,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "def": enemy["def"],
             "hit_damage": damage(enemy["atk"], ally["def"]),            # 敵の1回の攻撃で味方が受けるダメージ
             "hit_damage_guard": damage(enemy["atk"], guard_def),        # 防御アップ中
+            "weak": enemy_data.get("weak"),                              # 魔法の弱点（1.5倍）。画面に出す
+            "resist_elem": enemy_data.get("resist_elem"),                # 魔法の耐性（半分）。画面には出さない
             "gimmicks": [g for g in gimmicks if g != "meteor"],          # 攻撃のたびに抽選する状態異常
             "meteor": "meteor" in gimmicks,
         },
@@ -1109,7 +1342,24 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "tap_damage_break": damage(ally["atk"], 0),
             "immune": ally.get("immune", []),                        # かからない状態異常（聖霊の加護）
             "tap_damage_up_break": damage(ally["atk"] + atk_up, 0),
+            "max_mp": max_mp,
+            "mp": max_mp if ally_mp is None else max(0.0, min(max_mp, float(ally_mp))),
+            "mag": ally["mag"],
+            "crit": ally["crit"],
         },
+        "spells": [spell_config(sid) for sid in (known_spells(profile, ally_lv) if profile is not None
+                                                   else [s["id"] for s in level_spells(ally_lv, 1) if s["learned"]])],
+        "magic": {
+            "coef_k": story_data.MAGIC_COEF_K, "cost_cut": story_data.MP_COST_CUT, "def_rate": story_data.MAGIC_DEF_RATE,
+            "defense_k": story_data.DEFENSE_K, "all_rate": story_data.SPELL_ALL_RATE,
+            "weak": story_data.ELEMENT_WEAK, "resist": story_data.ELEMENT_RESIST,
+            "chant_max": story_data.CHANT_MAX_TAPS, "chant_cut": story_data.CHANT_MAG_CUT, "chant_tps": story_data.CHANT_TAPS_PER_SEC,
+            "chant_min": story_data.CHANT_MIN_RATE, "crit_mult": story_data.CRIT_MULT,
+            "magic_crit_mult": story_data.MAGIC_CRIT_MULT, "magic_crit_rate": story_data.MAGIC_CRIT_RATE,
+            "haste_max_ms": int(story_data.HASTE_MAX * 1000),
+            "elements": {k or "none": v for k, v in story_data.ELEMENTS.items()},
+        },
+        "enemy_spells": {k: {**v, "color": story_data.ELEMENTS[v["element"]]["color"]} for k, v in story_data.ENEMY_SPELLS.items()},
         "skill": (skill := skill_config(ally_lv, ally, enemy, max_hp, charge)),
         "assist": assist_config(ally_lv, enemy, extra,
                                 rescue=profile is not None and not profile.get("rescue_used", False),   # アステルの援護
@@ -1168,6 +1418,8 @@ def apply_inventory(profile, ally_lv, result):
             get_item(item_id)
             if store.get(item_id, 0) + pack.get(item_id, 0) != old_store.get(item_id, 0) + old_pack.get(item_id, 0):
                 raise ValueError("アイテムの数が合わないよ。もう一度ためしてね。")
+        if any(get_item(k).get("home_use") == "learn" for k in pack):
+            raise ValueError("魔導書はリュックに入れられないよ。倉庫で「使う」と覚えられるよ。")
         if sum(pack.values()) > story_data.MAX_CARRY_ITEMS:
             raise ValueError(f"リュックに入るのは {story_data.MAX_CARRY_ITEMS}個までだよ。")
 
@@ -1190,6 +1442,8 @@ def apply_inventory(profile, ally_lv, result):
             run["bag"] = {"carried": pack, "picked": {}}
             if run["ally"] == ally_lv:
                 run["hp"] = min(run["hp"], ally_stats(ally_lv, profile)["hp"])
+                if run.get("mp") is not None:
+                    run["mp"] = min(run["mp"], ally_stats(ally_lv, profile)["mp"])
         else:
             profile["pack"] = pack
     except Exception:
@@ -1205,8 +1459,52 @@ def daily_bonus(profile, today, rng=random):
     """today（"2026-10-28" など）にまだもらっていなければ、ランダムでアイテムを1つ倉庫に入れて、その ID を返す"""
     if profile.get("bonus_day") == today:
         return None
-    items = [i for i in story_data.ITEMS if not i.get("where") and not i.get("special")]
+    items = [i for i in story_data.ITEMS if not i.get("where") and not i.get("special") and not i.get("boss")
+             and not i.get("home_use") and i["weight"] > 0]
     item_id = rng.choices([i["id"] for i in items], [i["weight"] for i in items])[0]
     profile["items"][item_id] = profile["items"].get(item_id, 0) + 1
     profile["bonus_day"] = today
     return item_id
+
+
+# ---------------------------------------------------------------------------
+# ショップ（倉庫のアイテムを買う・売る。挑戦中も使える）
+# ---------------------------------------------------------------------------
+def buy_price(item_id):
+    """ショップの値段（売っていなければ None）"""
+    return story_data.ITEM_PRICES.get(item_id) if item_id in story_data.SHOP_ITEMS else None
+
+
+def sell_price(item_id):
+    return int(story_data.ITEM_PRICES.get(item_id, 0) * story_data.SELL_RATE)
+
+
+def buy_item(profile, item_id, count=1):
+    """買う（倉庫に入る）。知らせる文を返す。お金が足りなければ ValueError"""
+    price, count = buy_price(item_id), int(count)
+    if price is None:
+        raise ValueError("そのアイテムは売っていないよ。")
+    if count <= 0:
+        raise ValueError("買う数をえらんでね。")
+    total = price * count
+    if profile.get("money", 0) < total:
+        raise ValueError(f"{story_data.MONEY_NAME}が足りないよ（{total:,}{story_data.MONEY_NAME} 要るよ）。")
+    profile["money"] -= total
+    profile["items"][item_id] = profile["items"].get(item_id, 0) + count
+    return f"{get_item(item_id)['name']}を{count}こ買った！（−{total:,}{story_data.MONEY_NAME}）"
+
+
+def sell_item(profile, item_id, count=1):
+    """倉庫のアイテムを売る（値段の半分）。知らせる文を返す"""
+    count = int(count)
+    have = profile["items"].get(item_id, 0)
+    if count <= 0 or have < count:
+        raise ValueError("倉庫にそんなに無いよ。")
+    price = sell_price(item_id)
+    if price <= 0:
+        raise ValueError("そのアイテムは売れないよ。")
+    profile["items"][item_id] = have - count
+    if profile["items"][item_id] <= 0:
+        del profile["items"][item_id]
+    profile["money"] = profile.get("money", 0) + price * count
+    return f"{get_item(item_id)['name']}を{count}こ売った！（+{price * count:,}{story_data.MONEY_NAME}）"

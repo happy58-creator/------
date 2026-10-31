@@ -1,0 +1,1579 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>story battle</title>
+<style>
+  :root { --gold:#e9d6a6; --ink:#f4ecda; --muted:#bfb196; --enemy:#e2453b; --ally:#46c37b; --panel:rgba(12,10,16,.82); }
+  html, body { margin:0; height:100%; overflow:hidden; overscroll-behavior:none; touch-action:none; background:#07060a; color:var(--ink);
+    font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP","Noto Serif CJK JP",serif;
+    -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; }
+  * { box-sizing:border-box; }
+  /* 連打で画面がずれたり拡大したりしないように、スクロール・ピンチ・ダブルタップ拡大を止める（アイテムの一覧だけはスクロールできる） */
+  #app { position:fixed; inset:0; touch-action:none; overscroll-behavior:none; -webkit-touch-callout:none; }
+  #tapzone { touch-action:none; }
+
+  /* 画面いっぱいの背景＋敵（story_assets.stage_html の中身） */
+  #stage { position:absolute; inset:0; }
+  #stage .st-scene { width:100%; height:100%; aspect-ratio:auto; border-radius:0; box-shadow:none; }
+  #stage .st-enemy { height:min(74%, 120vw); bottom:19%; }
+  #stage .st-enemy.floating { height:min(78%, 125vw); bottom:16%; }
+  #stage .st-shadow { bottom:17.5%; }
+  #stage .st-photo { top:9%; bottom:17%; left:0; width:100%; height:74%; }
+  #stage.shake { animation:shake .38s linear; }
+  @keyframes shake { 0%,100%{transform:translate(0,0)} 15%{transform:translate(-9px,4px)} 30%{transform:translate(8px,-5px)} 45%{transform:translate(-6px,3px)} 60%{transform:translate(5px,-2px)} 80%{transform:translate(-2px,1px)} }
+  .st-target.hit { filter:brightness(1.6) saturate(1.2); }
+  .st-target.struck { animation:struck .45s ease-out; }
+  @keyframes struck { 0%{filter:brightness(3) saturate(0)} 40%{filter:brightness(1.6)} 100%{filter:none} }
+
+  /* 上下の表示 */
+  .hud { position:absolute; left:0; right:0; z-index:40; padding:10px max(12px, env(safe-area-inset-left)) 10px; pointer-events:none; }
+  .hud.top { top:0; padding-top:max(10px, env(safe-area-inset-top));
+    background:linear-gradient(to bottom, rgba(5,4,8,.88), rgba(5,4,8,.55) 70%, transparent); }
+  .hud.bottom { bottom:0; padding-bottom:max(12px, env(safe-area-inset-bottom));
+    background:linear-gradient(to top, rgba(5,4,8,.94), rgba(5,4,8,.75) 70%, transparent); }
+  .row { display:flex; align-items:center; gap:10px; max-width:720px; margin:0 auto; }
+  .ename { font-weight:700; font-size:clamp(15px,4.2vw,20px); text-shadow:0 2px 4px #000; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .stageno { margin-left:auto; font-size:13px; color:var(--muted); white-space:nowrap; }
+  .hpbar { position:relative; flex:1; height:14px; border-radius:8px; background:#221b21; border:1px solid rgba(233,214,166,.35); overflow:hidden; }
+  .hpbar .lag { position:absolute; inset:0 auto 0 0; background:#f0d080; transition:width .7s ease .25s; }
+  .hpbar .fill { position:absolute; inset:0 auto 0 0; transition:width .35s ease-out; }
+  #enemyBar .fill { background:linear-gradient(#ef6a5f,#b3271f); }
+  #allyBar .fill  { background:linear-gradient(#6fe39d,#24894f); }
+  #allyBar.low .fill { background:linear-gradient(#ffb070,#d1541f); }
+  .num { font:700 14px/1 ui-monospace,Menlo,monospace; min-width:92px; text-align:right; text-shadow:0 1px 3px #000; }
+  .icon { width:52px; height:52px; flex:none; border-radius:50%; object-fit:cover; border:2px solid var(--gold); box-shadow:0 2px 8px rgba(0,0,0,.7); background:#1a1520; }
+  .icon.low { border-color:#ff6b4a; box-shadow:0 0 12px rgba(255,90,60,.8); }
+  .icon.hurt { animation:hurt .5s ease-out; }
+  @keyframes hurt { 0%{transform:translateX(0);filter:none} 15%{transform:translateX(-6px);filter:sepia(1) saturate(7) hue-rotate(-35deg) brightness(.85)} 35%{transform:translateX(6px)} 55%{transform:translateX(-3px)} 100%{transform:none;filter:none} }
+  .icon.down { filter:grayscale(1) brightness(.5); }
+  .aname { font-weight:700; font-size:16px; text-shadow:0 2px 4px #000; }
+  .ebadges { display:flex; flex-wrap:wrap; gap:6px; min-height:0; margin:6px auto 0; max-width:720px; align-items:center; }
+  .ebadges .st-icon { width:30px; height:30px; }
+  .st-icon.foe img { border:2px solid rgba(120,200,255,.9); }
+  .pop.edot { color:#c9a2ff; font-size:30px; text-shadow:0 0 8px #000, 0 3px 0 #2a0050; }
+  .pop.proc { color:#9fe0ff; font-size:24px; }
+  /* 必殺技：アイコンの周りのチャージのゲージ。たまったら光って押せる */
+  .skillwrap { position:relative; width:58px; height:58px; flex:none; display:grid; place-items:center; pointer-events:auto; }
+  .skillwrap .sring { position:absolute; inset:0; border-radius:50%;
+    background:conic-gradient(#ffd36a calc(var(--p, 0) * 1%), rgba(255,255,255,.12) 0);
+    -webkit-mask:radial-gradient(circle, transparent 25px, #000 26px); mask:radial-gradient(circle, transparent 25px, #000 26px); }
+  .skillwrap .icon { width:50px; height:50px; }
+  .skillwrap .ready { position:absolute; left:50%; bottom:-9px; transform:translateX(-50%); display:none; white-space:nowrap;
+    font:800 10px/1 ui-sans-serif,system-ui,sans-serif; color:#1b120a; background:#ffd36a; padding:3px 6px; border-radius:99px; box-shadow:0 0 8px #ffd36a; }
+  .skillwrap.full { cursor:pointer; }
+  .skillwrap.full .sring { background:conic-gradient(#fff3b0 0 100%); animation:ringGlow 1s ease-in-out infinite; }
+  .skillwrap.full .ready { display:block; }
+  .skillwrap.full.can .icon { animation:iconPulse 1s ease-in-out infinite; }
+  @keyframes ringGlow { 50% { filter:drop-shadow(0 0 10px #ffd36a) brightness(1.3); } }
+  @keyframes iconPulse { 50% { transform:scale(1.08); box-shadow:0 0 18px #ffd36a; } }
+  #cutin { position:absolute; inset:0; z-index:58; display:none; align-items:center; pointer-events:none; overflow:hidden; }
+  #cutin .band { position:absolute; left:-10%; right:-10%; top:36%; height:24%; transform:skewY(-6deg);
+    background:linear-gradient(90deg, transparent, rgba(10,6,16,.92) 15%, rgba(10,6,16,.92) 85%, transparent);
+    border-top:2px solid var(--sc, #ffd36a); border-bottom:2px solid var(--sc, #ffd36a); animation:bandIn 1.15s ease-out forwards; }
+  #cutin img { position:absolute; left:8%; top:33%; width:min(30vw,170px); height:min(30vw,170px); border-radius:50%; object-fit:cover;
+    border:3px solid var(--sc, #ffd36a); box-shadow:0 0 30px var(--sc, #ffd36a); animation:cutImg 1.15s cubic-bezier(.2,1.2,.4,1) forwards; }
+  #cutin .name { position:absolute; left:calc(12% + min(30vw,170px)); right:4%; top:43%; font-weight:900; font-size:clamp(24px,7.5vw,54px);
+    color:#fff3cf; text-shadow:0 0 16px var(--sc, #ffd36a), 0 4px 0 #3a2000; white-space:nowrap; animation:cutName 1.15s ease-out forwards; }
+  @keyframes bandIn { 0%{transform:skewY(-6deg) scaleY(0);opacity:0} 15%{transform:skewY(-6deg) scaleY(1);opacity:1} 85%{opacity:1} 100%{opacity:0} }
+  @keyframes cutImg { 0%{transform:translateX(-60vw)} 25%{transform:translateX(0)} 85%{transform:translateX(4vw);opacity:1} 100%{transform:translateX(12vw);opacity:0} }
+  @keyframes cutName { 0%{transform:translateX(60vw);opacity:0} 25%{transform:translateX(0);opacity:1} 85%{opacity:1} 100%{transform:translateX(-6vw);opacity:0} }
+  /* 必殺技の演出の部品 */
+  .bigslash { left:50%; top:45%; width:170vmax; height:26px; margin:-13px 0 0 -85vmax; border-radius:50%;
+    background:linear-gradient(90deg, transparent, var(--c) 25%, #fff 50%, var(--c) 75%, transparent); box-shadow:0 0 40px var(--c), 0 0 90px var(--c);
+    transform:rotate(-28deg); animation:bigslash .55s ease-out forwards; }
+  @keyframes bigslash { 0%{transform:rotate(-28deg) scaleX(0);opacity:1} 50%{transform:rotate(-28deg) scaleX(1);opacity:1} 100%{transform:rotate(-28deg) scaleX(1.05) scaleY(.2);opacity:0} }
+  .dome { left:50%; bottom:6%; width:90vmin; height:90vmin; margin-left:-45vmin; border-radius:50%;
+    border:4px solid var(--c); background:radial-gradient(circle, transparent 55%, color-mix(in srgb, var(--c) 40%, transparent) 100%);
+    box-shadow:0 0 40px var(--c), inset 0 0 40px var(--c); animation:dome 1.3s ease-out forwards; }
+  @keyframes dome { 0%{transform:scale(.2);opacity:0} 30%{transform:scale(1);opacity:1} 80%{opacity:.9} 100%{transform:scale(1.05);opacity:0} }
+  .rise { bottom:10%; width:10px; height:10px; border-radius:50%; background:var(--c); box-shadow:0 0 12px var(--c); animation:rise 1.2s ease-out forwards; }
+  @keyframes rise { from{transform:translateY(0);opacity:1} to{transform:translateY(-55vh);opacity:0} }
+  .circle { left:50%; top:45%; width:80vmin; height:80vmin; margin:-40vmin 0 0 -40vmin; border-radius:50%; border:3px dashed var(--c);
+    box-shadow:0 0 30px var(--c), inset 0 0 30px var(--c); animation:circle 1.4s ease-out forwards; }
+  .circle.in { width:56vmin; height:56vmin; margin:-28vmin 0 0 -28vmin; border-style:double; border-width:6px; animation-direction:normal; animation-name:circle2; }
+  @keyframes circle { 0%{transform:rotate(0) scale(.3);opacity:0} 25%{opacity:1;transform:rotate(60deg) scale(1)} 80%{opacity:1} 100%{transform:rotate(200deg) scale(1);opacity:0} }
+  @keyframes circle2 { 0%{transform:rotate(0) scale(.3);opacity:0} 25%{opacity:1;transform:rotate(-60deg) scale(1)} 80%{opacity:1} 100%{transform:rotate(-200deg) scale(1);opacity:0} }
+  .glyph { top:-10%; font:900 clamp(26px,7vw,48px)/1 serif; color:var(--c); text-shadow:0 0 12px var(--c); animation:glyph 1.3s ease-in forwards; }
+  @keyframes glyph { 0%{transform:translateY(0) rotate(0);opacity:0} 15%{opacity:1} 100%{transform:translateY(75vh) rotate(160deg);opacity:0} }
+  .beam { left:-5%; top:calc(45% - 7vmin); width:110%; height:14vmin; border-radius:7vmin;
+    background:linear-gradient(180deg, transparent, var(--c) 25%, #fff 50%, var(--c) 75%, transparent); box-shadow:0 0 50px var(--c);
+    transform-origin:left center; animation:beam .95s ease-out forwards; }
+  @keyframes beam { 0%{transform:scaleX(0);opacity:1} 35%{transform:scaleX(1);opacity:1} 75%{opacity:1} 100%{transform:scaleX(1) scaleY(.1);opacity:0} }
+  .shard { left:50%; top:45%; width:0; height:0; border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:22px solid var(--c);
+    filter:drop-shadow(0 0 6px var(--c)); animation:shard 1s ease-out forwards; }
+  @keyframes shard { from{transform:translate(0,0) rotate(0);opacity:1} to{transform:translate(var(--dx),var(--dy)) rotate(var(--r));opacity:0} }
+  .crack { inset:0; background:repeating-conic-gradient(from 10deg at 50% 45%, transparent 0 14deg, rgba(255,255,255,.75) 14deg 14.6deg);
+    -webkit-mask:radial-gradient(circle at 50% 45%, #000 0 30%, transparent 55%); mask:radial-gradient(circle at 50% 45%, #000 0 30%, transparent 55%);
+    animation:flash .9s ease-out forwards; }
+  .pillar { left:50%; top:-5%; width:34vmin; height:110%; margin-left:-17vmin;
+    background:linear-gradient(90deg, transparent, var(--c) 20%, #fff 50%, var(--c) 80%, transparent); box-shadow:0 0 80px var(--c);
+    transform-origin:top center; animation:pillar 1.5s ease-out forwards; mix-blend-mode:screen; }
+  @keyframes pillar { 0%{transform:scaleY(0);opacity:1} 30%{transform:scaleY(1);opacity:1} 75%{opacity:1} 100%{transform:scaleY(1) scaleX(1.6);opacity:0} }
+  .shout { left:50%; top:30%; transform:translateX(-50%); font:900 clamp(30px,10vw,72px)/1 sans-serif; color:#fff3c0;
+    text-shadow:0 0 18px var(--c), 0 5px 0 #4a2600; white-space:nowrap; animation:shout 1.2s ease-out forwards; }
+  @keyframes shout { 0%{transform:translateX(-50%) scale(2.4);opacity:0} 20%{transform:translateX(-50%) scale(1);opacity:1} 80%{opacity:1} 100%{transform:translateX(-50%) translateY(-6vh);opacity:0} }
+  .badge.skill { color:#ffe28a; border-color:#ffd36a; }
+  .badges { display:flex; flex-wrap:wrap; gap:8px; min-height:40px; margin:8px auto 0; max-width:720px; padding-left:62px; align-items:center; }
+  /* 状態アイコン（毒・雷などの状態異常と、攻撃力アップ・防御アップ） */
+  .st-icon { position:relative; width:38px; height:38px; flex:none; }
+  .st-icon img { width:100%; height:100%; border-radius:50%; object-fit:cover; box-shadow:0 2px 8px rgba(0,0,0,.7); }
+  .st-icon.buff img { border-radius:10px; border:2px solid rgba(255,220,140,.8); }
+  .st-icon.bad img { border:2px solid rgba(255,90,80,.85); }
+  .st-icon .t { position:absolute; right:-5px; bottom:-5px; min-width:19px; height:19px; padding:0 4px; border-radius:10px;
+    background:#120d16; border:1px solid rgba(255,255,255,.55); font:800 12px/17px ui-sans-serif,system-ui,sans-serif; color:#fff; text-align:center; }
+  .st-icon.new { animation:stIn .5s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes stIn { from{transform:scale(2.2);opacity:0} to{transform:scale(1);opacity:1} }
+  .badge { font:600 12px/1 sans-serif; padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25); }
+  .badge.atk { color:#ffcf8a; border-color:#ffb347; } .badge.guard { color:#9fd0ff; border-color:#6fb2ff; }
+  .buttons { display:flex; gap:10px; max-width:720px; margin:10px auto 0; pointer-events:auto; }
+  .btn { flex:1; min-height:58px; border-radius:14px; border:1px solid rgba(233,214,166,.6); color:#1b120a; font-weight:800; font-size:19px; line-height:1;
+    font-family:inherit; letter-spacing:.06em; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.4); }
+  .btn.attack { background:linear-gradient(#ffd98a,#e3a33f); }
+  .btn.item { background:linear-gradient(#cfe6ff,#7aa9e0); flex:.7; }
+  .btn:disabled { filter:grayscale(.8) brightness(.55); cursor:default; }
+  .btn:not(:disabled):active { filter:brightness(1.15); }   /* 押したときに動かさない（はなした場所がずれてクリックにならないように） */
+  #quit { position:absolute; z-index:60; top:max(8px, env(safe-area-inset-top)); right:10px; pointer-events:auto;
+    font:600 12px/1 sans-serif; color:var(--muted); background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.2); border-radius:999px; padding:7px 11px; cursor:pointer; }
+  .hud.top .row { padding-right:64px; }
+
+  /* 連打中 */
+  #tapzone { position:absolute; inset:0; z-index:30; display:none; }
+  #tapzone.on { display:block; }
+  #timer { position:absolute; z-index:45; left:50%; top:calc(max(10px, env(safe-area-inset-top)) + 64px); transform:translateX(-50%);
+    width:min(70vw,420px); height:10px; border-radius:6px; background:rgba(0,0,0,.5); overflow:hidden; display:none; border:1px solid rgba(255,255,255,.3); }
+  #timer > div { height:100%; width:100%; background:linear-gradient(90deg,#ffe28a,#ff8a3a); }
+  #combo { position:absolute; z-index:45; right:6%; top:32%; text-align:right; display:none; pointer-events:none;
+    text-shadow:0 3px 10px #000, 0 0 2px #000; }
+  #combo .c { font:900 clamp(40px,12vw,84px)/1 ui-sans-serif,system-ui,sans-serif; color:#fff2c8; }
+  #combo .d { font:800 clamp(16px,4.5vw,24px)/1.3 ui-sans-serif,system-ui,sans-serif; color:#ffcf6a; }
+  .spark { position:absolute; z-index:44; width:46px; height:46px; margin:-23px 0 0 -23px; pointer-events:none; border-radius:50%;
+    background:radial-gradient(circle, #fff 0 18%, rgba(255,230,150,.9) 30%, rgba(255,160,60,0) 70%); animation:spark .35s ease-out forwards; }
+  .spark.miss { background:radial-gradient(circle, rgba(255,255,255,.5) 0 12%, transparent 60%); }
+  @keyframes spark { from{transform:scale(.4);opacity:1} to{transform:scale(1.6);opacity:0} }
+
+  /* 大きな文字・吹き出し・数字 */
+  #banner { position:absolute; inset:0; z-index:50; display:none; align-items:center; justify-content:center; pointer-events:none; flex-direction:column; }
+  #banner .t { font-weight:900; font-size:clamp(44px,14vw,110px); line-height:1; font-family:inherit; color:#fff0c4; letter-spacing:.06em;
+    text-shadow:0 0 18px rgba(255,180,60,.8), 0 5px 0 #6b3a00, 0 10px 30px #000; animation:bannerIn .45s cubic-bezier(.2,1.6,.4,1); }
+  #banner .s { margin-top:12px; font-size:18px; text-shadow:0 2px 8px #000; }
+  #banner.win .t { color:#ffe28a; } #banner.lose .t { color:#ff8075; text-shadow:0 0 18px rgba(255,60,40,.7), 0 5px 0 #4a0a05, 0 10px 30px #000; }
+  @keyframes bannerIn { from{transform:scale(2.2);opacity:0} to{transform:scale(1);opacity:1} }
+  #bubble { position:absolute; z-index:48; left:50%; top:calc(max(10px, env(safe-area-inset-top)) + 70px); transform:translateX(-50%);
+    width:max-content; max-width:min(86vw,520px); padding:12px 18px; border-radius:16px; background:rgba(14,10,18,.9); border:1px solid var(--bubble,#e9d6a6);
+    box-shadow:0 0 18px var(--bubble,#e9d6a6), 0 6px 20px rgba(0,0,0,.6); font-size:clamp(16px,4.6vw,22px); font-weight:700; display:none; text-align:center; }
+  #bubble::after { content:""; position:absolute; left:50%; bottom:-9px; width:16px; height:16px; transform:translateX(-50%) rotate(45deg);
+    background:rgba(14,10,18,.9); border-right:1px solid var(--bubble,#e9d6a6); border-bottom:1px solid var(--bubble,#e9d6a6); }
+  .pop { position:absolute; z-index:55; pointer-events:none; transform:translate(-50%,-50%); font:900 26px/1 ui-sans-serif,system-ui,sans-serif;
+    color:#fff6d8; text-shadow:0 0 6px #000, 0 3px 0 #7a4a00; animation:pop 1s ease-out forwards; white-space:nowrap; }
+  .pop.big { font-size:clamp(48px,15vw,104px); color:#fff3c0; text-shadow:0 0 20px rgba(255,170,40,.9), 0 6px 0 #7a3a00, 0 12px 30px #000; animation:popBig 1.3s ease-out forwards; }
+  .pop.hurt { color:#ff6b5b; font-size:34px; text-shadow:0 0 8px #000, 0 3px 0 #4a0000; }
+  .pop.heal { color:#7dffae; font-size:30px; text-shadow:0 0 8px #000, 0 3px 0 #004a20; }
+  @keyframes pop { 0%{opacity:0;transform:translate(-50%,-30%) scale(.6)} 15%{opacity:1;transform:translate(-50%,-60%) scale(1.2)} 100%{opacity:0;transform:translate(-50%,-170%) scale(1)} }
+  @keyframes popBig { 0%{opacity:0;transform:translate(-50%,-50%) scale(2.4)} 18%{opacity:1;transform:translate(-50%,-50%) scale(1)} 70%{opacity:1;transform:translate(-50%,-62%) scale(1)} 100%{opacity:0;transform:translate(-50%,-90%) scale(.9)} }
+
+  /* エフェクトの層 */
+  #fx { position:absolute; inset:0; z-index:35; pointer-events:none; overflow:hidden; }
+  .fx { position:absolute; pointer-events:none; }
+  .flash { inset:0; animation:flash .5s ease-out forwards; }
+  @keyframes flash { from{opacity:1} to{opacity:0} }
+  .slash { left:50%; top:45%; width:150vmax; height:10px; margin:-5px 0 0 -75vmax; border-radius:50%;
+    background:linear-gradient(90deg, transparent, var(--c) 30%, #fff 50%, var(--c) 70%, transparent);
+    box-shadow:0 0 18px var(--c), 0 0 40px var(--c); transform-origin:center; animation:slash .42s ease-out forwards; }
+  @keyframes slash { 0%{transform:rotate(var(--r)) translate(var(--o)) scaleX(0);opacity:1} 45%{transform:rotate(var(--r)) translate(var(--o)) scaleX(1);opacity:1} 100%{transform:rotate(var(--r)) translate(var(--o)) scaleX(1.05);opacity:0} }
+  .ring { left:50%; top:45%; width:20px; height:20px; margin:-10px 0 0 -10px; border-radius:50%; border:6px solid var(--c);
+    box-shadow:0 0 30px var(--c), inset 0 0 30px var(--c); animation:ring .7s ease-out forwards; }
+  @keyframes ring { from{transform:scale(.2);opacity:1} to{transform:scale(var(--s,40));opacity:0} }
+  .burst { left:50%; top:45%; width:60vmin; height:60vmin; margin:-30vmin 0 0 -30vmin; border-radius:50%;
+    background:radial-gradient(circle, #fff 0 8%, var(--c) 22%, transparent 62%); animation:burst .6s ease-out forwards; mix-blend-mode:screen; }
+  @keyframes burst { from{transform:scale(.2);opacity:1} to{transform:scale(1.8);opacity:0} }
+  .particle { left:50%; top:45%; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50%; background:var(--c); box-shadow:0 0 10px var(--c);
+    animation:particle .9s ease-out forwards; }
+  @keyframes particle { from{transform:translate(0,0) scale(1);opacity:1} to{transform:translate(var(--dx),var(--dy)) scale(.3);opacity:0} }
+  .mist { top:20%; height:60%; width:70vw; left:-70vw; border-radius:50%; filter:blur(18px);
+    background:radial-gradient(ellipse, var(--c), transparent 70%); animation:mist .8s ease-in-out forwards; opacity:.85; }
+  @keyframes mist { to{transform:translateX(170vw)} }
+  .flame { bottom:-10%; width:30vw; height:60vh; border-radius:50% 50% 40% 40%; filter:blur(10px); mix-blend-mode:screen;
+    background:radial-gradient(ellipse at 50% 80%, #fff3b0 0 10%, var(--c) 35%, rgba(200,40,0,.6) 60%, transparent 75%); animation:flame .9s ease-out forwards; }
+  @keyframes flame { 0%{transform:translateY(40%) scaleY(.4);opacity:0} 30%{opacity:1} 100%{transform:translateY(-30%) scaleY(1.2);opacity:0} }
+  .svgfx { inset:0; width:100%; height:100%; }
+  .bolt { fill:none; stroke:#fff; stroke-width:5; filter:drop-shadow(0 0 10px var(--c)) drop-shadow(0 0 22px var(--c)); animation:bolt .55s steps(1) forwards; }
+  @keyframes bolt { 0%{opacity:1} 20%{opacity:0} 35%{opacity:1} 60%{opacity:.4} 100%{opacity:0} }
+  .whip { fill:none; stroke:var(--c); stroke-width:7; stroke-linecap:round; filter:drop-shadow(0 0 10px var(--c));
+    stroke-dasharray:1600; stroke-dashoffset:1600; animation:whip .5s ease-in forwards; }
+  @keyframes whip { 70%{stroke-dashoffset:0;opacity:1} 100%{stroke-dashoffset:0;opacity:0} }
+  .implode { left:50%; top:45%; width:240vmax; height:240vmax; margin:-120vmax 0 0 -120vmax; border-radius:50%;
+    background:radial-gradient(circle, transparent 0 8%, rgba(0,0,0,.92) 30%); animation:implode .9s ease-in forwards; }
+  @keyframes implode { 0%{transform:scale(1);opacity:0} 40%{opacity:1} 100%{transform:scale(.12);opacity:0} }
+  .rays { left:50%; top:45%; width:180vmax; height:180vmax; margin:-90vmax 0 0 -90vmax; border-radius:50%; mix-blend-mode:screen;
+    background:repeating-conic-gradient(var(--c) 0 4deg, transparent 4deg 18deg);
+    -webkit-mask:radial-gradient(circle, #000 0 10%, transparent 60%); mask:radial-gradient(circle, #000 0 10%, transparent 60%);
+    animation:rays .9s ease-out forwards; }
+  @keyframes rays { from{transform:rotate(0) scale(.3);opacity:1} to{transform:rotate(40deg) scale(1.2);opacity:0} }
+  .dim { inset:0; background:#000; animation:dim 1.1s ease-in-out forwards; }
+  @keyframes dim { 0%{opacity:0} 35%{opacity:.92} 70%{opacity:.92} 100%{opacity:0} }
+  .vignette { inset:0; background:radial-gradient(ellipse at center, transparent 35%, var(--c) 100%); animation:flash .6s ease-out forwards; }
+
+  /* アイテムの一覧 */
+  #sheet { position:absolute; z-index:70; left:0; right:0; bottom:0; transform:translateY(105%); transition:transform .25s ease-out;
+    background:rgba(16,12,20,.97); border-top:1px solid rgba(233,214,166,.4); border-radius:18px 18px 0 0;
+    padding:14px max(14px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-bottom)); box-shadow:0 -10px 30px rgba(0,0,0,.6); }
+  #sheet.open { transform:translateY(0); }
+  #sheet { max-height:72vh; max-height:72dvh; display:flex; flex-direction:column; }
+  #sheet .scroll { overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; overscroll-behavior:contain; min-height:0; flex:1 1 auto; padding-bottom:4px; }
+  #sheet h3 { width:100%; margin:0 0 10px; font-size:17px; display:flex; justify-content:space-between; align-items:center; max-width:720px; margin-inline:auto; }
+  #sheet h3 button { font:600 13px/1 sans-serif; padding:8px 12px; border-radius:999px; background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,.25); cursor:pointer; }
+  .items { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; max-width:720px; margin:0 auto; }
+  .itembtn img { float:left; width:44px; height:44px; border-radius:10px; margin:0 10px 0 0; object-fit:cover; }
+  .itembtn { text-align:left; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.18);
+    color:var(--ink); font-family:inherit; cursor:pointer; }
+  .itembtn b { display:block; font-size:15px; } .itembtn small { color:var(--muted); font-size:12px; }
+  .itembtn .n { float:right; font:700 14px/1.4 ui-monospace,monospace; color:#ffe2a0; }
+  .itembtn:disabled { opacity:.35; cursor:default; }
+  @media (max-width:520px) {
+    .items { grid-template-columns:1fr; gap:6px; }
+    .itembtn { padding:8px 10px; }
+    .itembtn img { width:38px; height:38px; }
+  }
+  #banner.long .t { font-size:clamp(34px,10vw,90px); white-space:nowrap; }
+  .note { max-width:720px; margin:8px auto 0; color:var(--muted); font-size:12px; }
+
+  .grow { display:flex; flex-wrap:wrap; gap:10px; }
+  .gicon { position:relative; width:60px; height:60px; padding:0; border-radius:12px; border:2px solid rgba(255,255,255,.2); background:rgba(255,255,255,.06); cursor:pointer; }
+  .gicon.on { border-color:#ffd98a; box-shadow:0 0 12px rgba(255,217,138,.5); }
+  .gicon > img { width:100%; height:100%; border-radius:10px; object-fit:cover; display:block; }
+  .gicon .ga { position:absolute; left:0; right:0; bottom:-8px; display:flex; justify-content:center; gap:1px; }
+  .gicon .ga img { width:16px; height:16px; border-radius:50%; border:1px solid rgba(140,200,255,.95); background:#000; }
+  .ginfo { margin-top:16px; min-height:2em; font-size:13px; color:var(--muted); }
+  /* 状態異常のアイコンを押したときの説明 */
+  .hud .badges, .hud .ebadges { pointer-events:auto; }
+  #app.tapping .badges, #app.tapping .ebadges { pointer-events:none; }
+  .st-icon, .badge { cursor:pointer; }
+  #tip { position:absolute; z-index:85; max-width:min(80vw,320px); padding:9px 12px; border-radius:12px; background:rgba(16,12,20,.96);
+    border:1px solid rgba(233,214,166,.55); color:var(--ink); font:600 13px/1.5 sans-serif; box-shadow:0 6px 20px rgba(0,0,0,.6);
+    display:none; pointer-events:none; }
+  #tip b { color:#ffe28a; }
+
+
+  /* 宇宙龍の覚醒：地鳴り・落石・入れかわり */
+  #stage.quake, #fx.quake { animation:quake .11s linear infinite; }
+  @keyframes quake { 0%{transform:translate(0,0)} 25%{transform:translate(-5px,3px)} 50%{transform:translate(4px,-4px)} 75%{transform:translate(-3px,-2px)} 100%{transform:translate(2px,4px)} }
+  #stage.quake.hard, #fx.quake.hard { animation:quakeHard .09s linear infinite; }
+  @keyframes quakeHard { 0%{transform:translate(0,0)} 25%{transform:translate(-11px,6px)} 50%{transform:translate(9px,-8px)} 75%{transform:translate(-7px,-5px)} 100%{transform:translate(6px,8px)} }
+  #stage .st-scene.awake-in { position:absolute; inset:0; opacity:0; transition:opacity 1.4s ease-in; filter:brightness(1.8) saturate(1.4); }
+  #stage .st-scene.awake-in.on { opacity:1; filter:none; transition:opacity 1.4s ease-in, filter 2.2s ease-out; }
+  .rock { position:absolute; z-index:36; top:-30px; width:var(--s); height:var(--s); background:linear-gradient(135deg,#6b6170,#2a2430);
+    clip-path:polygon(20% 0,80% 8%,100% 55%,70% 100%,15% 90%,0 40%); pointer-events:none; animation:rockFall var(--d) cubic-bezier(.5,0,.9,.6) forwards; }
+  @keyframes rockFall { to { transform:translateY(110vh) rotate(var(--r)); } }
+  .dust { position:absolute; z-index:35; left:-10%; right:-10%; bottom:-10%; height:45%; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 100%, rgba(120,100,90,.75), rgba(60,50,50,.35) 45%, transparent 70%); animation:dust 3.2s ease-out forwards; }
+  @keyframes dust { 0%{opacity:0; transform:translateY(20%) scale(.9)} 30%{opacity:1} 100%{opacity:0; transform:translateY(-10%) scale(1.25)} }
+  .crack { position:absolute; z-index:37; inset:0; pointer-events:none; background:radial-gradient(circle at 50% 55%, rgba(255,230,200,.95), rgba(255,140,60,.45) 25%, transparent 60%);
+    animation:flash 1s ease-out forwards; }
+  /* 大技（黒星の劫火）のワンシーン */
+  #special { position:absolute; inset:0; z-index:57; display:none; overflow:hidden; background:#000; pointer-events:none; }
+  #special img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:35% 50%; }
+  #special img.main { animation:spZoom 2.2s ease-out forwards; }
+  #special img.bg { display:none; filter:blur(18px) brightness(.45); transform:scale(1.2); }
+  /* 縦長の画面で横長の絵を出すとき：絵は全体を見せ、まわりはぼかした同じ絵で埋める */
+  #special.fit img.bg { display:block; }
+  #special.fit img.main { object-fit:contain; animation:spZoomFit 2.2s ease-out forwards; }
+  @keyframes spZoomFit { 0%{transform:scale(1.9); filter:brightness(.3)} 15%{filter:brightness(1.2)} 100%{transform:scale(1.45); filter:brightness(1)} }
+  @keyframes spZoom { 0%{transform:scale(1.25); filter:brightness(.3)} 15%{filter:brightness(1.2)} 100%{transform:scale(1.02); filter:brightness(1)} }
+  #special::after { content:""; position:absolute; inset:0; background:radial-gradient(ellipse at 50% 50%, transparent 45%, rgba(0,0,0,.85) 100%); }
+  #special .name { position:absolute; z-index:2; left:4%; right:4%; bottom:14%; text-align:center; font-weight:900; font-size:clamp(24px,7vw,72px); letter-spacing:.08em; line-height:1.2;
+    color:#fff1d6; text-shadow:0 0 12px #ff6a00, 0 0 28px #ff2a00, 0 0 50px #5a00ff, 0 3px 0 #000; animation:spName 2.2s ease-out forwards; }
+  @keyframes spName { 0%{opacity:0; transform:scale(1.6); letter-spacing:.4em} 20%{opacity:1; transform:scale(1); letter-spacing:.08em} 85%{opacity:1} 100%{opacity:0} }
+
+
+  /* アステルの必殺技（特別演出） */
+  #grand { position:absolute; inset:0; z-index:90; display:none; overflow:hidden; pointer-events:none; background:#000; }
+  #grand.on { display:block; }
+  #grand .g-black { position:absolute; inset:0; background:radial-gradient(ellipse at 50% 50%, #120a24 0%, #000 70%); }
+  #grand .g-star { position:absolute; width:3px; height:3px; border-radius:50%; background:#fff; box-shadow:0 0 6px 2px var(--c);
+    left:var(--x); top:var(--y); animation:gStar var(--d) cubic-bezier(.6,0,.9,.4) forwards; }
+  @keyframes gStar { 0%{opacity:0; transform:scale(.4)} 20%{opacity:1} 100%{left:50%; top:50%; opacity:0; transform:scale(1.6)} }
+  #grand svg.g-circle { position:absolute; left:50%; top:50%; width:min(90vw,90vh); height:min(90vw,90vh); transform:translate(-50%,-50%);
+    filter:drop-shadow(0 0 8px #ffd98a) drop-shadow(0 0 22px #b48cff); animation:gSpin 4s linear infinite; opacity:0; }
+  #grand.p1 svg.g-circle { opacity:1; transition:opacity .4s; }
+  #grand svg.g-circle .d { fill:none; stroke:#ffe7a8; stroke-width:.6; stroke-dasharray:400; stroke-dashoffset:400; }
+  #grand.p1 svg.g-circle .d { animation:gDraw 1s ease-out forwards; }
+  @keyframes gDraw { to { stroke-dashoffset:0; } }
+  @keyframes gSpin { to { transform:translate(-50%,-50%) rotate(360deg); } }
+  #grand .g-who { position:absolute; left:0; right:0; top:62%; text-align:center; font:700 clamp(14px,3.6vw,22px)/1 serif; letter-spacing:.3em;
+    color:#f4e8ff; text-shadow:0 0 10px #b48cff; opacity:0; }
+  #grand.p1 .g-who { animation:gFade 1.2s ease forwards; }
+  @keyframes gFade { 0%{opacity:0; transform:translateY(8px)} 40%,80%{opacity:1; transform:none} 100%{opacity:0} }
+  #grand img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0; }
+  #grand.p2 img.g-img { opacity:1; animation:gPan 3.2s cubic-bezier(.2,.6,.3,1) forwards; }
+  @keyframes gPan { 0%{transform:scale(1.35); object-position:28% 35%; filter:brightness(2.2) saturate(.6)}
+                    18%{filter:brightness(1.05) saturate(1.1)} 100%{transform:scale(1.06); object-position:62% 45%; filter:brightness(.88) saturate(1.1)} }
+  #grand .g-shine { position:absolute; inset:-20%; opacity:0; mix-blend-mode:screen;
+    background:conic-gradient(from 0deg at 60% 45%, transparent 0 8deg, rgba(255,240,200,.35) 10deg, transparent 14deg 40deg, rgba(200,180,255,.3) 43deg, transparent 47deg 80deg,
+      rgba(255,240,200,.3) 83deg, transparent 87deg 130deg, rgba(180,220,255,.3) 133deg, transparent 137deg 200deg, rgba(255,240,200,.35) 203deg, transparent 207deg 360deg); }
+  #grand.p2 .g-shine { opacity:1; animation:gShine 3.2s linear forwards; }
+  @keyframes gShine { from { transform:rotate(0) } to { transform:rotate(25deg) } }
+  #grand .g-spark { position:absolute; width:6px; height:6px; border-radius:50%; background:radial-gradient(circle,#fff 0,#ffe7a8 40%,transparent 70%);
+    left:var(--x); top:var(--y); animation:gSpark var(--d) ease-out forwards; }
+  @keyframes gSpark { 0%{opacity:0; transform:scale(.3)} 30%{opacity:1} 100%{opacity:0; transform:translate(var(--dx),var(--dy)) scale(1.4)} }
+  #grand .g-title { position:absolute; left:0; right:0; bottom:8%; padding:5% 0 4%; text-align:center; opacity:0;
+    background:linear-gradient(180deg, transparent, rgba(10,4,24,.72) 30%, rgba(10,4,24,.78) 70%, transparent); }
+  #grand.p3 .g-title { opacity:1; }
+  #grand .g-reading { font:700 clamp(12px,3vw,18px)/1 serif; letter-spacing:.5em; color:#fff6dc; text-shadow:0 0 8px #ffb84a; margin-bottom:6px;
+    opacity:0; animation:none; }
+  #grand.p3 .g-reading { animation:gUp .6s ease .1s forwards; }
+  #grand .g-name { font-weight:900; font-size:clamp(40px,12vw,104px); line-height:1.05; letter-spacing:.1em; white-space:nowrap; }
+  #grand .g-name span { display:inline-block; opacity:0; background:linear-gradient(180deg,#fffef4 0%,#ffe7a0 45%,#ffb43a 75%,#fff2c0 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    -webkit-text-stroke:1px rgba(90,40,0,.55); filter:drop-shadow(0 2px 0 #3a1a00) drop-shadow(0 0 10px #ff9a2a) drop-shadow(0 0 26px #9a6bff); }
+  #grand.p3 .g-name span { animation:gChar .55s cubic-bezier(.2,1.6,.4,1) forwards; animation-delay:calc(var(--i) * 110ms + 200ms); }
+  @keyframes gChar { 0%{opacity:0; transform:scale(2.6) translateY(-10px); filter:blur(8px) drop-shadow(0 0 30px #fff)} 100%{opacity:1; transform:none} }
+  #grand .g-sub { margin-top:8px; font:800 clamp(11px,2.6vw,16px)/1 sans-serif; letter-spacing:.9em; color:#e8dcff; text-shadow:0 0 10px #9a6bff; opacity:0; }
+  #grand.p3 .g-sub { animation:gUp .7s ease .9s forwards; }
+  @keyframes gUp { from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
+  #grand .g-beam { position:absolute; left:-15%; top:34%; height:36%; width:0; opacity:0; filter:blur(10px);
+    background:radial-gradient(ellipse 60% 50% at 0% 50%, #fff 0%, #fff8e0 30%, rgba(255,215,140,.85) 55%, rgba(170,130,255,.35) 75%, transparent 100%);
+    transform:skewY(-4deg); mix-blend-mode:screen; }
+  #grand.p4 .g-beam { animation:gBeam .55s cubic-bezier(.5,0,.2,1) forwards; }
+  @keyframes gBeam { 0%{width:0; opacity:1} 100%{width:260%; opacity:1} }
+  #grand.p4 { animation:gShake .08s linear infinite; }
+  @keyframes gShake { 0%{transform:translate(0,0)} 50%{transform:translate(-8px,5px)} 100%{transform:translate(7px,-6px)} }
+  #grand .g-white { position:absolute; inset:0; background:#fff; opacity:0; }
+  #grand.flash .g-white { animation:gWhite .45s ease-out forwards; }
+  #grand.whiteout .g-white { opacity:1; transition:opacity .25s ease-in; }
+  @keyframes gWhite { 0%{opacity:1} 100%{opacity:0} }
+
+
+  /* アステルの援護：空を見上げる */
+  #stage.lookup, #fx.lookup { transition:transform 1.1s cubic-bezier(.5,0,.3,1), filter 1.1s; transform:translateY(38%) scale(1.08); filter:brightness(1.6) blur(2px); }
+  #sky { position:absolute; inset:0; z-index:88; display:none; overflow:hidden; pointer-events:none; background:#cfe2ff; }
+  #sky.on { display:block; }
+  #sky img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:58% 35%; opacity:0; }
+  #sky.on img { animation:skyIn 2.8s ease-out forwards; }
+  @keyframes skyIn { 0%{opacity:0; transform:translateY(-12%) scale(1.25); filter:brightness(2.4)} 25%{opacity:1; filter:brightness(1.3)}
+                     100%{opacity:1; transform:translateY(0) scale(1.05); filter:brightness(1)} }
+  #sky .rays { position:absolute; inset:-30%; mix-blend-mode:screen; opacity:0;
+    background:repeating-conic-gradient(from 0deg at 50% 0%, rgba(255,250,220,.35) 0 3deg, transparent 3deg 11deg); }
+  #sky.on .rays { animation:skyRays 2.8s ease-out forwards; }
+  @keyframes skyRays { 0%{opacity:0} 30%{opacity:1} 100%{opacity:.4; transform:rotate(8deg)} }
+  #sky.on img, #sky.on .rays { animation-duration:4.6s; }
+  /* 見上げた人のつぶやき → アステルのせりふ */
+  #sky .narr { position:absolute; left:0; right:0; top:14%; text-align:center; font:700 clamp(17px,4.6vw,32px)/1.5 serif; letter-spacing:.15em;
+    color:#fff; text-shadow:0 0 6px #0a0c20, 0 0 14px #0a0c20, 0 0 28px #0a0c20, 0 2px 0 #000; opacity:0; }
+  #sky.on .narr { animation:gUp .6s ease .5s forwards; }
+  #sky .talk { position:absolute; left:5%; right:5%; bottom:7%; max-width:640px; margin:0 auto; padding:12px 16px 14px; border-radius:14px;
+    background:rgba(14,10,30,.78); border:1px solid rgba(233,214,166,.7); box-shadow:0 0 24px rgba(180,140,255,.45); opacity:0; }
+  #sky.on .talk { animation:gUp .6s ease 1.9s forwards; }
+  #sky .talk .who { font:800 clamp(13px,3.4vw,18px)/1 sans-serif; color:#ffe7a8; letter-spacing:.2em; margin-bottom:8px; }
+  #sky .talk .say { font:700 clamp(17px,4.8vw,30px)/1.5 serif; color:#fff; }
+
+
+  /* 倒れそうなとき：精霊の羽を使うか聞く */
+  #revive { position:absolute; inset:0; z-index:95; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.72); }
+  #revive.on { display:flex; }
+  #revive > div { width:min(90vw,400px); background:#161119; border:1px solid rgba(233,214,166,.6); border-radius:16px; padding:18px; text-align:center;
+    box-shadow:0 0 30px rgba(180,140,255,.4); }
+  #revive .ricon { width:72px; height:72px; border-radius:14px; object-fit:cover; box-shadow:0 0 18px rgba(255,240,200,.6); }
+  #revive p { margin:10px 0 14px; line-height:1.6; } #revive small { color:var(--muted); }
+  #revive .buttons { margin:0; } #revive .btn { min-height:48px; font-size:16px; }
+
+  /* 状態異常の演出 */
+  #dark { position:absolute; inset:0; z-index:32; pointer-events:none; display:none;
+    background:radial-gradient(ellipse 60% 55% at 50% 45%, rgba(0,0,0,.35), rgba(0,0,0,.88) 100%); }
+  #dark.on { display:block; animation:darkIn .6s ease-out; }
+  @keyframes darkIn { from{opacity:0} to{opacity:1} }
+  #stun { position:absolute; inset:0; z-index:33; pointer-events:none; display:none;
+    box-shadow:inset 0 0 60px rgba(255,230,80,.55); background:rgba(255,230,80,.06); }
+  #stun.on { display:block; animation:stun .3s steps(2) infinite; }
+  @keyframes stun { 50% { box-shadow:inset 0 0 34px rgba(255,255,160,.85); } }
+  #warn { position:absolute; z-index:46; left:50%; transform:translateX(-50%); top:calc(max(10px, env(safe-area-inset-top)) + 84px);
+    padding:7px 14px; border-radius:999px; font-weight:800; font-size:15px; white-space:nowrap; display:none; pointer-events:none;
+    background:rgba(60,10,0,.88); color:#ffb070; border:1px solid #ff7a3a; text-shadow:0 1px 2px #000; }
+  #warn.on { display:block; animation:warn .9s ease-in-out infinite; }
+  @keyframes warn { 50% { box-shadow:0 0 18px #ff7a3a; } }
+  .btn.end { background:linear-gradient(#e6d9ff,#9d86d6); display:none; }
+  .btn.end.on { display:block; }
+  .pop.info { color:#ffe28a; font-size:24px; }
+  .pop.dot { color:#d48cff; font-size:28px; }
+
+  /* やめる確認 */
+  #confirm { position:absolute; inset:0; z-index:80; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); }
+  #confirm > div { width:min(88vw,380px); background:#161119; border:1px solid rgba(233,214,166,.4); border-radius:16px; padding:18px; text-align:center; }
+  #confirm p { margin:0 0 14px; line-height:1.6; }
+  #confirm .buttons { margin:0; }
+  #confirm .btn { min-height:46px; font-size:16px; }
+  .btn.ghost { background:#2a2230; color:var(--ink); }
+
+  /* 装備の確認 */
+  #gearBtn { position:absolute; z-index:60; top:calc(max(8px, env(safe-area-inset-top)) + 68px); right:10px; pointer-events:auto;
+    font:600 12px/1 sans-serif; color:var(--ink); background:rgba(0,0,0,.45); border:1px solid rgba(233,214,166,.45); border-radius:999px; padding:7px 11px; cursor:pointer; }
+  #gearSheet { position:absolute; z-index:75; left:0; right:0; bottom:0; transform:translateY(105%); transition:transform .25s ease-out;
+    background:rgba(16,12,20,.97); border-top:1px solid rgba(233,214,166,.4); border-radius:18px 18px 0 0; max-height:78vh; max-height:78dvh;
+    display:flex; flex-direction:column; padding:14px max(14px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-bottom)); box-shadow:0 -10px 30px rgba(0,0,0,.6); }
+  #gearSheet.open { transform:translateY(0); }
+  #gearSheet h3 { margin:0 0 10px; font-size:17px; display:flex; justify-content:space-between; align-items:center; width:100%; max-width:720px; margin-inline:auto; }
+  #gearSheet h3 button { font:600 13px/1 sans-serif; padding:8px 12px; border-radius:999px; background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,.25); cursor:pointer; }
+  #gearSheet .scroll > div { max-width:720px; margin:0 auto; }
+  .gstats { display:flex; gap:14px; font:700 14px/1.4 ui-monospace,monospace; color:#ffe2a0; margin:0 0 8px; flex-wrap:wrap; }
+  .gsec { margin:12px 0 6px; font-size:13px; color:var(--muted); letter-spacing:.08em; }
+  .gitem { display:flex; gap:10px; align-items:flex-start; padding:8px 10px; border-radius:12px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); margin-bottom:6px; }
+  .gitem > img { width:44px; height:44px; border-radius:10px; object-fit:cover; flex:none; }
+  .gitem b { font-size:15px; } .gitem .rk { font-size:11px; color:var(--muted); margin-left:6px; }
+  .gitem .ef { font-size:12px; color:#cfe8c0; }
+  .gattr { display:flex; gap:6px; align-items:center; font-size:12px; color:#f1d9ff; margin-top:3px; }
+  .gattr img { width:18px; height:18px; }
+  .gempty { font-size:13px; color:var(--muted); padding:4px 2px; }
+  .gtags { display:flex; flex-wrap:wrap; gap:6px; }
+  .gtag { display:inline-flex; gap:5px; align-items:center; font-size:13px; padding:5px 10px; border-radius:999px; background:rgba(120,200,255,.12); border:1px solid rgba(120,200,255,.35); }
+  .gtag.imm { background:rgba(255,230,150,.12); border-color:rgba(255,230,150,.45); }
+  .gtag img { width:18px; height:18px; }
+</style>
+<style id="sceneCss"></style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"></div>
+  <div id="fx"></div>
+  <div id="dark"></div>
+  <div id="stun"></div>
+  <div id="tapzone"></div>
+  <div id="warn"></div>
+  <div id="timer"><div></div></div>
+  <div id="combo"><div class="c">0</div><div class="d"></div></div>
+  <div id="bubble"></div>
+  <div id="sky"><img alt=""><div class="rays"></div><div class="narr"></div>
+    <div class="talk"><div class="who"></div><div class="say"></div></div></div>
+  <div id="grand"><div class="g-black"></div><svg class="g-circle" viewBox="0 0 100 100"><circle class="d" cx="50" cy="50" r="46"/><circle class="d" cx="50" cy="50" r="40"/><circle class="d" cx="50" cy="50" r="22"/>
+      <polygon class="d" points="50,6 88,72 12,72"/><polygon class="d" points="50,94 12,28 88,28"/><circle class="d" cx="50" cy="50" r="31"/></svg><div class="g-who"></div>
+    <img class="g-img" alt=""><div class="g-shine"></div><div class="g-fx"></div>
+    <div class="g-title"><div class="g-reading"></div><div class="g-name"></div><div class="g-sub"></div></div>
+    <div class="g-beam"></div><div class="g-white"></div></div>
+  <div id="special"><img class="bg" alt=""><img class="main" alt=""><div class="name"></div></div>
+  <div id="cutin"><div class="band"></div><img alt=""><div class="name"></div></div>
+  <div id="banner"><div class="t"></div><div class="s"></div></div>
+
+  <div class="hud top">
+    <div class="row"><span class="ename" id="enemyName"></span><span class="stageno" id="stageNo"></span></div>
+    <div class="row" style="margin-top:6px">
+      <div class="hpbar" id="enemyBar"><div class="lag"></div><div class="fill"></div></div>
+      <span class="num" id="enemyNum"></span>
+    </div>
+    <div class="ebadges" id="enemyBadges"></div>
+  </div>
+  <button id="quit" type="button">やめる</button>
+  <button id="gearBtn" type="button">🛡️ 装備</button>
+
+  <div class="hud bottom">
+    <div class="row">
+      <div class="skillwrap" id="skillWrap" title="必殺技"><div class="sring" id="skillRing"></div>
+        <img class="icon" id="allyIcon" alt="" draggable="false"><span class="ready">必殺技！</span></div>
+      <div style="flex:1;min-width:0">
+        <div class="row" style="margin:0"><span class="aname" id="allyName"></span><span class="num" id="allyNum" style="margin-left:auto"></span></div>
+        <div class="hpbar" id="allyBar" style="margin-top:6px"><div class="lag"></div><div class="fill"></div></div>
+      </div>
+    </div>
+    <div class="badges" id="badges"></div>
+    <div class="buttons">
+      <button class="btn attack" id="btnAttack" type="button" disabled>⚔️ 攻撃</button>
+      <button class="btn end" id="btnEnd" type="button">⏭️ ターンを終える</button>
+      <button class="btn item" id="btnItem" type="button" disabled>🧪 アイテム</button>
+    </div>
+    <div class="note" id="hint" style="text-align:center;min-height:1.2em"></div>
+  </div>
+
+  <div id="sheet">
+    <h3><span>アイテム（1ターンに1つ）</span><button type="button" id="sheetClose">とじる</button></h3>
+    <div class="scroll"><div class="items" id="itemList"></div>
+    <div class="note" id="itemNote"></div></div>
+  </div>
+
+  <div id="tip"></div>
+  <div id="gearSheet">
+    <h3><span>いまの装備</span><button type="button" id="gearClose">とじる</button></h3>
+    <div class="scroll"><div id="gearList"></div></div>
+  </div>
+
+  <div id="revive" class="dialog"><div>
+    <img class="ricon" alt="">
+    <p><b>このままでは倒れてしまう……！</b><br>精霊の羽を使いますか？<br><small>HP全回復・状態異常を全部治す・精霊の加護、そしてアステルが援護に来る</small></p>
+    <div class="buttons">
+      <button class="btn ghost" id="reviveNo" type="button">使わない</button>
+      <button class="btn attack" id="reviveYes" type="button">🪶 使う</button>
+    </div>
+  </div></div>
+  <div id="confirm"><div>
+    <p>ホームに戻ります。<br>次に遊ぶときは、このステージの最初から続けられます。<br><small>この戦闘で使ったアイテムは戻りません。</small></p>
+    <div class="buttons">
+      <button class="btn ghost" id="cancelQuit" type="button">つづける</button>
+      <button class="btn attack" id="doQuit" type="button">やめる</button>
+    </div>
+  </div></div>
+</div>
+<script>
+"use strict";
+// 軽いタップ・クリックでも必ず反応させる：押した場所とはなした場所がほぼ同じなら、はなした瞬間にクリック扱いにする
+// （トラックパッドの軽いタップや、指が少しずれたタップで click が出ないことがあるため。あとから来る本物の click は無視して二重にしない）
+(function fastTap() {
+  const SEL = "button, .cand, #skillWrap, [data-tip]";
+  let down = null, quietUntil = 0;
+  document.addEventListener("pointerdown", (e) => {
+    const el = e.target.closest && e.target.closest(SEL);
+    down = el && !el.disabled ? { el, x: e.clientX, y: e.clientY, t: performance.now() } : null;
+  }, true);
+  document.addEventListener("pointerup", (e) => {
+    const d = down; down = null;
+    if (!d || d.el.disabled || !d.el.isConnected) return;
+    if (performance.now() - d.t > 900 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 16) return;
+    quietUntil = performance.now() + 450;
+    d.el.click();
+  }, true);
+  document.addEventListener("pointercancel", () => { down = null; }, true);
+  document.addEventListener("click", (e) => {
+    if (e.isTrusted && performance.now() < quietUntil && e.detail !== 0) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+})();
+// 連打中に画面が動かないように：スクロールできる箱（.scroll）の中以外では、指の移動・ピンチ・ダブルタップ拡大を止める
+(function lockGestures() {
+  const inScroll = (t) => t && t.closest && t.closest(".scroll");
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1 || !inScroll(e.target)) e.preventDefault(); }, { passive: false });
+  document.addEventListener("touchstart", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  for (const g of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(g, (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+})();
+// ---------------------------------------------------------------------------
+// Streamlit とのやりとり（公式の component-lib を使わない最小実装）
+// ---------------------------------------------------------------------------
+const Streamlit = {
+  send(type, data) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data), "*"); },
+  ready() { this.send("streamlit:componentReady", { apiVersion: 1 }); },
+  setHeight(h) { this.send("streamlit:setFrameHeight", { height: h }); },
+  setValue(value) { this.send("streamlit:setComponentValue", { value, dataType: "json" }); },
+};
+window.addEventListener("message", (ev) => {
+  const d = ev.data;
+  if (d && d.type === "streamlit:render") start(d.args);
+});
+
+const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+function displayHp(hp) { return hp <= 0 ? 0 : Math.max(1, Math.round(hp)); }
+function fmt(v) { return v < 10 ? (Math.round(v * 10) / 10).toString() : Math.round(v).toLocaleString(); }
+
+let G = null;   // いまの戦闘の状態
+
+// ---------------------------------------------------------------------------
+// 開始
+// ---------------------------------------------------------------------------
+function start(args) {
+  const c = args.config;
+  if (G && G.round === c.round) return;          // 同じ戦闘の再描画は無視（途中から始め直さない）
+  $("sceneCss").textContent = args.scene_css;
+  $("stage").innerHTML = args.scene_html;
+  G = {
+    round: c.round, cfg: c, enemyHp: c.enemy.max_hp, allyHp: c.ally.hp,
+    phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0,
+    bag: Object.fromEntries(c.items.map((i) => [i.id, i.count])), used: {},
+    taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, startAt: performance.now(), hitMask: null,
+    tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {}, equipIcons: args.equip_icons || {},
+    status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0 },   // 残りターン
+    // 剣の属性で敵にかかった状態異常
+    eDots: {},                                   // { poison: [ターンごとのダメージ, ...] } 先頭から1つずつ入る
+    eStatus: { thunder: 0, darkness: 0, darkMult: 1, shadow: 0 },
+    // 必殺技
+    charge: (c.skill && c.skill.start) || 0, skillUsed: false, boost: 1, barrier: 0, eBreak: 0, ward: 0,
+    meteorPending: false, meteorUsed: false, enemyAttacks: 0,
+    // 宇宙龍の覚醒
+    awakened: false, specialNext: false, awakenArgs: c.awaken ? {
+      scene: args.awaken_scene_html, mask: args.awaken_hit_mask, special: args.awaken_special_image } : null,
+  };
+  $("special").style.display = "none";
+  if (args.awaken_special_image) { $("special").querySelector("img.main").src = args.awaken_special_image; $("special").querySelector("img.bg").src = args.awaken_special_image; }   // 先に読みこんでおく
+  G.assistImages = args.assist_images || null;           // アステルの援護の絵（空・必殺技）
+  G.assistRandom = false; G.assistFeather = false; G.assistRescue = false; G.rescued = false; G.blessing = false;
+  if (G.assistImages) for (const u of [G.assistImages.sky, G.assistImages.skill]) { const pre = new Image(); pre.src = u; }
+  G.skillSceneImage = args.skill_scene_image || null;   // 必殺技の絵
+  if (G.skillSceneImage) { const pre = new Image(); pre.src = G.skillSceneImage; }
+  G.meteorScene = args.meteor_scene || null;            // メテオを撃つときの絵と技名
+  if (G.meteorScene) { const pre = new Image(); pre.src = G.meteorScene.image; }
+  $("enemyName").textContent = `Lv.${c.enemy.lv} ${c.enemy.name}`;
+  $("stageNo").textContent = c.extra ? "EXTRA" : `ステージ ${c.stage} / ${c.stage_count}`;
+  $("quit").textContent = c.extra ? "にげる" : "やめる";
+  $("allyName").textContent = c.ally.name.split("、").pop();
+  if (args.ally_icon) $("allyIcon").src = args.ally_icon; else $("allyIcon").style.display = "none";
+  $("allyIcon").classList.remove("down", "low");
+  $("warn").classList.remove("on"); $("dark").classList.remove("on"); $("stun").classList.remove("on");
+  $("btnEnd").classList.remove("on"); $("hint").textContent = "";
+  prepareHitMask(args.hit_mask);
+  updateBars(); updateBadges();
+  Streamlit.setHeight(Math.max(480, window.innerHeight));
+  updateSkill();
+  intro();
+}
+
+async function intro() {
+  if (G.cfg.extra) await banner("EXTRA STAGE", G.cfg.enemy.title ? `${G.cfg.enemy.title}が現れた！` : "", 1600);
+  if (G.cfg.final) await banner("FINAL STAGE", `Lv.${G.cfg.enemy.lv} ${G.cfg.enemy.name}`, 1600);
+  await banner("たたかえ！", "", 900);
+  playerTurn();
+}
+
+// ---------------------------------------------------------------------------
+// 当たり判定：敵の形をした白黒の「当たりマスク」（白い部分だけが当たり）
+// ---------------------------------------------------------------------------
+function prepareHitMask(uri) {
+  if (!uri) return;
+  const m = new Image();
+  m.onload = () => {
+    const cv = document.createElement("canvas"); cv.width = m.naturalWidth; cv.height = m.naturalHeight;
+    const ctx = cv.getContext("2d", { willReadFrequently: true }); ctx.drawImage(m, 0, 0);
+    const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    // 重心（白い部分の中心）。陰のとき、ここを基準に当たる範囲を縮める
+    let sx = 0, sy = 0, n = 0;
+    for (let y = 0; y < cv.height; y += 2) for (let x = 0; x < cv.width; x += 2) {
+      if (data[(y * cv.width + x) * 4] > 127) { sx += x; sy += y; n++; }
+    }
+    G.hitMask = { w: cv.width, h: cv.height, data, cx: n ? sx / n / cv.width : 0.5, cy: n ? sy / n / cv.height : 0.5 };
+  };
+  m.src = uri;
+}
+function isOnEnemy(x, y) {
+  const img = document.querySelector("#stage .st-target");
+  if (!img) return false;
+  const r = img.getBoundingClientRect(), nw = img.naturalWidth, nh = img.naturalHeight;
+  if (!nw || !G.hitMask) return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  const cs = getComputedStyle(img);
+  const cover = cs.objectFit === "cover";
+  const s = cover ? Math.max(r.width / nw, r.height / nh) : Math.min(r.width / nw, r.height / nh);
+  const dw = nw * s, dh = nh * s;
+  // object-position（例 "64% 50%"）。敵だけの画像は下寄せ、それ以外は指定どおり
+  const pos = cs.objectPosition.split(" ").map((v) => v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
+  const fy = img.classList.contains("st-enemy") ? 1 : pos[1];
+  const ox = r.left + (r.width - dw) * pos[0];
+  const oy = r.top + (r.height - dh) * fy;
+  let u = (x - ox) / dw, v = (y - oy) / dh;
+  const m = G.hitMask;
+  if (G.status.darkness > 0) {           // 陰：重心を中心に、当たる範囲を縦横 hit_scale 倍に縮める
+    const k = G.cfg.status.darkness.hit_scale;
+    u = m.cx + (u - m.cx) / k; v = m.cy + (v - m.cy) / k;
+  }
+  if (u < 0 || u >= 1 || v < 0 || v >= 1) return false;
+  const px = Math.floor(u * m.w), py = Math.floor(v * m.h);
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const xx = px + dx, yy = py + dy;
+    if (xx >= 0 && yy >= 0 && xx < m.w && yy < m.h && m.data[(yy * m.w + xx) * 4] > 127) return true;
+  }
+  return false;
+}
+function enemyCenter() {
+  const img = document.querySelector("#stage .st-target");
+  const r = img.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height * 0.45 };
+}
+
+// ---------------------------------------------------------------------------
+// 表示
+// ---------------------------------------------------------------------------
+function updateBars() {
+  const e = G.cfg.enemy, a = G.cfg.ally;
+  const ep = Math.max(0, G.enemyHp / e.max_hp) * 100, ap = Math.max(0, G.allyHp / a.max_hp) * 100;
+  for (const [id, p] of [["enemyBar", ep], ["allyBar", ap]]) {
+    $(id).querySelector(".fill").style.width = p + "%";
+    $(id).querySelector(".lag").style.width = p + "%";
+  }
+  $("allyBar").classList.toggle("low", ap <= 30);
+  $("allyIcon").classList.toggle("low", ap <= 30 && ap > 0);
+  $("enemyNum").textContent = `${displayHp(G.enemyHp).toLocaleString()} / ${Math.round(e.max_hp).toLocaleString()}`;
+  $("allyNum").textContent = `${displayHp(G.allyHp)} / ${Math.round(a.max_hp)}`;
+}
+
+// 効果があるあいだ、状態アイコンを表示する。
+//   G.status = { 状態異常のID: 残りターン }
+//   攻撃力アップ・防御アップは、アイテムの絵で表示する
+function updateBadges() {
+  const prev = G.shownStatus || {};
+  const now = {};
+  const html = [];
+  const add = (key, src, name, turns, cls) => {
+    if (!src || !(turns > 0)) return;
+    now[key] = true;
+    html.push(`<div class="st-icon ${cls}${prev[key] ? "" : " new"}" data-tip="${key}" data-turns="${turns}" title="${name} あと${turns}ターン">` +
+              `<img src="${src}" alt="${name}"><span class="t">${turns}</span></div>`);
+  };
+  for (const [id, turns] of Object.entries(G.status)) add(id, G.statusIcons[id], (G.cfg.status[id] || {}).name || id, turns, "bad");
+  add("atk_up", G.icons.atk_up, "攻撃力アップ", G.atkTurns, "buff");
+  add("guard_up", G.icons.guard_up, "防御アップ", G.guardTurns, "buff");
+  if (G.boost > 1) html.push(`<span class="badge skill" data-tip="boost">⚔️ 次の攻撃×${G.boost}</span>`);
+  if (G.barrier > 0) html.push(`<span class="badge skill" data-tip="barrier">🔰 障壁 あと${G.barrier}回</span>`);
+  if (G.eBreak > 0) html.push(`<span class="badge skill" data-tip="break">💥 敵の防御0 あと${G.eBreak}</span>`);
+  if (G.ward > 0) html.push(`<span class="badge skill" data-tip="ward">📜 封炎 あと${G.ward}</span>`);
+  if (G.blessing) html.push(`<span class="badge skill" data-tip="blessing">✨ 精霊の加護</span>`);
+  $("badges").innerHTML = html.join("");
+  G.shownStatus = now;
+  // 敵の状態（剣の属性でかかったもの）
+  const eprev = G.shownEnemy || {}, enow = {}, ehtml = [];
+  const eadd = (id, turns) => {
+    const src = G.statusIcons[id];
+    if (!src || !(turns > 0)) return;
+    enow[id] = true;
+    const name = (G.cfg.enemy_status[id] || {}).name || id;
+    ehtml.push(`<div class="st-icon foe${eprev[id] ? "" : " new"}" data-tip="foe_${id}" data-turns="${turns}" title="敵：${name} あと${turns}ターン">` +
+               `<img src="${src}" alt="${name}"><span class="t">${turns}</span></div>`);
+  };
+  for (const [id, list] of Object.entries(G.eDots)) eadd(id, list.length);
+  for (const id of ["thunder", "darkness", "shadow"]) eadd(id, G.eStatus[id]);
+  $("enemyBadges").innerHTML = ehtml.join("");
+  G.shownEnemy = enow;
+  $("dark").classList.toggle("on", G.status.darkness > 0);
+  $("stun").classList.toggle("on", G.status.thunder > 0);
+}
+// 雷のあいだは攻撃できない（アイテムは使える）。代わりに「ターンを終える」を出す
+function setButtons(on) {
+  const stunned = G.status.thunder > 0;
+  $("btnAttack").disabled = !on || stunned;
+  $("btnAttack").style.display = on && stunned ? "none" : "";
+  $("btnEnd").classList.toggle("on", on && stunned);
+  $("btnItem").disabled = !on || G.usedItem || !Object.values(G.bag).some((n) => n > 0);
+  $("hint").textContent = on && stunned ? "⚡ しびれて攻撃できない！ アイテムは使えるよ"
+    : on && G.status.darkness > 0 ? "🌘 陰：敵の当たる範囲が狭まっている"
+    : on && G.status.shadow > 0 ? "👤 影：攻撃がかわされることがある" : "";
+}
+async function banner(text, sub, ms, cls) {
+  const b = $("banner");
+  b.className = (cls || "") + (text.length > 8 ? " long" : ""); b.querySelector(".t").textContent = text; b.querySelector(".s").textContent = sub || "";
+  b.style.display = "flex";
+  const t = b.querySelector(".t"); t.style.animation = "none"; void t.offsetWidth; t.style.animation = "";
+  if (ms) { await sleep(ms); b.style.display = "none"; }
+}
+function popAt(x, y, text, cls) {
+  const el = document.createElement("div");
+  el.className = "pop " + (cls || ""); el.textContent = text;
+  el.style.left = x + "px"; el.style.top = y + "px";
+  $("app").appendChild(el); setTimeout(() => el.remove(), 1400);
+}
+function shake() { const s = $("stage"); s.classList.remove("shake"); void s.offsetWidth; s.classList.add("shake"); }
+
+// ---------------------------------------------------------------------------
+// エフェクト（種類ごとに、#fx に一時的な要素を足す）
+// ---------------------------------------------------------------------------
+function fxEl(cls, style) {
+  const el = document.createElement("div"); el.className = "fx " + cls;
+  for (const [k, v] of Object.entries(style || {})) {
+    if (k.startsWith("--")) el.style.setProperty(k, v); else el.style[k] = v;   // CSS変数は setProperty でないと入らない
+  }
+  $("fx").appendChild(el); setTimeout(() => el.remove(), 1600); return el;
+}
+function fxSvg(inner) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  el.setAttribute("class", "fx svgfx"); el.setAttribute("viewBox", "0 0 100 100"); el.setAttribute("preserveAspectRatio", "none");
+  el.innerHTML = inner; $("fx").appendChild(el); setTimeout(() => el.remove(), 1600); return el;
+}
+function particles(c, n, spread) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, d = (0.3 + Math.random() * 0.7) * spread;
+    fxEl("particle", { "--c": c, "--dx": Math.cos(a) * d + "vmin", "--dy": Math.sin(a) * d + "vmin" });
+  }
+}
+function slashes(c, n, delay) {
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => fxEl("slash", { "--c": c, "--r": (-35 + (i % 2 ? 70 : 0) + (Math.random() * 20 - 10)) + "deg",
+      "--o": `0, ${(Math.random() * 16 - 8)}vmin` }), i * (delay || 70));
+  }
+}
+const EFFECTS = {
+  claw:   (c) => { slashes(c, 3, 60); fxEl("vignette", { "--c": "rgba(120,0,0,.6)" }); },
+  slash:  (c) => { slashes(c, 1); fxEl("flash", { background: "rgba(255,255,255,.35)" }); fxEl("vignette", { "--c": "rgba(120,0,0,.55)" }); },
+  ghost:  (c) => { fxEl("mist", { "--c": c }); setTimeout(() => slashes(c, 2, 90), 350); },
+  magic:  (c) => { fxEl("burst", { "--c": c }); fxEl("ring", { "--c": c, "--s": 30 }); particles(c, 18, 45); },
+  whip:   (c) => { fxSvg(`<path class="whip" style="--c:${c}" d="M-5 20 Q 40 80 105 35"/><path class="whip" style="--c:${c};animation-delay:.15s" d="M105 15 Q 55 90 -5 60"/>`);
+                   fxEl("vignette", { "--c": "rgba(120,0,0,.55)" }); },
+  fire:   (c) => { for (let i = 0; i < 5; i++) setTimeout(() => fxEl("flame", { "--c": c, left: (i * 20 - 5) + "vw" }), i * 70);
+                   fxEl("vignette", { "--c": "rgba(255,90,0,.55)" }); },
+  thunder:(c) => { fxSvg(`<polyline class="bolt" style="--c:${c}" points="55,-2 45,30 58,34 40,70 52,72 38,102"/><polyline class="bolt" style="--c:${c};animation-delay:.12s;stroke-width:3" points="30,-2 36,25 26,28 34,55"/>`);
+                   fxEl("flash", { background: "rgba(255,240,170,.6)" }); },
+  void:   (c) => { fxEl("implode"); setTimeout(() => { fxEl("ring", { "--c": c, "--s": 50 }); particles(c, 14, 40); }, 450); },
+  cosmic: (c) => { fxEl("burst", { "--c": c }); particles("#fff", 26, 70); particles(c, 16, 55); fxEl("ring", { "--c": c, "--s": 60 }); },
+  radiance:(c) => { fxEl("rays", { "--c": c }); fxEl("ring", { "--c": c, "--s": 45 }); setTimeout(() => fxEl("ring", { "--c": c, "--s": 70 }), 180);
+                   fxEl("flash", { background: "rgba(255,230,160,.45)" }); },
+  silence:(c) => { fxEl("dim"); setTimeout(() => { fxEl("ring", { "--c": c, "--s": 80 }); fxEl("flash", { background: "rgba(120,140,255,.25)" }); }, 600); },
+};
+// 自分の攻撃：当たった回数が多いほど、斬撃が増える
+function playerAttackFx(hits) {
+  const n = Math.min(7, 2 + Math.floor(hits / 8));
+  slashes("#ffd36a", n, 55);
+  setTimeout(() => { fxEl("burst", { "--c": "#ffb347" }); particles("#ffe9a8", 22, 50); fxEl("flash", { background: "rgba(255,255,255,.5)" }); }, n * 55);
+}
+
+// ---------------------------------------------------------------------------
+// 自分のターン
+// ---------------------------------------------------------------------------
+function playerTurn() {
+  if (!G || G.phase === "end") return;
+  G.phase = "player"; G.usedItem = false; G.skillUsed = false; G.turn++;
+  setButtons(true); updateSkill();
+}
+
+$("btnAttack").onclick = () => { if (G && G.phase === "player" && !(G.status.thunder > 0)) attack(); };
+$("btnEnd").onclick = async () => {
+  if (!G || G.phase !== "player") return;
+  G.phase = "pass"; setButtons(false); $("sheet").classList.remove("open");
+  await sleep(G.cfg.pause_ms);
+  enemyTurn();
+};
+$("btnItem").onclick = () => { if (G && G.phase === "player" && !G.usedItem) openSheet(); };
+$("sheetClose").onclick = () => $("sheet").classList.remove("open");
+
+async function attack() {
+  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
+  await banner("よーい……", "", 700);
+  await banner("スタート！", "", 450);
+  // 連打の受付
+  G.phase = "tapping"; G.tapHits = 0; G.tapDamage = 0;
+  const a = G.cfg.ally, broken = G.eBreak > 0;          // 概念崩し：敵の防御0
+  const perTap = G.atkTurns > 0 ? (broken ? a.tap_damage_up_break : a.tap_damage_up) : (broken ? a.tap_damage_break : a.tap_damage);
+  $("tapzone").classList.add("on"); $("gearBtn").style.visibility = "hidden"; $("app").classList.add("tapping"); $("tip").style.display = "none"; $("timer").style.display = "block"; $("combo").style.display = "block";
+  $("combo").querySelector(".c").textContent = "0"; $("combo").querySelector(".d").textContent = "";
+  const t0 = performance.now(), dur = G.cfg.attack_ms;
+  $("tapzone").onpointerdown = (ev) => {
+    ev.preventDefault();
+    if (G.phase !== "tapping") return;
+    G.taps++;
+    const hit = isOnEnemy(ev.clientX, ev.clientY);
+    const sp = document.createElement("div"); sp.className = "spark" + (hit ? "" : " miss");
+    sp.style.left = ev.clientX + "px"; sp.style.top = ev.clientY + "px"; $("app").appendChild(sp); setTimeout(() => sp.remove(), 380);
+    if (!hit) { G.misses++; return; }                   // 敵以外はノーヒット
+    G.hits++; G.tapHits++; G.tapDamage += perTap;
+    if (G.cfg.skill) { G.charge = Math.min(G.cfg.skill.charge, G.charge + 1); updateSkill(); }   // 当たった回数でチャージ
+    $("combo").querySelector(".c").textContent = G.tapHits;
+    $("combo").querySelector(".d").textContent = fmt(G.tapDamage) + " ダメージ";
+    const img = document.querySelector("#stage .st-target");
+    img.classList.add("hit"); clearTimeout(img._t); img._t = setTimeout(() => img.classList.remove("hit"), 60);
+    if (navigator.vibrate) navigator.vibrate(8);
+  };
+  await new Promise((resolve) => {
+    const tick = () => {
+      const p = Math.min(1, (performance.now() - t0) / dur);
+      $("timer").firstElementChild.style.width = (1 - p) * 100 + "%";
+      if (p < 1) requestAnimationFrame(tick); else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+  G.phase = "strike";
+  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping"); $("timer").style.display = "none";
+  // 合計ダメージで一気に攻撃
+  const boost = G.boost; G.boost = 1;                     // 突撃号令：次の攻撃1回だけ
+  if (boost > 1) G.tapDamage *= boost;
+  const total = Math.min(G.tapDamage, G.enemyHp);
+  await sleep(150);
+  $("combo").style.display = "none";
+  const evaded = G.tapHits > 0 && G.status.shadow > 0 && Math.random() < G.cfg.status.shadow.evade_rate;
+  if (G.tapHits === 0) {
+    await banner("ミス！", "敵に当たらなかった", 900);
+  } else if (evaded) {                                       // 影：攻撃が丸ごとかわされる
+    await banner("回避された！", "影に攻撃をかわされた", 1000, "lose");
+  } else {
+    await banner("アタック！", boost > 1 ? `号令でダメージ×${boost}！` : "", 500);
+    playerAttackFx(G.tapHits);
+    await sleep(240);
+    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    shake();
+    const c = enemyCenter(); popAt(c.x, c.y, fmt(G.tapDamage), "big");
+    hitEnemy(total); updateBars();
+    if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+    if (G.enemyHp > 1e-9) await procWeapons(G.tapDamage);
+  }
+  // 攻撃力アップ・陰・影は、実際に攻撃した回数で減る（かわされた攻撃も数える）
+  if (G.atkTurns > 0) G.atkTurns--;
+  if (G.status.darkness > 0) G.status.darkness--;
+  if (G.status.shadow > 0) G.status.shadow--;
+  updateBadges();
+  await sleep(1100);
+  if (G.enemyHp <= 1e-9) return finish("win");
+  // メテオ：敵のHPが半分を切ったら予告を出し、次の敵のターンの攻撃をメテオにする（1回だけ）
+  if (G.cfg.enemy.meteor && !G.meteorUsed && !G.meteorPending && G.enemyHp < G.cfg.enemy.max_hp * G.cfg.meteor.trigger_rate) {
+    G.meteorPending = true;
+    $("warn").textContent = "☄️ メテオの詠唱… 回復して備えよう！"; $("warn").classList.add("on");
+    await banner("メテオの詠唱", "次の敵の攻撃はメテオになる", 1300, "lose");
+  }
+  await sleep(G.cfg.pause_ms);
+  enemyTurn();
+}
+
+// ---------------------------------------------------------------------------
+// 必殺技（当たった回数でチャージ。たまったら、自分のターンにアイコンを押して使う）
+// ---------------------------------------------------------------------------
+function updateSkill() {
+  const s = G.cfg.skill, w = $("skillWrap");
+  if (!s) { w.classList.remove("full", "can"); return; }
+  w.style.setProperty("--p", Math.floor(G.charge / s.charge * 100));
+  const full = G.charge >= s.charge;
+  w.classList.toggle("full", full);
+  w.classList.toggle("can", full && G.phase === "player" && !G.skillUsed);
+  w.title = `${s.name}（${Math.min(G.charge, s.charge)} / ${s.charge}）`;
+}
+$("skillWrap").onclick = () => {
+  if (!G || !G.cfg.skill || G.phase !== "player" || G.skillUsed || G.charge < G.cfg.skill.charge) return;
+  useSkill();
+};
+function shards(c, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, d = 25 + Math.random() * 40;
+    fxEl("shard", { "--c": c, "--dx": Math.cos(a) * d + "vmin", "--dy": Math.sin(a) * d + "vmin", "--r": (Math.random() * 720 - 360) + "deg" });
+  }
+}
+function rising(c, n) {
+  for (let i = 0; i < n; i++) setTimeout(() => fxEl("rise", { "--c": c, left: (10 + Math.random() * 80) + "vw" }), i * 40);
+}
+// キャラごとの演出（color はカットインの色にも使う）
+const SKILL_FX = {
+  kou:    { color: "#ffd36a", fx: async () => { fxEl("bigslash", { "--c": "#ffcf5a" }); await sleep(260); fxEl("burst", { "--c": "#ffb347" }); fxEl("flash", { background: "rgba(255,240,200,.6)" }); particles("#ffe9a8", 24, 55); } },
+  mari:   { color: "#8fd0ff", fx: async () => { fxEl("dome", { "--c": "#8fd0ff" }); rising("#8dffb8", 22); await sleep(500); fxEl("flash", { background: "rgba(140,220,255,.25)" }); } },
+  alex:   { color: "#ff9a3a", fx: async () => { fxEl("rays", { "--c": "#ffb347" }); fxEl("shout", { "--c": "#ff9a3a" }).textContent = "突撃！"; await sleep(300); particles("#ffcf8a", 20, 50); } },
+  celis:  { color: "#7fc8ff", fx: async () => { fxEl("circle", { "--c": "#7fc8ff" }); fxEl("circle in", { "--c": "#b8e0ff" }); await sleep(450); fxEl("flash", { background: "rgba(120,190,255,.3)" }); } },
+  arthur: { color: "#ffe9a8", fx: async () => { fxEl("dome", { "--c": "#ffe28a" }); await sleep(250); slashes("#fff3c0", 2, 80); fxEl("burst", { "--c": "#ffd36a" }); fxEl("ring", { "--c": "#ffe28a", "--s": 45 }); } },
+  erina:  { color: "#c08cff", fx: async () => { const g = "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃ"; for (let i = 0; i < 14; i++) setTimeout(() => fxEl("glyph", { "--c": "#c08cff", left: (6 + Math.random() * 88) + "vw" }).textContent = g[i % g.length], i * 45); await sleep(650); fxEl("implode"); await sleep(250); fxEl("burst", { "--c": "#b26bff" }); } },
+  gaius:  { color: "#ff6a5a", fx: async () => { slashes("#ffd0c8", 12, 45); await sleep(560); fxEl("flash", { background: "rgba(255,120,100,.35)" }); fxEl("burst", { "--c": "#ff6a5a" }); } },
+  reino:  { color: "#6ff0ff", fx: async () => { fxEl("beam", { "--c": "#6ff0ff" }); await sleep(380); EFFECTS.thunder("#9ff6ff"); particles("#cffbff", 20, 50); } },
+  garen:  { color: "#e8e8ff", fx: async () => { fxEl("crack"); shards("#e8e8ff", 26); await sleep(300); fxEl("shout", { "--c": "#a8a8ff" }).textContent = "防御崩壊"; fxEl("flash", { background: "rgba(220,220,255,.35)" }); } },
+  astel:  { color: "#e8d8ff", fx: async () => { fxEl("implode"); await sleep(350);
+             for (let i = 0; i < 3; i++) setTimeout(() => fxEl("circle", { "--c": ["#9fd8ff", "#ffd6f0", "#fff3b0"][i] }), i * 120);
+             fxEl("beam", { "--c": "#e8d8ff" }); await sleep(420); fxEl("rays", { "--c": "#ffffff" });
+             fxEl("burst", { "--c": "#c49bff" }); particles("#fff", 30, 75); particles("#9fd8ff", 16, 60); particles("#ffb8e8", 16, 60);
+             fxEl("crack"); fxEl("flash", { background: "rgba(255,250,255,.75)" }); } },
+  luna:   { color: "#fff0a0", fx: async () => { fxEl("pillar", { "--c": "#fff0a0" }); await sleep(300); fxEl("rays", { "--c": "#ffe9a8" }); fxEl("ring", { "--c": "#fff3c0", "--s": 70 }); await sleep(300); fxEl("flash", { background: "rgba(255,250,220,.7)" }); particles("#fff", 30, 70); } },
+};
+async function cutin(name, color) {
+  const c = $("cutin");
+  c.style.setProperty("--sc", color);
+  c.querySelector("img").src = $("allyIcon").src;
+  c.querySelector(".name").textContent = name;
+  c.style.display = "flex";
+  for (const el of c.children) { el.style.animation = "none"; void el.offsetWidth; el.style.animation = ""; }
+  await sleep(1150);
+  c.style.display = "none";
+}
+
+// アステルの必殺技：暗転 → 星が集まって魔法陣 → 一枚絵 → 技名 → 光の咆哮 → 真っ白
+async function grandSkill(s, src, who) {
+  const g = $("grand"), sc = s.scene || {}, fx = g.querySelector(".g-fx");
+  fx.innerHTML = ""; g.className = "on";
+  g.querySelector(".g-img").src = src;
+  g.querySelector(".g-who").textContent = who || G.cfg.ally.name;
+  g.querySelector(".g-reading").textContent = sc.reading || "";
+  g.querySelector(".g-sub").textContent = sc.sub || "";
+  g.querySelector(".g-name").innerHTML = [...s.name].map((ch, i) => `<span style="--i:${i}">${esc(ch)}</span>`).join("");
+  if (navigator.vibrate) navigator.vibrate([60, 60, 60, 60, 120]);
+  // 1. 星が中心に集まり、金の魔法陣が描かれる
+  for (let i = 0; i < 46; i++) {
+    const st = document.createElement("div"); st.className = "g-star";
+    const a = Math.random() * Math.PI * 2, r = 55 + Math.random() * 30;
+    st.style.setProperty("--x", (50 + Math.cos(a) * r) + "%"); st.style.setProperty("--y", (50 + Math.sin(a) * r) + "%");
+    st.style.setProperty("--d", (0.7 + Math.random() * 0.6) + "s"); st.style.setProperty("--c", ["#ffe7a8", "#b48cff", "#9fd8ff"][i % 3]);
+    st.style.animationDelay = (Math.random() * 0.35) + "s"; fx.appendChild(st);
+  }
+  await sleep(150); g.classList.add("p1");
+  await sleep(1250);
+  // 2. 白く光って、一枚絵
+  g.classList.add("flash"); g.classList.add("p2");
+  for (let i = 0; i < 34; i++) setTimeout(() => {
+    const sp = document.createElement("div"); sp.className = "g-spark";
+    sp.style.setProperty("--x", Math.random() * 100 + "%"); sp.style.setProperty("--y", Math.random() * 100 + "%");
+    sp.style.setProperty("--dx", (Math.random() * 80 - 40) + "px"); sp.style.setProperty("--dy", (-30 - Math.random() * 60) + "px");
+    sp.style.setProperty("--d", (0.8 + Math.random() * 0.8) + "s"); fx.appendChild(sp); setTimeout(() => sp.remove(), 1700);
+  }, Math.random() * 2600);
+  await sleep(500);
+  g.classList.remove("flash");
+  // 3. 技名（1文字ずつ）
+  g.classList.add("p3");
+  await sleep(2100);
+  // 4. 光の咆哮が画面を横切り、真っ白に
+  if (navigator.vibrate) navigator.vibrate([400]);
+  g.classList.add("p4");
+  await sleep(520);
+  g.classList.add("whiteout");
+  await sleep(380);
+  g.className = "";
+  fxEl("flash", { background: "rgba(255,255,255,.95)" });
+}
+
+// アステルの援護：空を見上げる → アステルが飛んでくる → 必殺技 → 大ダメージ。勝てば true
+// 倒れそうなとき（HPが0になった）："won"（援護で勝った）/ "saved"（助かった）/ "" （負け）
+async function saveFromDown() {
+  const as = G.cfg.assist;
+  if (!as || G.phase === "end") return "";
+  // はじめての人：最初に倒れそうになったとき、アステルが必ず助けに来る（HP1で踏みとどまる）
+  if (as.rescue && !G.rescued) {
+    G.rescued = true; G.allyHp = 1; updateBars();
+    $("allyIcon").classList.remove("down");
+    return (await astelAssist("rescue")) ? "won" : "saved";
+  }
+  // 精霊の羽を持っていれば、使うか聞く
+  const feather = G.cfg.items.find((i) => i.assist);
+  if (feather && G.bag[feather.id] > 0) {
+    $("revive").querySelector(".ricon").src = G.icons[feather.id] || "";
+    $("revive").classList.add("on");
+    const yes = await new Promise((res) => { $("reviveYes").onclick = () => res(true); $("reviveNo").onclick = () => res(false); });
+    $("revive").classList.remove("on");
+    if (!yes) return "";
+    G.bag[feather.id]--; G.used[feather.id] = (G.used[feather.id] || 0) + 1;
+    G.allyHp = G.cfg.ally.max_hp;                         // 全回復
+    for (const id of feather.cure || []) G.status[id] = 0;
+    G.blessing = true;
+    G.cfg.ally.immune = [...new Set([...(G.cfg.ally.immune || []), ...(as.immune || [])])];
+    $("allyIcon").classList.remove("down");
+    const ic = $("allyIcon").getBoundingClientRect();
+    popAt(ic.left + ic.width / 2 + 60, ic.top, "全回復！", "heal"); fxEl("flash", { background: "rgba(255,250,220,.5)" });
+    updateBars(); updateBadges();
+    await sleep(600);
+    return (await astelAssist("feather")) ? "won" : "saved";
+  }
+  return "";
+}
+
+async function astelAssist(kind) {
+  const as = G.cfg.assist, im = G.assistImages || {};
+  if (!as) return false;
+  if (kind === "random" || kind === "rescue") G.assistRandom = true; else G.assistFeather = true;
+  if (kind === "rescue") G.assistRescue = true;
+  G.phase = "assist"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
+  // 1. 空を見上げる
+  await banner(kind === "rescue" ? "……もう、だめか……" : kind === "random" ? "……空が、光った？" : "精霊の羽が、空へ舞い上がった……", "", 1300);
+  if (kind === "rescue") await banner("……空が、光った？", "", 1100);
+  $("stage").classList.add("lookup"); $("fx").classList.add("lookup");
+  await sleep(900);
+  // 2. アステルが空を翔ける
+  const sky = $("sky");
+  if (im.sky) sky.querySelector("img").src = im.sky;
+  // この世界ではアステルは知られていないので、名前は本人のせりふで初めて出す
+  sky.querySelector(".narr").textContent = kind === "feather" ? "……また、あの光が……" : "……龍？　……女神？";
+  sky.querySelector(".who").textContent = as.speaker || "アステル";
+  sky.querySelector(".say").textContent = kind === "feather" ? "呼んでくれたのね。あとは、わたしに任せて" : "大丈夫？　あとは、わたしに任せて";
+  sky.classList.remove("on"); void sky.offsetWidth; sky.classList.add("on");
+  if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
+  await sleep(4400);
+  sky.classList.remove("on");
+  $("stage").classList.remove("lookup"); $("fx").classList.remove("lookup");
+  // 3. 必殺技（アステルの特別演出）
+  await grandSkill({ name: as.name, scene: as.scene || {} }, im.skill || G.skillSceneImage, as.speaker || "アステル");
+  await SKILL_FX.astel.fx();
+  await sleep(250);
+  // 4. ダメージと、敵の防御崩壊
+  const c = enemyCenter();
+  const dmg = G.eBreak > 0 ? as.damage_break : as.damage, hit = Math.min(dmg, G.enemyHp);
+  const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+  shake(); popAt(c.x, c.y, fmt(dmg), "big");
+  hitEnemy(hit); updateBars();
+  if (as.break_turns) { G.eBreak = Math.max(G.eBreak, as.break_turns); popAt(c.x, c.y + 70, "💥 防御崩壊！", "proc"); }
+  popAt(window.innerWidth / 2, window.innerHeight * 0.3, `✨ ${as.speaker || "アステル"}の援護！`, "info");
+  updateBadges();
+  await sleep(1100);
+  if (G.enemyHp <= 1e-9) { finish("win"); return true; }
+  return false;
+}
+async function useSkill() {
+  const s = G.cfg.skill, look = SKILL_FX[s.anim] || SKILL_FX.kou;
+  G.phase = "skill"; G.skillUsed = true; G.charge = 0;
+  setButtons(false); updateSkill(); $("sheet").classList.remove("open");
+  if (s.scene && s.scene.grand && G.skillSceneImage) {
+    await grandSkill(s, G.skillSceneImage);       // アステル：特別演出
+    await look.fx();
+  } else if (s.scene && G.skillSceneImage) {
+    await specialScene(s.name, G.skillSceneImage, s.scene.focus || "50% 45%", look.color);   // 絵のある必殺技
+    await look.fx();
+  } else {
+    await cutin(s.name, look.color);
+    await look.fx();
+  }
+  await sleep(250);
+  const c = enemyCenter(), me = $("allyIcon").getBoundingClientRect();
+  if (s.type === "strike") {
+    const dmg = G.eBreak > 0 ? s.damage_break : s.damage, hit = Math.min(dmg, G.enemyHp);
+    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    shake(); popAt(c.x, c.y, fmt(dmg), "big");
+    hitEnemy(hit); updateBars();
+    if (s.guard) G.guardTurns = Math.max(G.guardTurns, s.guard);
+    if (s.stun) { G.eStatus.thunder = Math.max(G.eStatus.thunder, s.stun); popAt(c.x, c.y + 70, "⚡ 動けない！", "proc"); }
+    if (s.break_turns) { G.eBreak = Math.max(G.eBreak, s.break_turns); popAt(c.x, c.y + 70, "💥 防御崩壊！", "proc"); }
+  } else if (s.type === "guard") {
+    const before = G.allyHp;
+    G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + s.heal);
+    popAt(me.left + me.width / 2 + 60, me.top, "+" + fmt(G.allyHp - before), "heal");
+    G.guardTurns = Math.max(G.guardTurns, s.guard);
+  } else if (s.type === "boost") {
+    G.boost = s.mult;
+  } else if (s.type === "barrier") {
+    G.barrier = s.blocks;
+    for (const id of ["poison", "fire", "black_flame", "thunder"]) G.status[id] = 0;
+  } else if (s.type === "break") {
+    G.eBreak = s.turns;
+  }
+  updateBars(); updateBadges();
+  await sleep(900);
+  if (G.enemyHp <= 1e-9) return finish("win");
+  G.phase = "player"; setButtons(true); updateSkill();
+}
+
+// ---------------------------------------------------------------------------
+// アイテム
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 装備の確認（戦闘中いつでも見られる。連打中は開かない）
+// ---------------------------------------------------------------------------
+function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+function statusImg(id) { const u = G.statusIcons[id]; return u ? `<img src="${u}" alt="">` : ""; }
+function openGear() {
+  // 付けている装備のアイコンだけを並べ、押した装備のくわしい中身を下に出す
+  const L = G.cfg.loadout || { gear: [], acc: [] };
+  const all = [...(L.gear || []), ...(L.acc || [])];
+  const icon = (e, n) => {
+    const attrs = [...new Set((e.attrs || []).flatMap((a) => a.ids))].map(statusImg).join("");
+    return `<button type="button" class="gicon" data-n="${n}">${G.equipIcons[e.id] ? `<img src="${G.equipIcons[e.id]}" alt="">` : ""}` +
+           (attrs ? `<span class="ga">${attrs}</span>` : "") + `</button>`;
+  };
+  const row = (arr, start, empty) => arr.length ? `<div class="grow">${arr.map((e, k) => icon(e, start + k)).join("")}</div>` : `<div class="gempty">${empty}</div>`;
+  $("gearList").innerHTML =
+    `<div class="gsec">装備品</div>${row(L.gear || [], 0, "付けていません")}` +
+    `<div class="gsec">アクセサリ</div>${row(L.acc || [], (L.gear || []).length, "付けていません")}` +
+    `<div id="gearInfo" class="ginfo">${all.length ? "装備を押すと、くわしく見られるよ" : ""}</div>`;
+  $("gearList").querySelectorAll(".gicon").forEach((b) => {
+    b.onclick = () => {
+      $("gearList").querySelectorAll(".gicon").forEach((x) => x.classList.toggle("on", x === b));
+      const e = all[+b.dataset.n];
+      const attrs = (e.attrs || []).map((a) => `<div class="gattr">${a.ids.map(statusImg).join("")}<span>${esc(a.text)}</span></div>`).join("");
+      $("gearInfo").innerHTML = `<div class="gitem">${G.equipIcons[e.id] ? `<img src="${G.equipIcons[e.id]}" alt="">` : ""}` +
+        `<div><b>${esc(e.name)}</b><span class="rk">${esc(e.rank)}</span><div class="ef">${esc(e.effect)}</div>${attrs}</div></div>`;
+    };
+  });
+  $("sheet").classList.remove("open");
+  $("gearSheet").classList.add("open");
+}
+$("gearBtn").onclick = () => { if (G && G.phase !== "tapping") openGear(); };
+$("gearClose").onclick = () => $("gearSheet").classList.remove("open");
+
+// ---------------------------------------------------------------------------
+// 状態異常・強化のアイコンを押すと、短い説明を出す（3秒で消える）
+// ---------------------------------------------------------------------------
+const TIPS = {
+  poison: ["毒", "毎ターン、最大HPの一部のダメージを受ける。万能薬・浄化の魔法陣で治る"],
+  fire: ["火", "毎ターンダメージを受ける（防御力で少し減らせる）。万能薬・浄化の魔法陣で治る"],
+  black_flame: ["黒炎", "毎ターン大きめのダメージを受ける。黒炎払いの巻物・浄化の魔法陣で治る"],
+  thunder: ["雷", "しびれて攻撃できない（アイテムは使える）。万能薬・浄化の魔法陣で治る"],
+  darkness: ["陰", "画面が暗くなり、敵に当たる範囲がせまくなる。自分の攻撃1回で消える"],
+  shadow: ["影", "自分の攻撃が、まるごとかわされることがある"],
+  atk_up: ["攻撃力アップ", "攻撃力が上がっている"],
+  guard_up: ["防御アップ", "防御力が2倍になっている"],
+  boost: ["突撃号令", "次の攻撃のダメージが2倍"],
+  barrier: ["魔法障壁", "敵の攻撃を無効にする"],
+  break: ["概念崩し", "敵の防御が0になっている"],
+  ward: ["封炎", "新しく黒炎にかからない（かかっている黒炎は続く）"],
+  blessing: ["精霊の加護", "この戦闘のあいだ、毒・雷・火にかからない"],
+  foe_poison: ["敵：毒", "剣の毒で、敵が毎ターンダメージを受けている"],
+  foe_fire: ["敵：火", "剣の火で、敵が毎ターンダメージを受けている"],
+  foe_black_flame: ["敵：黒炎", "剣の黒炎で、敵が毎ターンダメージを受けている"],
+  foe_thunder: ["敵：雷", "敵はしびれて動けない"],
+  foe_darkness: ["敵：陰", "敵の次の攻撃が弱くなる"],
+  foe_shadow: ["敵：影", "敵の攻撃をよけやすくなっている"],
+};
+function showTip(el) {
+  const t = TIPS[el.dataset.tip]; if (!t) return;
+  const turns = el.dataset.turns ? `（あと${el.dataset.turns}ターン）` : "";
+  const tip = $("tip");
+  tip.innerHTML = `<b>${t[0]}</b>${turns}<br>${t[1]}`;
+  tip.style.display = "block";
+  const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+  const top = r.top - h - 10 > 8 ? r.top - h - 10 : r.bottom + 10;
+  tip.style.left = left + "px"; tip.style.top = top + "px";
+  clearTimeout(showTip._t); showTip._t = setTimeout(() => { tip.style.display = "none"; }, 3000);
+}
+for (const box of ["badges", "enemyBadges"]) {
+  $(box).addEventListener("click", (ev) => {
+    const el = ev.target.closest("[data-tip]");
+    if (el && G && G.phase !== "tapping") showTip(el);
+  });
+}
+document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest("[data-tip]")) $("tip").style.display = "none"; });
+
+function openSheet() {
+  const list = $("itemList"); list.innerHTML = "";
+  for (const it of G.cfg.items) {
+    const n = G.bag[it.id] || 0;
+    const rate = it.heal / G.cfg.ally.max_hp;
+    const desc = it.assist ? "HP全回復・状態異常を全部治す・精霊の加護・アステルが援護に来る" : [rate >= 0.999 ? "HP全回復" : rate > 0 ? `HP${Math.round(rate * 100)}%回復` : "",
+                  it.guard ? `防御2倍（${it.guard}ターン）` : "", it.atk_turns ? `攻撃力+3（${it.atk_turns}ターン）` : "",
+                  it.ward ? `${it.ward}ターン黒炎にかからない` : "",
+                  it.cure && it.cure.length ? it.cure.map((s) => (G.cfg.status[s] || {}).name || s).join("・") + "を治す" : ""].filter(Boolean).join("・");
+    const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0;
+    const icon = G.icons[it.id] ? `<img src="${G.icons[it.id]}" alt="">` : "";
+    b.innerHTML = `${icon}<span class="n">×${n}</span><b>${it.name}</b><small>${desc}</small>`;
+    b.onclick = () => useItem(it);
+    list.appendChild(b);
+  }
+  $("itemNote").textContent = "使ったあとも、このターンに攻撃できます。";
+  $("sheet").classList.add("open");
+}
+function useItem(it) {
+  if (G.phase !== "player" || G.usedItem || !(G.bag[it.id] > 0)) return;
+  G.bag[it.id]--; G.used[it.id] = (G.used[it.id] || 0) + 1; G.usedItem = true;
+  $("sheet").classList.remove("open");
+  const icon = $("allyIcon").getBoundingClientRect();
+  if (it.heal > 0) {
+    const before = G.allyHp;
+    G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + it.heal);
+    popAt(icon.left + icon.width / 2 + 60, icon.top, "+" + fmt(G.allyHp - before), "heal");
+    fxEl("flash", { background: "rgba(120,255,170,.25)" });
+  }
+  for (const id of it.cure || []) G.status[id] = 0;     // 万能薬・黒炎払い・魔法陣（ポーション類は治さない）
+  if (it.cure && it.cure.length) fxEl("flash", { background: "rgba(200,255,220,.3)" });
+  if (it.ward) { G.ward = it.ward; fxEl("ring", { "--c": "#b48cff", "--s": 30 }); }   // 封炎の巻物
+  if (it.guard) { G.guardTurns = it.guard; fxEl("flash", { background: "rgba(120,180,255,.25)" }); }
+  if (it.atk_turns) { G.atkTurns = it.atk_turns; fxEl("flash", { background: "rgba(255,180,80,.25)" }); }
+  if (it.assist && G.cfg.assist) {          // 精霊の羽：状態異常を全部治し、この戦闘のあいだ精霊の加護。アステルを呼ぶ
+    G.blessing = true;
+    G.cfg.ally.immune = [...new Set([...(G.cfg.ally.immune || []), ...(G.cfg.assist.immune || [])])];
+    updateBars(); updateBadges();
+    astelAssist("feather").then((won) => { if (!won && G.phase === "assist") { G.phase = "player"; setButtons(true); updateSkill(); } });
+    return;
+  }
+  updateBars(); updateBadges(); setButtons(true);
+}
+
+// ---------------------------------------------------------------------------
+// 敵のターン：持続ダメージ → 雷を1減らす → 敵の攻撃（メテオ） → 新しい状態異常の抽選 → 防御アップを1減らす
+// ---------------------------------------------------------------------------
+const DOTS = ["poison", "fire", "black_flame"];   // 敵のターンのはじめにダメージを受ける状態異常
+
+function hurt(amount, x, y, cls) {
+  const dmg = Math.min(amount, G.allyHp);
+  G.allyHp -= dmg; G.taken += dmg;
+  const ic = $("allyIcon"); ic.classList.remove("hurt"); void ic.offsetWidth; ic.classList.add("hurt");
+  popAt(x, y, "-" + fmt(amount), cls || "hurt");
+  updateBars();
+}
+
+// 剣の属性：攻撃が当たったら、剣1本ごとに発動の抽選。base はその攻撃の合計ダメージ
+async function procWeapons(base) {
+  const hits = [];
+  for (const w of G.cfg.weapons || []) {
+    if (w.group.length && Math.random() < w.group_chance) hits.push(pick(w.group));   // 毒・火・雷から1つ
+    for (const [id, chance] of Object.entries(w.solo)) if (Math.random() < chance) hits.push(id);   // 黒炎・陰・影は別々
+  }
+  const seen = new Set();
+  for (const id of hits) {
+    if (seen.has(id)) continue;                    // 同じ攻撃で同じ属性が2回出ても1回分
+    seen.add(id);
+    const st = G.cfg.enemy_status[id], c = enemyCenter();
+    if (id === "thunder" && st.immune) {
+      popAt(c.x, c.y + 70, "⚡ 天変地異の力で 雷が効かない！", "proc");
+      await sleep(650); continue;
+    }
+    if (st.dot) {                                  // 同じ属性がまたかかったら、今回のダメージで最初から
+      const list = [];
+      for (const [rate, turns] of st.dot) for (let i = 0; i < turns; i++) list.push(base * rate);
+      G.eDots[id] = list;
+    } else if (id === "thunder") {
+      G.eStatus.thunder = st.turns_min + Math.floor(Math.random() * (st.turns_max - st.turns_min + 1));
+    } else if (id === "darkness") {
+      G.eStatus.darkness = st.turns;
+      G.eStatus.darkMult = st.damage_min + Math.random() * (st.damage_max - st.damage_min);
+    } else if (id === "shadow") {
+      G.eStatus.shadow = st.turns;
+    }
+    popAt(c.x, c.y + 70, `${st.icon} ${st.name}！`, "proc");
+    updateBadges();
+    await sleep(650);
+  }
+}
+
+async function enemyTurn() {
+  if (G.phase === "end") return;
+  G.phase = "enemy";
+  const e = G.cfg.enemy, bub = $("bubble"), r = $("allyIcon").getBoundingClientRect();
+  // 0. 敵にかかった毒・火・黒炎の追加ダメージ
+  let edot = 0;
+  for (const id of Object.keys(G.eDots)) {
+    edot += G.eDots[id].shift();
+    if (!G.eDots[id].length) delete G.eDots[id];
+  }
+  if (edot > 0) {
+    const c = enemyCenter(), dmg = Math.min(edot, G.enemyHp);
+    fxEl("vignette", { "--c": "rgba(150,60,220,.45)" });
+    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    popAt(c.x, c.y, "-" + fmt(edot), "edot");
+    hitEnemy(dmg); updateBars(); updateBadges();
+    await sleep(900);
+    if (G.enemyHp <= 1e-9) return finish("win");
+  }
+  // 宇宙龍：HPが半分を切っていたら覚醒する
+  if (G.cfg.awaken && !G.awakened && G.enemyHp <= G.cfg.enemy.max_hp * G.cfg.awaken.hp_rate) await awaken();
+  // 1. 持続ダメージ（付けられたターンには入らず、次のターンから入る）
+  let dot = 0;
+  for (const id of DOTS) {
+    if (!(G.status[id] > 0)) continue;
+    const st = G.cfg.status[id];
+    dot += G.guardTurns > 0 ? st.damage_guard : st.damage;
+    G.status[id]--;
+  }
+  if (dot > 0) {
+    fxEl("vignette", { "--c": "rgba(150,60,220,.55)" });
+    hurt(dot, r.left + r.width / 2 + 70, r.top - 10, "dot");
+    updateBadges();
+    await sleep(800);
+    if (G.allyHp <= 1e-9) { const r = await saveFromDown(); if (r === "won") return; if (r === "saved") { await sleep(G.cfg.pause_ms); return playerTurn(); } return finish("lose"); }
+  }
+  if (G.status.thunder > 0) G.status.thunder--;     // 雷は敵のターンごとに減る
+
+  // 剣の雷：敵が動けない
+  if (G.eStatus.thunder > 0) {
+    G.eStatus.thunder--;
+    const c = enemyCenter();
+    EFFECTS.thunder("#ffe96a");
+    popAt(c.x, c.y, "⚡ しびれて動けない！", "proc");
+    if (G.guardTurns > 0) G.guardTurns--;
+    if (G.eBreak > 0) G.eBreak--;
+    if (G.ward > 0) G.ward--;
+    updateBadges();
+    await sleep(1300);
+    await sleep(G.cfg.pause_ms);
+    return playerTurn();
+  }
+
+  // 2. 敵の攻撃（予告が出ていればメテオに変わる）
+  // 覚醒した宇宙龍の大技：覚醒して最初の攻撃と、そのあとは決まった確率で
+  const special = !!(G.awakened && !G.meteorPending && (G.specialNext || Math.random() < G.cfg.awaken.special.chance));
+  G.specialNext = false;
+  bub.style.setProperty("--bubble", e.effect.color);
+  bub.textContent = special ? G.cfg.awaken.special.line : G.meteorPending ? "……星よ、堕ちよ" : pick(e.lines); bub.style.display = "block";
+  await sleep(1100);
+  G.enemyAttacks++;
+  let newStatus = null;
+  // 剣の陰：次の1回の攻撃が弱まる。剣の影：30%でよける
+  const mult = G.eStatus.darkness > 0 ? G.eStatus.darkMult : 1;
+  if (G.eStatus.darkness > 0) G.eStatus.darkness--;
+  const dodged = G.eStatus.shadow > 0 && Math.random() < G.cfg.enemy_status.shadow.evade_rate;
+  if (G.eStatus.shadow > 0) G.eStatus.shadow--;
+  if (G.meteorPending && G.meteorScene) {                  // メテオ：撃つ前に、画面いっぱいの絵と技名
+    bub.style.display = "none";
+    await specialScene(G.meteorScene.name, G.meteorScene.image, G.meteorScene.focus);
+  }
+  if (G.barrier > 0 && !dodged) {                          // 魔法障壁：攻撃を無効にする
+    G.barrier--;
+    if (G.meteorPending) { G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on"); }
+    (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color);
+    await sleep(380);
+    fxEl("circle", { "--c": "#7fc8ff" });
+    popAt(r.left + r.width / 2 + 70, r.top - 10, "🔰 障壁で防いだ！", "heal");
+  } else if (dodged) {
+    if (G.meteorPending) { G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on"); }
+    (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color);
+    await sleep(380);
+    popAt(r.left + r.width / 2 + 70, r.top - 10, "👤 よけた！", "heal");
+  } else if (G.meteorPending) {
+    G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on");
+    EFFECTS.cosmic("#ff9a3a"); fxEl("vignette", { "--c": "rgba(255,90,0,.7)" });
+    await sleep(380);
+    shake();
+    hurt(G.allyHp * G.cfg.meteor.current_hp_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
+    if (!(G.ward > 0)) G.status.black_flame = G.cfg.status.black_flame.turns;    // メテオのあとは黒炎（封炎中はかからない）
+    newStatus = "black_flame";
+  } else if (special) {
+    bub.style.display = "none";
+    const sp = G.cfg.awaken.special;
+    await specialScene(sp.name, G.awakenArgs && G.awakenArgs.special, "35% 50%");
+    // 術式解除：アイテムでかけた守り（封炎・防御アップ）を消す
+    if (G.ward > 0 || G.guardTurns > 0) {
+      G.ward = 0; G.guardTurns = 0; updateBadges();
+      fxEl("flash", { background: "rgba(160,80,255,.45)" });
+      popAt(window.innerWidth / 2, window.innerHeight * 0.45, "💥 守りの術式が破られた！", "info");
+      await sleep(700);
+    }
+    EFFECTS.cosmic("#ff5a1a"); fxEl("vignette", { "--c": "rgba(40,0,60,.85)" });
+    await sleep(380);
+    shake();
+    // 業火：最大HPの damage_rate の割合ダメージ（防御で減らない）。必ず黒炎になる
+    hurt(G.cfg.ally.max_hp * sp.damage_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
+    newStatus = inflict("black_flame");
+  } else {
+    (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color);
+    await sleep(380);
+    shake();
+    hurt((G.guardTurns > 0 ? e.hit_damage_guard : e.hit_damage) * mult, r.left + r.width / 2 + 70, r.top - 10);
+    // 3. 新しい状態異常の抽選（敵が持つ状態異常から1つ）。同じ物は重ならず、残りターンが最初に戻る
+    if (e.gimmicks.length && Math.random() < G.cfg.status_chance) newStatus = inflict(pick(e.gimmicks));
+  }
+  if (navigator.vibrate) navigator.vibrate(90);
+  if (G.guardTurns > 0) G.guardTurns--;
+  if (G.eBreak > 0) G.eBreak--;
+  if (G.ward > 0) G.ward--;
+  updateBadges();
+  if (newStatus && G.allyHp > 1e-9) {
+    const st = G.cfg.status[newStatus];
+    await sleep(350);
+    popAt(window.innerWidth / 2, window.innerHeight * 0.55, `${st.icon} ${st.name}！`, "info");
+  }
+  await sleep(700);
+  bub.style.display = "none";
+  if (G.allyHp <= 1e-9) {               // 倒れそう：はじめての人はアステルが必ず助けに来る。精霊の羽があれば使うか聞く
+    const r = await saveFromDown();
+    if (r === "won") return;
+    if (r !== "saved") return finish("lose");
+    await sleep(G.cfg.pause_ms); return playerTurn();
+  }
+  // アステルの援護：敵の攻撃のあと、まれに空からやってくる（1回の戦闘で1度だけ）
+  const as = G.cfg.assist;
+  if (as && as.random && !G.assistRandom && G.assistImages && Math.random() < as.chance) {
+    if (await astelAssist("random")) return;
+  }
+  await sleep(G.cfg.pause_ms);
+  playerTurn();
+}
+
+// ---------------------------------------------------------------------------
+// 宇宙龍の覚醒（HPが半分を切ったら、敵のターンの始めに1度だけ）
+// ---------------------------------------------------------------------------
+// 敵にダメージを与える。覚醒する前の宇宙龍は、HPが1より下にならない（覚醒する前には倒せない）
+function hitEnemy(amount) {
+  const floor = G.cfg.awaken && !G.awakened ? 1 : 0;
+  const d = Math.max(0, Math.min(amount, G.enemyHp - floor));
+  G.enemyHp -= d; G.dealt += d;
+  return d;
+}
+function rocks(n, ms) {
+  for (let i = 0; i < n; i++) setTimeout(() => {
+    const r = document.createElement("div"); r.className = "rock";
+    const s = 10 + Math.random() * 34;
+    r.style.left = Math.random() * 100 + "vw"; r.style.setProperty("--s", s + "px");
+    r.style.setProperty("--d", (0.9 + Math.random() * 0.9) + "s"); r.style.setProperty("--r", (Math.random() * 720 - 360) + "deg");
+    $("app").appendChild(r); setTimeout(() => r.remove(), 2000);
+  }, Math.random() * ms);
+}
+async function awaken() {
+  const A = G.cfg.awaken, args = G.awakenArgs || {};
+  G.awakened = true; setButtons(false);
+  const bub = $("bubble");
+  bub.style.setProperty("--bubble", "#ff7a3a"); bub.textContent = "……グ、ググ……ォォォ……"; bub.style.display = "block";
+  // 1. 地鳴り：だんだん強くゆれ、石が落ち、砂ぼこりが上がる
+  $("stage").classList.add("quake"); $("fx").classList.add("quake");
+  if (navigator.vibrate) navigator.vibrate([200, 80, 260, 60, 400]);
+  const dust = document.createElement("div"); dust.className = "dust"; $("app").appendChild(dust); setTimeout(() => dust.remove(), 3300);
+  rocks(10, 1200);
+  await sleep(1200);
+  bub.style.display = "none";
+  $("stage").classList.add("hard"); $("fx").classList.add("hard");
+  rocks(22, 1400);
+  fxEl("dim", {});
+  // 2. 姿が変わる（新しい絵を上に重ねて、じわっと入れかえる）
+  const old = $("stage").querySelector(".st-scene");
+  if (args.scene) {
+    const tmp = document.createElement("div"); tmp.innerHTML = args.scene;
+    const next = tmp.firstElementChild; next.classList.add("awake-in");
+    if (old) old.querySelector(".st-target")?.classList.remove("st-target");   // 当たり判定は新しい絵で
+    $("stage").appendChild(next);
+    await sleep(500);
+    next.classList.add("on");
+  }
+  await sleep(900);
+  const crack = document.createElement("div"); crack.className = "crack"; $("app").appendChild(crack); setTimeout(() => crack.remove(), 1100);
+  if (navigator.vibrate) navigator.vibrate([500]);
+  await sleep(700);
+  $("stage").classList.remove("quake", "hard"); $("fx").classList.remove("quake", "hard");
+  if (old) old.remove();
+  const cur = $("stage").querySelector(".st-scene"); if (cur) cur.classList.remove("awake-in", "on");
+  if (args.mask) { G.hitMask = null; prepareHitMask(args.mask); }
+  // 3. 強さが変わる（攻撃・防御。こちらの与えるダメージも計算し直した値にする）
+  const e = G.cfg.enemy, a = G.cfg.ally;
+  Object.assign(e, { name: A.name, title: A.title, lines: A.lines, effect: A.effect, atk: A.atk, def: A.def,
+                     hit_damage: A.hit_damage, hit_damage_guard: A.hit_damage_guard });
+  a.tap_damage = A.tap_damage; a.tap_damage_up = A.tap_damage_up;
+  if (G.cfg.skill && A.skill_damage != null) G.cfg.skill.damage = A.skill_damage;
+  $("enemyName").textContent = `Lv.${e.lv} ${A.name}`;
+  await banner("覚醒", `${A.name} ― ${A.title}`, 1700, "lose");
+  // 4. 減っているHPの一部を回復
+  const heal = (e.max_hp - G.enemyHp) * A.heal_rate;
+  if (heal > 0) {
+    G.enemyHp = Math.min(e.max_hp, G.enemyHp + heal); updateBars();
+    const c = enemyCenter(); popAt(c.x, c.y, "+" + fmt(heal), "heal");
+    fxEl("vignette", { "--c": "rgba(120,255,170,.35)" });
+    await sleep(900);
+  }
+  G.specialNext = true;     // 覚醒して最初の攻撃は、必ず大技
+}
+async function specialScene(name, src, focus, color) {
+  const sp = $("special");
+  sp.querySelector(".name").textContent = name;
+  const img = sp.querySelector("img.main"), bg = sp.querySelector("img.bg");
+  if (src && img.getAttribute("src") !== src) { img.src = src; bg.src = src; }
+  img.style.objectPosition = focus || "35% 50%"; img.style.transformOrigin = focus || "50% 50%";
+  // 絵より画面がずっと縦長なら、切りすぎないよう全体を見せる
+  const ratio = (img.naturalWidth || 16) / (img.naturalHeight || 9);
+  const k = ratio / (window.innerWidth / window.innerHeight);   // 絵と画面の縦横の違い
+  sp.classList.toggle("fit", k > 4.5 || k < 0.6);
+  img.style.animation = "none"; void img.offsetWidth; img.style.animation = "";
+  const nm = sp.querySelector(".name"); nm.style.animation = "none"; void nm.offsetWidth; nm.style.animation = "";
+  nm.style.textShadow = color ? `0 0 10px ${color}, 0 0 26px ${color}, 0 0 44px rgba(0,0,0,.6), 0 3px 0 #000` : "";   // 味方の技は、その人の色で光らせる
+  sp.style.display = "block";
+  if (navigator.vibrate) navigator.vibrate([120, 60, 300]);
+  await sleep(2200);
+  sp.style.display = "none";
+}
+
+function inflict(id) {
+  if (id === "black_flame" && G.ward > 0) return null;   // 封炎の巻物：新しい黒炎にかからない
+  if ((G.cfg.ally.immune || []).includes(id)) {          // 聖霊の加護：基本の状態異常にかからない
+    popAt(window.innerWidth / 2, window.innerHeight * 0.55, `✨ 聖霊の加護で ${G.cfg.status[id].name}を防いだ！`, "info");
+    return null;
+  }
+  const st = G.cfg.status[id];
+  let turns = st.turns;
+  if (id === "thunder") {
+    turns = st.turns_min + Math.floor(Math.random() * (st.turns_max - st.turns_min + 1));
+    if (st.halve) turns = Math.ceil(turns / 2);      // 雷よけの指輪：ターン数を半分（切り上げ）
+  }
+  G.status[id] = turns;
+  return id;
+}
+
+// ---------------------------------------------------------------------------
+// やめる
+// ---------------------------------------------------------------------------
+$("quit").onclick = () => {
+  if (!G || G.phase === "end") return;
+  // エクストラステージは、確認なしで逃げられる（負けにならない）
+  if (G.cfg.extra) { if (G.phase === "player") finish("escape"); return; }
+  if (G.phase !== "player") return;                // 連打中・敵のターン中は押せない
+  $("confirm").style.display = "flex";
+};
+$("cancelQuit").onclick = () => { $("confirm").style.display = "none"; };
+$("doQuit").onclick = () => { $("confirm").style.display = "none"; finish("quit"); };
+
+// ---------------------------------------------------------------------------
+// 終わり
+// ---------------------------------------------------------------------------
+async function finish(result) {
+  if (G.phase === "end") return;
+  G.phase = "end"; setButtons(false); $("sheet").classList.remove("open");
+  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping"); $("timer").style.display = "none"; $("combo").style.display = "none"; $("bubble").style.display = "none";
+  $("warn").classList.remove("on"); $("stun").classList.remove("on"); $("dark").classList.remove("on"); $("btnEnd").classList.remove("on");
+  $("hint").textContent = "";
+  if (result === "lose") $("allyIcon").classList.add("down");
+  const elapsed = performance.now() - G.startAt;
+  if (result === "win") await banner("撃破！", `${G.turn}ターン ／ ${G.hits}ヒット`, 0, "win");
+  else if (result === "escape") await banner("にげた！", "先へ進もう", 0, "");
+  else if (result === "lose") await banner("やられた…", `敵の残りHP ${displayHp(G.enemyHp).toLocaleString()}`, 0, "lose");
+  const value = {
+    round: G.round, result,
+    ally_hp: Math.max(0, G.allyHp), enemy_hp: Math.max(0, G.enemyHp), turns: G.turn,
+    taps: G.taps, hits: G.hits, misses: G.misses, damage_dealt: G.dealt, damage_taken: G.taken,
+    enemy_attacks: G.enemyAttacks, used: G.used, elapsed_ms: Math.round(elapsed), charge: G.charge,
+    assist: G.assistRescue ? "rescue" : G.assistRandom ? "random" : G.assistFeather ? "feather" : null,
+  };
+  setTimeout(() => Streamlit.setValue(value), result === "quit" ? 0 : result === "escape" ? 1000 : 1600);   // 結果を少し見せてから Python に返す
+}
+
+Streamlit.ready();
+</script>
+</body>
+</html>

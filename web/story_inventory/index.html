@@ -248,7 +248,7 @@ function showDetail() {
     d.innerHTML = `<div class="row"><img class="big" src="${it.icon}" alt=""><div><b>${it.name}</b>
       <div class="meta">倉庫 ${S.store[it.id]}こ ／ リュック ${S.pack[it.id]}こ</div><div class="eff">${it.effect}</div></div></div>`;
     if (sel.from === "store" && it.home_use) acts.push(["使う", () => sendState("use", it.id)]);   // 白龍の鱗：いまのキャラのレベルを1上げる
-    if (sel.from === "store") acts.push(["リュックへ", () => askMove("item", it.id, "store", "pack")]);
+    if (sel.from === "store" && !it.no_pack) acts.push(["リュックへ", () => askMove("item", it.id, "store", "pack")]);
     else acts.push(["倉庫へ", () => askMove("item", it.id, "pack", "store")]);
     // アイテムは削除できない（装備だけ削除できる）
   } else {
@@ -352,6 +352,7 @@ function deleteEquip(uid) {
 function askMove(kind, id, from, to) {
   if (from === to) return;
   if (to === "gear" || to === "acc") return msg("アイテムは リュックか倉庫に入れてね", "bad");
+  if (to === "pack" && S.items[id].no_pack) return msg("魔導書はリュックに入れられないよ。「使う」で覚えられるよ", "bad");
   const have = from === "store" ? S.store[id] : S.pack[id];
   const room = to === "pack" ? S.cfg.limits.pack - packTotal() : have;
   const max = Math.min(have, room);
