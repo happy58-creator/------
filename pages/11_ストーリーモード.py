@@ -682,8 +682,13 @@ def view_home():
                 if st.button("⏹ クエストを中断", key="_story_home_abandon", width="stretch"):
                     st.session_state.story_confirm_new = True
                     st.rerun()
-        elif st.button("🔄 キャラクター変更", key="_story_change", width="stretch"):
-            go("ally_picker")
+        else:
+            party = L.party_for(profile, lv)
+            if st.button(f"👥 パーティ編成（{len(party)} / {L.MAX_PARTY}）：" + "・".join(short_name(x) for x in party),
+                         key="_story_party", width="stretch"):
+                go("party")
+            if st.button("🔄 キャラクター変更", key="_story_change", width="stretch"):
+                go("ally_picker")
     if run and st.session_state.story_confirm_new:
         confirm_abandon(run, "今の挑戦を中断して終わらせますか？（負け扱い。ここまでのアビリティはもらえて、アイテムはすべて倉庫に戻ります）")
 
@@ -771,8 +776,9 @@ def view_ready():
     lv = st.session_state.story_ally
     diff = L.get_difficulty(st.session_state.story_difficulty)
     with st.container(key="story_ready"):
-        compact_title(f"{diff['name']}（{L.stage_count(diff['id'])}ステージ）",
-                      f"{L.get_ally(lv)['name']}（Lv.{L.ally_level(profile, lv)}）で挑戦するよ")
+        q = st.session_state.get("story_quest", "main")
+        compact_title((L.quest_label(q) + " " if q == L.KZ else "") + f"{diff['name']}（{L.stage_count(diff['id'], q)}ステージ）",
+                      "パーティ：" + "・".join(f"{short_name(x)}（Lv.{L.ally_level(profile, x)}）" for x in L.party_for(profile, lv)) + " で挑戦するよ")
         loadout_buttons("ready", "_story_ready", counts=True)
         st.write("")
         if st.button("⚔️ 出発", key="_story_go", type="primary", width="stretch"):
@@ -922,7 +928,8 @@ def view_battle():
     stage_no = L.EXTRA if run.get("extra") else run["stage"]
     st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)
     config = L.battle_config(round_id, stage_no, run["difficulty"], run["ally"], run["hp"], profile, run["bag"],
-                             charge=run.get("charge", 0), ally_mp=L.run_mp(profile), quest=L.run_quest(run), group=run.get("group"))
+                             charge=run.get("charge", 0), ally_mp=L.run_mp(profile), quest=L.run_quest(run), group=run.get("group"),
+                             members=run.get("members"))
     result = story_battle.battle(config, key=f"story_battle_{round_id}")
     if not result or result.get("round") != round_id:
         return
@@ -1066,6 +1073,12 @@ def view_between():
 
     # 下：もらった物・かばん（箱の中だけスクロール）
     with box(BOX_H - 140, key="sbox_between", offset=340):
+        for key, m in (run.get("members") or {}).items():
+            mx = L.ally_stats(int(key), profile)
+            if m["hp"] <= 0:
+                st.caption(f"💀 {short_name(int(key))}：戦闘不能（いのちの葉などで復活。ホームに戻れば元どおり）")
+            else:
+                st.caption(f"👥 {short_name(int(key))}：HP {L.display_hp(m['hp'])}/{mx['hp']:g}　MP {int(m['mp'])}/{mx['mp']:g}")
         if rewards:
             healed = []
             if rewards["healed"] > 0:
@@ -1146,12 +1159,46 @@ def end_details(summary, name):
     if summary["new_abilities"]:
         st.success(f"🎊 新しいアビリティを {summary['new_abilities']}つ 解放した！")
     ability_gauges(summary["ally"], summary["ability_after"])
+    for key, m in (summary.get("members") or {}).items():
+        lb, la = L.level_of(int(key), m["before"]), L.level_of(int(key), m["after"])
+        if la > lb:
+            st.success(f"⬆️ {short_name(int(key))} の レベルが {lb} → {la} に上がった！")
 
     st.markdown("**🎒 アイテム**")
     returned = summary["returned"]
     st.markdown("倉庫にもどった物：" + ("".join(item_icon(k, n) for k, n in returned.items()) or "なし"),
                 unsafe_allow_html=True)
 
+
+
+# ---------------------------------------------------------------------------
+# パーティ編成（リーダー＝いまのキャラ＋仲間2人まで）
+# ---------------------------------------------------------------------------
+def view_party():
+    story_header("👥 パーティ編成", ("◀ もどる", "home"))
+    show_notice()
+    leader = st.session_state.story_ally
+    party = L.party_for(profile, leader)
+    compact_title(f"リーダー：{short_name(leader)}（Lv.{L.ally_level(profile, leader)}）",
+                  f"仲間を{L.MAX_PARTY - 1}人まで えらんでね。リーダーを変えるときは「キャラクター変更」")
+    st.caption("仲間は 1人ずつ順番に動くよ。敵の強さは人数で変わらないので、人数が多いほど楽に戦えるよ。"
+               "経験値は全員が同じだけもらえるよ。")
+    with box(BOX_H, key="story_party_box", offset=230):
+        for lv in L.owned_allies(profile):
+            if lv == leader:
+                continue
+            on = lv in party
+            stats = L.ally_stats(lv, profile)
+            label = (("✅ " if on else "➕ ") + f"{short_name(lv)}（Lv.{L.ally_level(profile, lv)}）"
+                     f"　HP {stats['hp']:g}・攻撃 {stats['atk']:g}・MP {stats['mp']:g}・魔力 {stats['mag']:g}")
+            if st.button(label, key=f"_party_{lv}", width="stretch", type="primary" if on else "secondary"):
+                comp = [x for x in party[1:] if x != lv] if on else party[1:] + [lv]
+                try:
+                    L.set_party(profile, leader, comp)
+                    save()
+                except ValueError as e:
+                    st.session_state.story_notice = f"できなかったよ：{e}"
+                st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -1313,7 +1360,7 @@ def learn_action(lv, book, replace):
 
 {
     "home": view_home, "quest": view_quest, "ready": view_ready, "ally_detail": view_ally_detail, "ally_picker": view_ally_picker,
-    "inventory": view_inventory, "guide": view_guide, "titles": view_titles, "shop": view_shop, "spells": view_spells,
+    "inventory": view_inventory, "guide": view_guide, "titles": view_titles, "shop": view_shop, "spells": view_spells, "party": view_party,
     "battle": view_battle, "between": view_between, "retry": view_retry,
     "extra_lost": view_extra_lost, "end": view_end,
 }[st.session_state.story_view]()

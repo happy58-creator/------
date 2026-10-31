@@ -94,14 +94,29 @@ def battle(config, key):
         item_icons={item["id"]: story_assets.item_thumb(item["id"], 192) for item in config["items"]},
         equip_icons={e["id"]: story_assets.equipment_thumb(e["id"]) for part in ("gear", "acc") for e in config["loadout"][part]},
         status_icons={sid: uri for sid in story_data.STATUS_EFFECTS if (uri := story_assets.status_icon_uri(sid))},
+        **party_args(config),
         **awaken,
         key=key,
         default=None,
     )
 
 
+def party_args(config):
+    """パーティの仲間の顔と必殺技の絵"""
+    out = {"member_icons": {}, "member_skill_images": {}, "member_equip_icons": {}}
+    for m in config.get("party") or []:
+        out["member_icons"][str(m["lv"])] = story_assets.ally_icon_uri(m["lv"])
+        sc = (m.get("skill") or {}).get("scene")
+        if sc:
+            out["member_skill_images"][str(m["lv"])] = story_assets.image_uri(f"skills/{sc['image']}")
+        for part in ("gear", "acc"):
+            for e in m["loadout"][part]:
+                out["member_equip_icons"][e["id"]] = story_assets.equipment_thumb(e["id"])
+    return out
+
+
 def _common_args(config):
-    out = {}
+    out = party_args(config)
     assist = config.get("assist")
     has_feather = any(i["id"] == "spirit_feather" and i["count"] > 0 for i in config["items"])
     if assist and (assist["random"] or assist.get("rescue") or has_feather):

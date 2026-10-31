@@ -495,6 +495,27 @@
   .foebar.dead { opacity:0; }
   .foetag { position:absolute; z-index:41; transform:translate(-50%,-100%); font:800 11px/1.2 sans-serif; color:#fff; text-shadow:0 1px 3px #000; pointer-events:none; white-space:nowrap; }
   .foetag.dead { opacity:0; }
+
+  /* ---- パーティ ---- */
+  #party { display:none; gap:6px; max-width:720px; margin:0 auto 6px; pointer-events:auto; }
+  #party.on { display:flex; }
+  #party .pm { flex:1; min-width:0; display:flex; align-items:center; gap:5px; padding:4px 6px; border-radius:10px; background:rgba(20,16,26,.75); border:1px solid rgba(255,255,255,.15); }
+  #party .pm.act { border-color:#ffe28a; box-shadow:0 0 10px rgba(255,220,120,.5); }
+  #party .pm.dead { opacity:.45; filter:grayscale(1); }
+  #party .pm img { width:26px; height:26px; border-radius:50%; object-fit:cover; flex:none; }
+  #party .pm .nm { font:700 11px/1.1 sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #party .pm .bars { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  #party .pm .hb, #party .pm .mb { height:5px; border-radius:3px; background:#221b21; overflow:hidden; }
+  #party .pm .hb > div { height:100%; background:linear-gradient(#6fe39d,#24894f); }
+  #party .pm .mb > div { height:100%; background:linear-gradient(#a08cff,#5a3fd6); }
+  #party .pm .dl { font:700 10px sans-serif; color:#ff8a7a; }
+  #pick { position:absolute; inset:0; z-index:96; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.7); }
+  #pick.on { display:flex; }
+  #pick > div { width:min(90vw,400px); background:#161119; border:1px solid rgba(110,210,150,.6); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:8px; }
+  #pick h4 { margin:0 0 4px; color:#9fe8b9; font-size:16px; }
+  #pick .opt { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; border:1px solid rgba(110,210,150,.5); background:rgba(80,190,120,.12); color:var(--ink); font:inherit; text-align:left; cursor:pointer; }
+  #pick .opt:disabled { opacity:.35; }
+  #pick .opt img { width:38px; height:38px; border-radius:50%; object-fit:cover; }
 </style>
 <style id="sceneCss"></style>
 </head>
@@ -532,6 +553,7 @@
   <button id="gearBtn" type="button">🛡️ 装備</button>
 
   <div class="hud bottom">
+    <div id="party"></div>
     <div class="row">
       <div class="skillwrap" id="skillWrap" title="必殺技"><div class="sring" id="skillRing"></div>
         <img class="icon" id="allyIcon" alt="" draggable="false"><span class="ready">必殺技！</span></div>
@@ -573,6 +595,8 @@
       <div style="text-align:center;color:#ffe0b0;font-weight:700;font-size:14px">円の中を連打して、魔力をためよう！</div>
     </div>
   </div>
+  <div id="pick"><div><h4 id="pickTitle"></h4><div id="pickList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <button class="btn ghost" id="pickNo" type="button" style="min-height:44px;font-size:15px">やめる</button></div></div>
   <div id="tip"></div>
   <div id="gearSheet">
     <h3><span>いまの装備</span><button type="button" id="gearClose">とじる</button></h3>
@@ -700,6 +724,7 @@ function start(args) {
   $("btnEnd").classList.remove("on"); $("hint").textContent = "";
   prepareHitMask(args.hit_mask);
   initFoes(c, args);
+  initParty(c, args);
   updateBars(); updateBadges();
   Streamlit.setHeight(Math.max(480, window.innerHeight));
   updateSkill();
@@ -787,6 +812,7 @@ function updateBars() {
   const mp = Math.max(0, G.mp), mx = a.max_mp || 0;
   $("mpBar").querySelector(".fill").style.width = (mx > 0 ? mp / mx * 100 : 0) + "%";
   $("mpNum").textContent = `MP ${Math.floor(mp + 1e-9)} / ${Math.round(mx)}`;
+  if (G.party && G.members) renderParty();
 }
 
 // 効果があるあいだ、状態アイコンを表示する。
@@ -917,6 +943,7 @@ function playerAttackFx(hits) {
 // ---------------------------------------------------------------------------
 function playerTurn() {
   if (!G || G.phase === "end") return;
+  if (G.party) return partyTurn();
   G.phase = "player"; G.usedItem = false; G.skillUsed = false; G.turn++;
   setButtons(true); updateSkill();
 }
@@ -926,7 +953,7 @@ $("btnEnd").onclick = async () => {
   if (!G || G.phase !== "player") return;
   G.phase = "pass"; setButtons(false); $("sheet").classList.remove("open");
   await sleep(G.cfg.pause_ms);
-  enemyTurn();
+  nextOrEnemy();
 };
 $("btnItem").onclick = () => { if (G && G.phase === "player" && !G.usedItem) openSheet(); };
 $("sheetClose").onclick = () => $("sheet").classList.remove("open");
@@ -1022,7 +1049,7 @@ async function afterAction() {
     await banner("メテオの詠唱", "次の敵の攻撃はメテオになる", 1300, "lose");
   }
   await sleep(G.cfg.pause_ms);
-  enemyTurn();
+  nextOrEnemy();
 }
 
 // 連打の時間：基本 ＋ 時間アップ（合わせて最大3秒） − 凍え
@@ -1379,8 +1406,8 @@ function spellCost(sp) {
 function chantNeed() { const M = G.cfg.magic; return Math.ceil(M.chant_max * (1 - M.chant_cut * magCoef(curMag())) - 1e-9); }
 function elemOf(sp) { return (G.cfg.magic.elements || {})[sp.element] || { name: "無", icon: "🔷", color: "#9fc0ff" }; }
 function spellBlocked(sp) {
-  if (sp.kind === "revive") return "仲間がいるときに使える";
-  if (sp.kind === "full" && G.allyHp >= G.cfg.ally.max_hp - 1e-9) return "HPは満タンだよ";
+  if (sp.kind === "revive") return !G.party ? "仲間がいるときに使える" : G.members.some((m) => m.dead) ? "" : "戦闘不能の仲間がいないよ";
+  if (sp.kind === "full" && !G.party && G.allyHp >= G.cfg.ally.max_hp - 1e-9) return "HPは満タンだよ";
   return "";
 }
 function openMagic() {
@@ -1409,6 +1436,15 @@ async function castSpell(sp) {
   if (!G || G.phase !== "player" || G.status.thunder > 0) return;
   const cost = spellCost(sp);
   if (G.mp < cost || spellBlocked(sp)) return;
+  G.spellTarget = null;
+  if (G.party && sp.target === "ally") {           // パーティ：だれにかけるかえらぶ
+    $("magicSheet").classList.remove("open");
+    G.phase = "pick";
+    const t = await chooseMember(sp.kind === "revive" ? `${sp.name}：だれを生き返らせる？` : `${sp.name}：だれにかける？`, sp.kind === "revive");
+    G.phase = "player";
+    if (t == null) return;
+    G.spellTarget = t;
+  }
   $("magicSheet").classList.remove("open"); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
   G.phase = "chant"; setButtons(false); updateSkill();
   G.mp -= cost; G.usedMp += cost; G.casts++; updateBars();
@@ -1472,6 +1508,17 @@ async function resolveSpell(sp, rate) {
   const crit = (sp.kind === "attack" || sp.kind === "heal" || sp.kind === "mana") && Math.random() < critChance;
   const cm = crit ? M.magic_crit_mult : 1;
   if (crit) { G.crits++; await banner("会心！", `${sp.name}の効果 ×${M.magic_crit_mult}`, 650, "win"); }
+  const caster = G.mi, tgt = G.spellTarget; G.spellTarget = null;
+  if (tgt != null && tgt !== caster && sp.kind !== "attack") memberLoad(tgt);
+  const T = G.cfg.ally, me2 = $("allyIcon").getBoundingClientRect();
+  if (sp.kind === "revive") {
+    G.members[G.mi].dead = false;
+    G.allyHp = Math.max(1, Math.min(T.max_hp, T.max_hp * sp.heal * k * rate));
+    for (const id of Object.keys(G.status)) G.status[id] = 0;
+    $("allyIcon").classList.remove("down");
+    fxEl("flash", { background: "rgba(255,230,160,.45)" }); particles("#fff0c0", 26, 55);
+    popAt(me2.left + me2.width / 2 + 60, me2.top, "復活！", "heal");
+  }
   if (sp.kind === "attack" && G.multi && sp.target === "enemies") {      // 敵全体：生きている敵みんなに
     const keep = G.cur;
     for (const i of aliveFoes()) { foeLoad(i); await spellHit(sp, rate, cm, el, M, i === aliveFoes()[0]); }
@@ -1485,7 +1532,7 @@ async function resolveSpell(sp, rate) {
     const dmg = raw * (1 - def / (def + M.defense_k));
     const fx = { fire: "fire", thunder: "thunder", ice: "magic", light: "radiance", dark: "void", none: "magic" }[sp.element] || "magic";
     (EFFECTS[fx] || EFFECTS.magic)(el.color);
-    if (sp.target === "enemies" || sp.power >= 65) setTimeout(() => { fxEl("ring", { "--c": el.color, "--s": 60 }); particles(el.color, 20, 60); }, 250);
+    if (sp.target === "enemies" || sp.power >= 130) setTimeout(() => { fxEl("ring", { "--c": el.color, "--s": 60 }); particles(el.color, 20, 60); }, 250);
     await sleep(420);
     const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
     shake();
@@ -1496,9 +1543,9 @@ async function resolveSpell(sp, rate) {
     if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
   } else if (sp.kind === "heal" || sp.kind === "mana" || sp.kind === "full") {
     const before = G.allyHp, mpBefore = G.mp;
-    const amount = sp.kind === "full" ? a.max_hp * rate : a.max_hp * sp.heal * k * rate * cm;
-    G.allyHp = Math.min(a.max_hp, G.allyHp + amount);
-    if (sp.mp_heal) G.mp = Math.min(a.max_mp, G.mp + a.max_mp * sp.mp_heal * k * rate * cm);
+    const amount = sp.kind === "full" ? T.max_hp * rate : T.max_hp * sp.heal * k * rate * cm;
+    G.allyHp = Math.min(T.max_hp, G.allyHp + amount);
+    if (sp.mp_heal) G.mp = Math.min(T.max_mp, G.mp + T.max_mp * sp.mp_heal * k * rate * cm);
     fxEl("flash", { background: "rgba(120,255,170,.28)" }); fxEl("ring", { "--c": "#7dffae", "--s": 30 });
     popAt(mx, me.top, "+" + fmt(G.allyHp - before), "heal");
     if (G.mp > mpBefore) setTimeout(() => popAt(mx, me.top - 40, `MP +${fmt(G.mp - mpBefore)}`, "proc"), 300);
@@ -1521,7 +1568,8 @@ async function resolveSpell(sp, rate) {
     fxEl("flash", { background: "rgba(200,240,255,.3)" }); particles("#dff6ff", 18, 50);
     popAt(mx, me.top, `連打 +${sp.seconds}秒（${G.hasteSpellTurns}回）`, "info");
   }
-  updateBars(); updateBadges();
+  updateBars(); updateBadges(); if (G.party) renderParty();
+  if (G.party && G.mi !== caster) { await sleep(500); memberLoad(caster); }
 }
 
 // ---------------------------------------------------------------------------
@@ -1547,7 +1595,7 @@ function loadMask(uri) {
 function initFoes(c, args) {
   G.multi = !!c.foes;
   if (!G.multi) return;
-  G.foes = c.foes.map((f, i) => ({ cfg: i === 0 ? c.enemy : f, tap: f.tap, hp: f.max_hp, eDots: {}, eStatus: { thunder: 0, darkness: 0, darkMult: 1, shadow: 0 },
+  G.foes = c.foes.map((f, i) => ({ cfg: i === 0 ? c.enemy : f, tap: f.tap, taps: f.taps, hits: f.hits, hp: f.max_hp, eDots: {}, eStatus: { thunder: 0, darkness: 0, darkMult: 1, shadow: 0 },
                                      eBreak: 0, mask: null, dead: false, attacks: 0, charging: false }));
   G.cur = 0; G.sel = 0;
   (args.hit_masks || []).forEach((u, i) => loadMask(u).then((m) => { if (G.foes[i]) G.foes[i].mask = m; }));
@@ -1576,7 +1624,7 @@ function foeLoad(i) {
   G.cur = i;
   const f = G.foes[i];
   G.enemyHp = f.hp; G.eDots = f.eDots; G.eStatus = f.eStatus; G.eBreak = f.eBreak;
-  G.cfg.enemy = f.cfg; Object.assign(G.cfg.ally, f.tap);
+  G.cfg.enemy = f.cfg; crossRefresh();
   if (G.foes.length > 1) G.hitMask = f.mask;
 }
 function aliveFoes() { return G.foes.map((f, i) => i).filter((i) => !G.foes[i].dead); }
@@ -1740,7 +1788,7 @@ async function spellHit(sp, rate, cm, el, M, fx) {
   if (fx) {
     const kind = { fire: "fire", thunder: "thunder", ice: "magic", light: "radiance", dark: "void", none: "magic" }[sp.element] || "magic";
     (EFFECTS[kind] || EFFECTS.magic)(el.color);
-    if (sp.target === "enemies" || sp.power >= 65) setTimeout(() => { fxEl("ring", { "--c": el.color, "--s": 60 }); particles(el.color, 20, 60); }, 250);
+    if (sp.target === "enemies" || sp.power >= 130) setTimeout(() => { fxEl("ring", { "--c": el.color, "--s": 60 }); particles(el.color, 20, 60); }, 250);
     await sleep(420);
     shake();
     if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
@@ -1779,22 +1827,8 @@ async function enemyTurnMulti() {
     foeLoad(0);
     if (G.cfg.awaken && !G.awakened && G.enemyHp <= G.cfg.enemy.max_hp * G.cfg.awaken.hp_rate) await awaken();
   }
-  // 1. 自分の持続ダメージ
-  let dot = 0;
-  for (const id of DOTS) {
-    if (!(G.status[id] > 0)) continue;
-    const st = G.cfg.status[id];
-    dot += G.guardTurns > 0 ? st.damage_guard : st.damage;
-    G.status[id]--;
-  }
-  if (dot > 0) {
-    fxEl("vignette", { "--c": "rgba(150,60,220,.55)" });
-    hurt(dot, r.left + r.width / 2 + 70, r.top - 10, "dot");
-    updateBadges();
-    await sleep(800);
-    if (G.allyHp <= 1e-9) { const res = await saveFromDown(); if (res === "won") return; if (res === "saved") { foeLoad(G.sel); await sleep(G.cfg.pause_ms); return playerTurn(); } return finish("lose"); }
-  }
-  if (G.status.thunder > 0) G.status.thunder--;
+  // 1. 自分の持続ダメージ（パーティなら全員）
+  { const res = await dotPhase(); if (res === "won") return; if (res === "saved") { foeLoad(G.sel); await sleep(G.cfg.pause_ms); return playerTurn(); } if (res === "lose") return finish("lose"); }
   // 2. 1体ずつ行動
   for (const i of aliveFoes()) {
     if (G.phase === "end") return;
@@ -1832,8 +1866,8 @@ async function enemyTurnMulti() {
     if (G.eBreak > 0) G.eBreak--;
     foeSave();
   }
-  if (G.guardTurns > 0) G.guardTurns--;
-  if (G.ward > 0) G.ward--;
+  if (!G.party && G.guardTurns > 0) G.guardTurns--;
+  if (!G.party && G.ward > 0) G.ward--;
   foeLoad(G.foes[keep] && !G.foes[keep].dead ? keep : G.sel);
   markSel(); updateBars(); updateBadges();
   const as = G.cfg.assist;
@@ -1846,6 +1880,7 @@ async function enemyTurnMulti() {
 
 // 敵1体の攻撃1回。"won"（援護で勝った）/ "lose" / "saved"（倒れそうになって立ち上がった）/ ""
 async function foeAttack(i) {
+  if (G.party) pickTarget();
   const e = G.cfg.enemy, f = G.foes[i], bub = $("bubble"), r = $("allyIcon").getBoundingClientRect();
   const sp = G.awakened && G.cfg.awaken && G.cfg.awaken.special;
   const special = !!(sp && !G.meteorPending && (G.specialNext || Math.random() < sp.chance));
@@ -1890,8 +1925,7 @@ async function foeAttack(i) {
   } else if (G.meteorPending) {
     G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on");
     EFFECTS.cosmic("#ff9a3a"); fxEl("vignette", { "--c": "rgba(255,90,0,.7)" }); await sleep(380); shake();
-    hurt(G.allyHp * G.cfg.meteor.current_hp_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
-    if (!(G.ward > 0)) G.status.black_flame = G.cfg.status.black_flame.turns;
+    meteorAll(mult, r);
     newStatus = "black_flame";
   } else if (special) {
     bub.style.display = "none";
@@ -1925,12 +1959,180 @@ async function foeAttack(i) {
   await sleep(600);
   bub.style.display = "none";
   if (G.allyHp <= 1e-9) {
-    const res = await saveFromDown();
+    const res = await memberFell();
+    if (res === "dead") return "";
     if (res === "won") return "won";
     if (res !== "saved") { finish("lose"); return "lose"; }
     return "saved";
   }
   return "";
+}
+
+// ---------------------------------------------------------------------------
+// パーティ（3人まで）。いま動かしている人（G.mi）の数字を G.allyHp・G.mp・G.status… と G.cfg.ally などに入れて動かし、
+// ほかの人の数字は G.members[i].st にしまっておく（memberLoad で入れかえる）
+// ---------------------------------------------------------------------------
+const MKEYS = ["allyHp", "mp", "status", "charge", "skillUsed", "usedItem", "atkTurns", "guardTurns", "critTurns", "critBonus", "magTurns", "magMult",
+               "hasteItemTurns", "hasteItemMs", "hasteSpellTurns", "hasteSpellMs", "braveTurns", "braveMult", "boost", "barrier", "ward", "blessing"];
+function initParty(c, args) {
+  G.party = !!(c.party && c.party.length);
+  G.mi = 0; G.actQ = [];
+  if (!G.party) { $("party").classList.remove("on"); return; }
+  const lead = { lv: c.ally.lv, ally: c.ally, skill: c.skill, spells: c.spells || [], status: c.status, loadout: c.loadout, icon: args.ally_icon,
+                 skillImg: args.skill_scene_image || null, hits: { hit_damage: c.enemy.hit_damage, hit_damage_guard: c.enemy.hit_damage_guard }, dead: c.ally.hp <= 0 };
+  G.members = [lead];
+  Object.assign(G.equipIcons, args.member_equip_icons || {});
+  for (const m of c.party) {
+    G.members.push({ lv: m.lv, ally: m.ally, skill: m.skill, spells: m.spells || [], status: m.status, loadout: m.loadout,
+                     icon: (args.member_icons || {})[m.lv], skillImg: (args.member_skill_images || {})[m.lv] || null,
+                     hits: { hit_damage: m.ally.hit_damage, hit_damage_guard: m.ally.hit_damage_guard }, dead: m.ally.hp <= 0 });
+  }
+  memberSave();
+  for (const [i, m] of G.members.entries()) {
+    if (i === 0) continue;
+    m.st = { ...G.members[0].st, allyHp: m.ally.hp, mp: m.ally.mp != null ? m.ally.mp : (m.ally.max_mp || 0),
+             status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0, freeze: 0, wind: 0 },
+             charge: (m.skill && m.skill.start) || 0, skillUsed: false, usedItem: false, atkTurns: 0, guardTurns: 0, critTurns: 0, critBonus: 0,
+             magTurns: 0, magMult: 1, hasteItemTurns: 0, hasteItemMs: 0, hasteSpellTurns: 0, hasteSpellMs: 0, braveTurns: 0, braveMult: 1,
+             boost: 1, barrier: 0, ward: 0, blessing: false };
+  }
+  $("party").classList.add("on");
+  renderParty();
+}
+function memberSave() {
+  if (!G.members) return;
+  const st = {}; for (const k of MKEYS) st[k] = G[k];
+  G.members[G.mi].st = st;
+}
+function crossRefresh() {
+  if (G.multi) {
+    const f = G.foes[G.cur];
+    Object.assign(G.cfg.ally, f.taps ? f.taps[G.mi || 0] : f.tap);
+    if (f.hits) Object.assign(f.cfg, f.hits[G.mi || 0]);
+  } else if (G.party) {
+    Object.assign(G.cfg.enemy, G.members[G.mi].hits);
+  }
+}
+function memberLoad(i) {
+  if (!G.party || i == null || i === G.mi) return;
+  memberSave();
+  G.mi = i;
+  const m = G.members[i];
+  Object.assign(G, m.st);
+  G.cfg.ally = m.ally; G.cfg.skill = m.skill; G.cfg.spells = m.spells; G.cfg.status = m.status; G.cfg.loadout = m.loadout;
+  G.skillSceneImage = m.skillImg;
+  if (m.icon) $("allyIcon").src = m.icon;
+  $("allyName").textContent = m.ally.name.split("、").pop();
+  $("allyIcon").classList.toggle("down", !!m.dead);
+  crossRefresh();
+  updateBars(); updateBadges(); updateSkill(); renderParty();
+}
+function aliveMembers() { return G.members.map((m, i) => i).filter((i) => !G.members[i].dead); }
+function renderParty() {
+  if (!G.party) return;
+  memberSave();
+  $("party").innerHTML = G.members.map((m, i) => {
+    const st = m.st, hp = Math.max(0, st.allyHp) / m.ally.max_hp * 100, mp = m.ally.max_mp ? Math.max(0, st.mp) / m.ally.max_mp * 100 : 0;
+    return `<div class="pm${i === G.mi ? " act" : ""}${m.dead ? " dead" : ""}"><img src="${m.icon || ""}" alt="">` +
+      `<div class="bars"><div class="nm">${esc(m.ally.name.split("、").pop())}</div>` +
+      (m.dead ? `<div class="dl">戦闘不能</div>` : `<div class="hb"><div style="width:${hp}%"></div></div><div class="mb"><div style="width:${mp}%"></div></div>`) + `</div></div>`;
+  }).join("");
+}
+// 自分のターン（パーティ）：立っている人が順番に1回ずつ。全員が動いたら敵のターン
+function partyTurn() {
+  G.actQ = (G.actQ || []).filter((i) => !G.members[i].dead);
+  if (!G.actQ.length) {
+    // 新しいターン：防御アップ・封炎は全員ぶん1減らす
+    memberSave();
+    for (const m of G.members) { if (m.st.guardTurns > 0 && G.turn > 0) m.st.guardTurns--; if (m.st.ward > 0 && G.turn > 0) m.st.ward--; }
+    Object.assign(G, G.members[G.mi].st);
+    G.actQ = aliveMembers(); G.turn++;
+  }
+  const i = G.actQ.shift();
+  memberLoad(i);
+  if (G.multi) foeLoad(G.sel);
+  G.phase = "player"; G.usedItem = false; G.skillUsed = false;
+  setButtons(true); updateSkill(); updateBars(); updateBadges(); renderParty();
+  if (G.members.length > 1) { const r = $("allyIcon").getBoundingClientRect(); popAt(r.left + r.width / 2 + 90, r.top - 20, `${G.cfg.ally.name.split("、").pop()}のターン`, "info"); }
+}
+function nextOrEnemy() {
+  if (G.party && (G.actQ || []).some((i) => !G.members[i].dead)) return playerTurn();
+  enemyTurn();
+}
+function pickTarget() {
+  const alive = aliveMembers();
+  memberLoad(alive[Math.floor(Math.random() * alive.length)]);
+}
+// 倒れた：パーティでほかに立っている人がいれば戦闘不能になるだけ（"dead"）。最後の1人なら、これまでどおり（救援・精霊の羽など）
+async function memberFell() {
+  if (G.party && aliveMembers().length > 1) {
+    G.members[G.mi].dead = true; G.allyHp = 0;
+    for (const k of Object.keys(G.status)) G.status[k] = 0;
+    $("allyIcon").classList.add("down");
+    const r = $("allyIcon").getBoundingClientRect();
+    popAt(r.left + r.width / 2 + 80, r.top - 10, `${G.cfg.ally.name.split("、").pop()}は倒れた…`, "hurt");
+    renderParty(); updateBadges();
+    await sleep(900);
+    return "dead";
+  }
+  return await saveFromDown();
+}
+// 毒・火・黒炎のダメージ（パーティなら立っている人みんな）
+async function dotPhase() {
+  const idx = G.party ? aliveMembers() : [null];
+  for (const i of idx) {
+    if (i !== null) memberLoad(i);
+    let dot = 0;
+    for (const id of DOTS) {
+      if (!(G.status[id] > 0)) continue;
+      const st = G.cfg.status[id];
+      dot += G.guardTurns > 0 ? st.damage_guard : st.damage;
+      G.status[id]--;
+    }
+    if (dot > 0) {
+      const r = $("allyIcon").getBoundingClientRect();
+      fxEl("vignette", { "--c": "rgba(150,60,220,.55)" });
+      hurt(dot, r.left + r.width / 2 + 70, r.top - 10, "dot");
+      updateBadges();
+      await sleep(700);
+      if (G.allyHp <= 1e-9) {
+        const res = await memberFell();
+        if (res === "dead") continue;
+        return res || "lose";
+      }
+    }
+    if (G.status.thunder > 0) G.status.thunder--;
+  }
+  return "";
+}
+// メテオ：パーティなら全員に（今のHPの割合）。そのあと黒炎
+function meteorAll(mult, r) {
+  const idx = G.party ? aliveMembers() : [null];
+  const last = G.mi;
+  for (const i of idx) {
+    if (i !== null) memberLoad(i);
+    hurt(G.allyHp * G.cfg.meteor.current_hp_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
+    if (!(G.ward > 0)) G.status.black_flame = G.cfg.status.black_flame.turns;
+  }
+  if (G.party) memberLoad(last);
+}
+// だれに使う？（回復・蘇生）。dead=true なら戦闘不能の人だけ、false なら立っている人だけ
+function chooseMember(title, dead) {
+  return new Promise((res) => {
+    memberSave();
+    $("pickTitle").textContent = title;
+    const list = $("pickList"); list.innerHTML = "";
+    for (const [i, m] of G.members.entries()) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "opt";
+      b.disabled = dead ? !m.dead : m.dead;
+      b.innerHTML = `<img src="${m.icon || ""}" alt=""><span style="flex:1"><b>${esc(m.ally.name.split("、").pop())}</b><br>` +
+        `<small>${m.dead ? "戦闘不能" : `HP ${displayHp(m.st.allyHp)}/${Math.round(m.ally.max_hp)}　MP ${Math.floor(m.st.mp)}/${Math.round(m.ally.max_mp || 0)}`}</small></span>`;
+      b.onclick = () => { $("pick").classList.remove("on"); res(i); };
+      list.appendChild(b);
+    }
+    $("pickNo").onclick = () => { $("pick").classList.remove("on"); res(null); };
+    $("pick").classList.add("on");
+  });
 }
 
 function openSheet() {
@@ -1947,7 +2149,8 @@ function openSheet() {
                   it.guard ? `防御2倍（${it.guard}ターン）` : "", it.atk_turns ? `攻撃力+3（${it.atk_turns}ターン）` : "",
                   it.ward ? `${it.ward}ターン黒炎にかからない` : "",
                   it.cure && it.cure.length ? it.cure.map((s) => (G.cfg.status[s] || {}).name || s).join("・") + "を治す" : ""].filter(Boolean).join("・");
-    const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0 || reviveOnly;
+    const canRevive = G.party && G.members.some((m) => m.dead);
+    const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0 || (reviveOnly && !canRevive);
     const icon = G.icons[it.id] ? `<img src="${G.icons[it.id]}" alt="">` : "";
     b.innerHTML = `${icon}<span class="n">×${n}</span><b>${it.name}</b><small>${desc}</small>`;
     b.onclick = () => useItem(it);
@@ -1956,27 +2159,57 @@ function openSheet() {
   $("itemNote").textContent = "使ったあとも、このターンに攻撃できます。";
   $("sheet").classList.add("open");
 }
-function useItem(it) {
-  if (G.phase !== "player" || G.usedItem || !(G.bag[it.id] > 0) || (it.revive > 0 && !it.assist)) return;
+async function useItem(it) {
+  const reviveOnly = it.revive > 0 && !it.assist;
+  if (G.phase !== "player" || G.usedItem || !(G.bag[it.id] > 0)) return;
+  if (reviveOnly && !(G.party && G.members.some((m) => m.dead))) return;
+  // パーティ：回復・蘇生のアイテムは、使う人をえらぶ
+  let target = null;
+  const targeted = G.party && !it.assist && (it.heal_rate > 0 || it.mp_rate > 0 || (it.cure && it.cure.length) || reviveOnly);
+  if (targeted) {
+    $("sheet").classList.remove("open");
+    G.phase = "pick";
+    target = await chooseMember(reviveOnly ? `${it.name}：だれを生き返らせる？` : `${it.name}：だれに使う？`, reviveOnly);
+    G.phase = "player";
+    if (target == null) return;
+  }
   G.bag[it.id]--; G.used[it.id] = (G.used[it.id] || 0) + 1; G.usedItem = true;
   $("sheet").classList.remove("open");
+  const actor = G.mi;
+  if (target != null) memberLoad(target);
   const icon = $("allyIcon").getBoundingClientRect();
-  if (it.heal > 0) {
+  if (reviveOnly) {                              // いのちの葉・不死鳥の羽：戦闘不能の仲間が立ち上がる（次のターンから動ける）
+    G.members[G.mi].dead = false;
+    G.allyHp = G.cfg.ally.max_hp * it.revive;
+    for (const id of Object.keys(G.status)) G.status[id] = 0;
+    $("allyIcon").classList.remove("down");
+    fxEl("flash", { background: "rgba(255,200,120,.45)" }); particles("#ffd9a0", 24, 50);
+    popAt(icon.left + icon.width / 2 + 60, icon.top, "復活！", "heal");
+  }
+  const healAmt = it.heal_rate != null ? G.cfg.ally.max_hp * it.heal_rate : it.heal;
+  const mpAmt = it.mp_rate != null ? (G.cfg.ally.max_mp || 0) * it.mp_rate : it.mp;
+  if (!reviveOnly && healAmt > 0) {
     const before = G.allyHp;
-    G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + it.heal);
+    G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + healAmt);
     popAt(icon.left + icon.width / 2 + 60, icon.top, "+" + fmt(G.allyHp - before), "heal");
     fxEl("flash", { background: "rgba(120,255,170,.25)" });
   }
-  if (it.mp > 0) {
+  if (mpAmt > 0) {
     const before = G.mp;
-    G.mp = Math.min(G.cfg.ally.max_mp, G.mp + it.mp);
+    G.mp = Math.min(G.cfg.ally.max_mp, G.mp + mpAmt);
     setTimeout(() => popAt(icon.left + icon.width / 2 + 60, icon.top - 40, `MP +${fmt(G.mp - before)}`, "proc"), 250);
     fxEl("flash", { background: "rgba(150,130,255,.25)" });
+  }
+  if (target != null) {
+    for (const id of it.cure || []) G.status[id] = 0;
+    updateBars(); updateBadges(); renderParty();
+    await sleep(500);
+    memberLoad(actor);
   }
   if (it.crit) { G.critTurns = it.crit_turns; G.critBonus = it.crit; fxEl("flash", { background: "rgba(255,230,90,.25)" }); }
   if (it.mag_mult) { G.magTurns = it.mag_turns; G.magMult = it.mag_mult; fxEl("flash", { background: "rgba(180,110,255,.25)" }); }
   if (it.haste_ms) { G.hasteItemTurns = it.haste_turns; G.hasteItemMs = it.haste_ms; particles("#dff6ff", 14, 40); }
-  for (const id of it.cure || []) G.status[id] = 0;     // 万能薬・黒炎払い・魔法陣（ポーション類は治さない）
+  if (target == null) for (const id of it.cure || []) G.status[id] = 0;     // 万能薬・黒炎払い・魔法陣（ポーション類は治さない）
   if (it.cure && it.cure.length) fxEl("flash", { background: "rgba(200,255,220,.3)" });
   if (it.ward) { G.ward = it.ward; fxEl("ring", { "--c": "#b48cff", "--s": 30 }); }   // 封炎の巻物
   if (it.guard) { G.guardTurns = it.guard; fxEl("flash", { background: "rgba(120,180,255,.25)" }); }
@@ -2060,22 +2293,8 @@ async function enemyTurn() {
   }
   // 宇宙龍：HPが半分を切っていたら覚醒する
   if (G.cfg.awaken && !G.awakened && G.enemyHp <= G.cfg.enemy.max_hp * G.cfg.awaken.hp_rate) await awaken();
-  // 1. 持続ダメージ（付けられたターンには入らず、次のターンから入る）
-  let dot = 0;
-  for (const id of DOTS) {
-    if (!(G.status[id] > 0)) continue;
-    const st = G.cfg.status[id];
-    dot += G.guardTurns > 0 ? st.damage_guard : st.damage;
-    G.status[id]--;
-  }
-  if (dot > 0) {
-    fxEl("vignette", { "--c": "rgba(150,60,220,.55)" });
-    hurt(dot, r.left + r.width / 2 + 70, r.top - 10, "dot");
-    updateBadges();
-    await sleep(800);
-    if (G.allyHp <= 1e-9) { const r = await saveFromDown(); if (r === "won") return; if (r === "saved") { await sleep(G.cfg.pause_ms); return playerTurn(); } return finish("lose"); }
-  }
-  if (G.status.thunder > 0) G.status.thunder--;     // 雷は敵のターンごとに減る
+  // 1. 持続ダメージ（付けられたターンには入らず、次のターンから入る）。雷は敵のターンごとに減る
+  { const res = await dotPhase(); if (res === "won") return; if (res === "saved") { await sleep(G.cfg.pause_ms); return playerTurn(); } if (res === "lose") return finish("lose"); }
 
   // 剣の雷：敵が動けない
   if (G.eStatus.thunder > 0) {
@@ -2083,16 +2302,17 @@ async function enemyTurn() {
     const c = enemyCenter();
     EFFECTS.thunder("#ffe96a");
     popAt(c.x, c.y, "⚡ しびれて動けない！", "proc");
-    if (G.guardTurns > 0) G.guardTurns--;
+    if (!G.party && G.guardTurns > 0) G.guardTurns--;
     if (G.eBreak > 0) G.eBreak--;
-    if (G.ward > 0) G.ward--;
+    if (!G.party && G.ward > 0) G.ward--;
     updateBadges();
     await sleep(1300);
     await sleep(G.cfg.pause_ms);
     return playerTurn();
   }
 
-  // 2. 敵の攻撃（予告が出ていればメテオに変わる）
+  // 2. 敵の攻撃（予告が出ていればメテオに変わる）。パーティなら、ねらう1人をランダムに
+  if (G.party) pickTarget();
   // 覚醒した宇宙龍の大技：覚醒して最初の攻撃と、そのあとは決まった確率で
   const special = !!(G.awakened && !G.meteorPending && (G.specialNext || Math.random() < G.cfg.awaken.special.chance));
   G.specialNext = false;
@@ -2131,8 +2351,7 @@ async function enemyTurn() {
     EFFECTS.cosmic("#ff9a3a"); fxEl("vignette", { "--c": "rgba(255,90,0,.7)" });
     await sleep(380);
     shake();
-    hurt(G.allyHp * G.cfg.meteor.current_hp_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
-    if (!(G.ward > 0)) G.status.black_flame = G.cfg.status.black_flame.turns;    // メテオのあとは黒炎（封炎中はかからない）
+    meteorAll(mult, r);    // メテオのあとは黒炎（封炎中はかからない）
     newStatus = "black_flame";
   } else if (special) {
     bub.style.display = "none";
@@ -2163,9 +2382,9 @@ async function enemyTurn() {
     if (preStatus) newStatus = inflict(preStatus);
   }
   if (navigator.vibrate) navigator.vibrate(90);
-  if (G.guardTurns > 0) G.guardTurns--;
+  if (!G.party && G.guardTurns > 0) G.guardTurns--;
   if (G.eBreak > 0) G.eBreak--;
-  if (G.ward > 0) G.ward--;
+  if (!G.party && G.ward > 0) G.ward--;
   updateBadges();
   if (newStatus && G.allyHp > 1e-9) {
     const st = G.cfg.status[newStatus];
@@ -2174,11 +2393,11 @@ async function enemyTurn() {
   }
   await sleep(700);
   bub.style.display = "none";
-  if (G.allyHp <= 1e-9) {               // 倒れそう：はじめての人はアステルが必ず助けに来る。精霊の羽があれば使うか聞く
-    const r = await saveFromDown();
+  if (G.allyHp <= 1e-9) {               // 倒れそう：はじめての人はアステルが必ず助けに来る。精霊の羽があれば使うか聞く（パーティでほかに立っている人がいれば、戦闘不能になるだけ）
+    const r = await memberFell();
     if (r === "won") return;
-    if (r !== "saved") return finish("lose");
-    await sleep(G.cfg.pause_ms); return playerTurn();
+    if (r === "") return finish("lose");
+    if (r === "saved") { await sleep(G.cfg.pause_ms); return playerTurn(); }
   }
   // アステルの援護：敵の攻撃のあと、まれに空からやってくる（1回の戦闘で1度だけ）
   const as = G.cfg.assist;
@@ -2248,6 +2467,11 @@ async function awaken() {
                      hit_damage: A.hit_damage, hit_damage_guard: A.hit_damage_guard });
   a.tap_damage = A.tap_damage; a.tap_damage_up = A.tap_damage_up;
   if (A.heavy) e.heavy = A.heavy;
+  if (G.party && A.taps) {                       // パーティ：それぞれの人の与える・受けるダメージ
+    G.members.forEach((m, i) => { Object.assign(m.ally, A.taps[i] || {}); m.hits = (A.hits || [])[i] || m.hits; });
+    if (G.multi) { G.foes[0].taps = G.foes[0].taps.map((t, i) => ({ ...t, ...(A.taps[i] || {}) })); G.foes[0].hits = A.hits; }
+    crossRefresh();
+  }
   if (G.multi) { G.foes[0].tap = { ...G.foes[0].tap, tap_damage: A.tap_damage, tap_damage_up: A.tap_damage_up }; G.foes[0].hp = G.enemyHp; }
   if (G.cfg.skill && A.skill_damage != null) G.cfg.skill.damage = A.skill_damage;
   $("enemyName").textContent = `Lv.${e.lv} ${A.name}`;
@@ -2313,6 +2537,13 @@ $("doQuit").onclick = () => { $("confirm").style.display = "none"; finish("quit"
 // ---------------------------------------------------------------------------
 // 終わり
 // ---------------------------------------------------------------------------
+function partyResult() {
+  if (!G.party) return {};
+  memberSave();
+  const lead = G.members[0].st, out = {};
+  for (const [i, m] of G.members.entries()) if (i > 0) out[m.lv] = { hp: Math.max(0, m.st.allyHp), mp: Math.max(0, m.st.mp), charge: m.st.charge };
+  return { ally_hp: Math.max(0, lead.allyHp), ally_mp: Math.max(0, lead.mp), charge: lead.charge, members: out };
+}
 async function finish(result) {
   if (G.phase === "end") return;
   G.phase = "end"; setButtons(false); $("sheet").classList.remove("open"); $("magicSheet").classList.remove("open");
@@ -2332,6 +2563,7 @@ async function finish(result) {
     taps: G.taps, hits: G.hits, misses: G.misses, damage_dealt: G.dealt, damage_taken: G.taken,
     enemy_attacks: G.enemyAttacks, used: G.used, elapsed_ms: Math.round(elapsed), charge: G.charge,
     ally_mp: Math.max(0, G.mp), used_mp: G.usedMp, crits: G.crits, casts: G.casts, chant_taps: G.chantTaps,
+    ...partyResult(),
     assist: G.assistRescue ? "rescue" : G.assistRandom ? "random" : G.assistFeather ? "feather" : null,
   };
   setTimeout(() => Streamlit.setValue(value), result === "quit" ? 0 : result === "escape" ? 1000 : 1600);   // 結果を少し見せてから Python に返す

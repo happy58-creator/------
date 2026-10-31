@@ -258,6 +258,7 @@ def new_profile():
         "rescue_used": False,    # はじめて倒れそうになったときの、アステルの救援を受けたか（前から遊んでいる人も対象）
         "last_ally": 1,          # 前回えらんでいたキャラ（ページを開き直しても、このキャラから）
         "money": 0,              # マニー（ショップで使う）
+        "party": [],             # パーティの仲間（リーダー以外。MAX_PARTY − 1 人まで）
         "spells": {},            # 魔導書で覚えた魔法 {"キャラのLv": [魔法ID, ...]}（MAX_BOOK_SPELLS つまで）
         "run": None,
         "starter_items": True,
@@ -391,11 +392,37 @@ def normalize_profile(data):
             profile["allies"].append(lv)
     if profile.get("last_ally") not in profile["allies"]:
         profile["last_ally"] = 1
+    profile["party"] = [lv for lv in dict.fromkeys(profile.get("party") or []) if lv in profile["allies"]][:MAX_PARTY - 1]
     return profile
 
 
 def owned_allies(profile):
     return sorted(set(profile["allies"]))
+
+
+# ---------------------------------------------------------------------------
+# パーティ（リーダー＋仲間。3人まで）
+#   挑戦のリーダーは run["ally"]（HP・MP・チャージは run["hp"] など）。仲間は run["members"][Lv] に HP・MP・チャージ。
+#   HP が 0 の人は戦闘不能（ステージをまたいでも、そのまま。回復はできず、蘇生だけ。ホームに戻れば元どおり）
+# ---------------------------------------------------------------------------
+MAX_PARTY = 3
+
+
+def party_for(profile, leader):
+    """いま組んでいるパーティ（リーダーが先頭）"""
+    return [leader] + [lv for lv in (profile.get("party") or []) if lv != leader and lv in profile["allies"]][:MAX_PARTY - 1]
+
+
+def set_party(profile, leader, companions):
+    companions = [lv for lv in dict.fromkeys(companions) if lv != leader and lv in owned_allies(profile)]
+    if len(companions) > MAX_PARTY - 1:
+        raise ValueError(f"パーティは{MAX_PARTY}人までだよ。")
+    profile["party"] = companions
+
+
+def run_party(run):
+    """挑戦のパーティ（リーダーが先頭）"""
+    return [run["ally"]] + [int(lv) for lv in (run.get("members") or {})]
 
 
 # ---------------------------------------------------------------------------
@@ -912,6 +939,8 @@ def start_run(profile, ally_lv, difficulty_id, carried=None, quest="main"):
         "extra_seen": False,
         "extra_won": False,
         "charge": 0,
+        "members": {str(lv): {"hp": ally_stats(lv, profile)["hp"], "mp": ally_stats(lv, profile)["mp"], "charge": 0}
+                    for lv in party_for(profile, ally_lv)[1:]},
     }
     profile["run"] = run
     begin_stage(profile)
@@ -924,7 +953,8 @@ def begin_stage(profile):
     if run_quest(run) == KZ and run.get("group_stage") != run["stage"]:     # 風哭きの森：このステージの敵を決める（やり直しても同じ）
         run["group"] = roll_group(run["stage"], run["difficulty"])
         run["group_stage"] = run["stage"]
-    run["checkpoint"] = {"hp": run["hp"], "mp": run.get("mp"), "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
+    run["checkpoint"] = {"hp": run["hp"], "mp": run.get("mp"), "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0),
+                         "members": copy.deepcopy(run.get("members") or {})}
 
 
 def run_mp(profile):
@@ -946,6 +976,8 @@ def restore_checkpoint(profile, used=None):
             take_from_bag(cp["bag"], item_id, n)
     run["hp"] = cp["hp"]
     run["mp"] = cp.get("mp")
+    if "members" in cp:
+        run["members"] = copy.deepcopy(cp["members"])
     run["bag"] = copy.deepcopy(cp["bag"])
     run["charge"] = cp.get("charge", 0)
 
@@ -966,6 +998,12 @@ def apply_battle(profile, result):
     if "charge" in result:                         # 必殺技のチャージはステージをまたいで残す
         cap = get_ally(run["ally"])["skill"]["charge"]
         run["charge"] = max(0, min(cap, int(result.get("charge") or 0)))
+    for key, m in (result.get("members") or {}).items():   # 仲間の HP・MP・チャージ
+        if str(key) in (run.get("members") or {}):
+            cur = run["members"][str(key)]
+            cur["hp"] = max(0.0, float(m.get("hp", cur["hp"])))
+            cur["mp"] = max(0.0, float(m.get("mp", cur["mp"])))
+            cur["charge"] = max(0, min(get_ally(int(key))["skill"]["charge"], int(m.get("charge", cur.get("charge", 0)) or 0)))
 
 
 def note_battle(profile, result):
@@ -1070,7 +1108,13 @@ def clear_stage(profile, rng=random):
     run["cleared"] += 1
     run["stage"] += 1
     healed_from = run["hp"]
-    run["hp"] = min(max_hp, run["hp"] + max(0.0, max_hp - run["hp"]) * story_data.STAGE_HEAL_RATE)
+    if run["hp"] > 0:                              # 戦闘不能の人は回復しない（蘇生だけ）
+        run["hp"] = min(max_hp, run["hp"] + max(0.0, max_hp - run["hp"]) * story_data.STAGE_HEAL_RATE)
+    for key, m in (run.get("members") or {}).items():
+        st_m = ally_stats(int(key), profile)
+        if m["hp"] > 0:
+            m["hp"] = min(st_m["hp"], m["hp"] + max(0.0, st_m["hp"] - m["hp"]) * story_data.STAGE_HEAL_RATE)
+        m["mp"] = min(st_m["mp"], m["mp"] + max(0.0, st_m["mp"] - m["mp"]) * story_data.STAGE_MP_RATE)
     rewards["healed"] = run["hp"] - healed_from
     max_mp, mp_from = ally_stats(run["ally"], profile)["mp"], run_mp(profile)
     run["mp"] = min(max_mp, mp_from + max(0.0, max_mp - mp_from) * story_data.STAGE_MP_RATE)
@@ -1155,6 +1199,10 @@ def finish_run(profile, outcome, run=None):
     before = float(profile["ability"].get(key, 0))
     # 0.1 を足し続けて 4.9999… になり、5 に届かないことがないよう、小数第2位で丸める
     profile["ability"][key] = round(before + gained, 2)
+    members_before = {}
+    for mkey in (run.get("members") or {}):          # パーティの仲間も同じだけもらう
+        members_before[mkey] = float(profile["ability"].get(mkey, 0))
+        profile["ability"][mkey] = round(members_before[mkey] + gained, 2)
     if profile.get("run") is run:
         profile["run"] = None
     if outcome == "clear" and mode_key(run_quest(run), run["difficulty"]) not in profile["cleared_modes"]:
@@ -1166,6 +1214,7 @@ def finish_run(profile, outcome, run=None):
         "ability_before": before, "ability_after": profile["ability"][key],
         "new_abilities": len(unlocked_abilities(run["ally"], profile["ability"][key])) - len(unlocked_abilities(run["ally"], before)),
         "new_titles": new_titles,
+        "members": {k: {"before": v, "after": profile["ability"][k]} for k, v in members_before.items()},
     }
 
 
@@ -1329,7 +1378,7 @@ def spell_config(spell_id):
             "text": spell_short_text(spell_id)}
 
 
-def kz_foe_config(e, st, ally, idx, stage_label):
+def kz_foe_config(e, st, ally, idx, stage_label, party_stats=None):
     """風哭きの森の敵1体ぶんの、戦闘画面に渡す数字"""
     return {
         "idx": idx, "key": enemy_key(e), "lv": stage_label if stage_label != EXTRA else "???", "name": e["name"],
@@ -1341,6 +1390,7 @@ def kz_foe_config(e, st, ally, idx, stage_label):
         "cutout": e.get("cutout", True), "floating": bool(e.get("floating")),
         "hit_damage": damage(st["atk"], ally["def"]), "hit_damage_guard": damage(st["atk"], ally["def"] * story_data.GUARD_MULTIPLIER),
         "tap": _kz_taps({"def": st["def"], "phys_cut": st["phys_cut"]}, ally),
+        "taps": [_kz_taps({"def": st["def"], "phys_cut": st["phys_cut"]}, a) for a in (party_stats or [ally])],
     }
 
 
@@ -1371,7 +1421,7 @@ def kz_awaken_config(enemy_data, stats, ally, skill):
 
 
 def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None, charge=0, ally_mp=None,
-                  quest="main", group=None):
+                  quest="main", group=None, members=None):
     """戦闘コンポーネントに渡す設定（JSON にそのまま変換できる dict）
 
     stage_no はステージ番号（1から）か EXTRA。charge は必殺技のチャージ（挑戦の run["charge"]）。
@@ -1395,33 +1445,38 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
     effects = story_data.STATUS_EFFECTS
     gimmicks = enemy_data["gimmicks"]
 
-    def rate(status_id):
-        return story_data.RESIST_RATE if status_id in resist else 1.0
+    def make_status(ally, max_hp, resist):
+        def rate(status_id):
+            return story_data.RESIST_RATE if status_id in resist else 1.0
 
-    def dot(status_id, defense):
-        effect = effects[status_id]
-        amount = max_hp * effect["max_hp_rate"] * rate(status_id)
-        return amount * (1.0 - reduction(defense)) if effect["defense_applies"] else amount
+        def dot(status_id, defense):
+            effect = effects[status_id]
+            amount = max_hp * effect["max_hp_rate"] * rate(status_id)
+            return amount * (1.0 - reduction(defense)) if effect["defense_applies"] else amount
 
+        guard_def = ally["def"] * story_data.GUARD_MULTIPLIER
+        status = {}
+        for status_id in ("poison", "fire", "black_flame"):
+            status[status_id] = {
+                "name": effects[status_id]["name"], "icon": effects[status_id]["icon"], "turns": effects[status_id]["turns"],
+                "damage": dot(status_id, ally["def"]), "damage_guard": dot(status_id, guard_def),
+            }
+        thunder = effects["thunder"]
+        status["thunder"] = {"name": thunder["name"], "icon": thunder["icon"], "turns_min": thunder["turns_min"],
+                             "turns_max": thunder["turns_max"], "halve": "thunder" in resist}
+        darkness, shadow = effects["darkness"], effects["shadow"]
+        status["darkness"] = {"name": darkness["name"], "icon": darkness["icon"], "turns": darkness["turns"],
+                              "hit_scale": darkness["resist_hit_scale"] if "darkness" in resist else darkness["hit_scale"]}
+        status["shadow"] = {"name": shadow["name"], "icon": shadow["icon"], "turns": shadow["turns"],
+                            "evade_rate": shadow["evade_rate"] * rate("shadow")}
+        status["wind"] = {"name": effects["wind"]["name"], "icon": effects["wind"]["icon"], "turns": effects["wind"]["turns"]}
+        freeze = effects["freeze"]
+        status["freeze"] = {"name": freeze["name"], "icon": freeze["icon"], "turns": freeze["turns"],
+                            "slow_ms": int(freeze["slow_seconds"] * rate("freeze") * 1000)}
+        return status
+
+    status = make_status(ally, max_hp, resist)
     guard_def = ally["def"] * story_data.GUARD_MULTIPLIER
-    status = {}
-    for status_id in ("poison", "fire", "black_flame"):
-        status[status_id] = {
-            "name": effects[status_id]["name"], "icon": effects[status_id]["icon"], "turns": effects[status_id]["turns"],
-            "damage": dot(status_id, ally["def"]), "damage_guard": dot(status_id, guard_def),
-        }
-    thunder = effects["thunder"]
-    status["thunder"] = {"name": thunder["name"], "icon": thunder["icon"], "turns_min": thunder["turns_min"],
-                         "turns_max": thunder["turns_max"], "halve": "thunder" in resist}
-    darkness, shadow = effects["darkness"], effects["shadow"]
-    status["darkness"] = {"name": darkness["name"], "icon": darkness["icon"], "turns": darkness["turns"],
-                          "hit_scale": darkness["resist_hit_scale"] if "darkness" in resist else darkness["hit_scale"]}
-    status["shadow"] = {"name": shadow["name"], "icon": shadow["icon"], "turns": shadow["turns"],
-                        "evade_rate": shadow["evade_rate"] * rate("shadow")}
-    status["wind"] = {"name": effects["wind"]["name"], "icon": effects["wind"]["icon"], "turns": effects["wind"]["turns"]}
-    freeze = effects["freeze"]
-    status["freeze"] = {"name": freeze["name"], "icon": freeze["icon"], "turns": freeze["turns"],
-                        "slow_ms": int(freeze["slow_seconds"] * rate("freeze") * 1000)}
 
     counts = bag_counts(bag) if bag else {}
     max_mp = ally["mp"]
@@ -1430,6 +1485,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
          "heal": max_hp * i["heal_rate"], "cure": list(i["cure"]), "ward": i.get("ward", 0), "guard": i["guard"],
          "atk_turns": i["atk_turns"] if i["atk_bonus"] else 0,
          "mp": max_mp * i.get("mp_rate", 0), "revive": i.get("revive", 0),
+         "heal_rate": i["heal_rate"], "mp_rate": i.get("mp_rate", 0),
          "crit": i.get("crit", 0), "crit_turns": i.get("crit_turns", 0),
          "mag_mult": i.get("mag_mult", 0), "mag_turns": i.get("mag_turns", 0),
          "haste_ms": int(i.get("haste", 0) * 1000), "haste_turns": i.get("haste_turns", 0),
@@ -1531,10 +1587,43 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         "attack_ms": int(story_data.ATTACK_SECONDS * 1000),
         "pause_ms": int(story_data.TURN_PAUSE_SECONDS * 1000),
     }
+    members = members or {}
+    party_stats = [ally] + [ally_stats(int(k), profile) for k in members]
+    if members:
+        out["party"] = []
+        for key, m in members.items():
+            lv = int(key)
+            mst = party_stats[len(out["party"]) + 1]
+            mres = set(mst["resist"])
+            out["party"].append({
+                "lv": lv,
+                "ally": {"lv": lv, "name": get_ally(lv)["name"], "max_hp": mst["hp"], "hp": max(0.0, min(mst["hp"], float(m["hp"]))),
+                         "atk": mst["atk"], "def": mst["def"], "immune": mst.get("immune", []),
+                         "tap_damage": damage(mst["atk"], enemy["def"]), "tap_damage_up": damage(mst["atk"] + atk_up, enemy["def"]),
+                         "tap_damage_break": damage(mst["atk"], 0), "tap_damage_up_break": damage(mst["atk"] + atk_up, 0),
+                         "max_mp": mst["mp"], "mp": max(0.0, min(mst["mp"], float(m.get("mp", mst["mp"])))),
+                         "mag": mst["mag"], "crit": mst["crit"],
+                         "hit_damage": damage(enemy["atk"], mst["def"]), "hit_damage_guard": damage(enemy["atk"], mst["def"] * story_data.GUARD_MULTIPLIER)},
+                "skill": skill_config(lv, mst, enemy, mst["hp"], m.get("charge", 0)),
+                "spells": [spell_config(sid) for sid in known_spells(profile, lv)],
+                "status": make_status(mst, mst["hp"], mres),
+                "loadout": loadout_config(profile, lv),
+            })
+        out["ally"]["hit_damage"] = out["enemy"]["hit_damage"]
+        out["ally"]["hit_damage_guard"] = out["enemy"]["hit_damage_guard"]
+        if out.get("awaken"):
+            aw = out["awaken"]
+            out["awaken"]["taps"] = [{"tap_damage": damage(a["atk"], aw["def"]) * enemy.get("phys_cut", 1.0),
+                                      "tap_damage_up": damage(a["atk"] + atk_up, aw["def"]) * enemy.get("phys_cut", 1.0)} for a in party_stats]
+            out["awaken"]["hits"] = [{"hit_damage": damage(aw["atk"], a["def"]), "hit_damage_guard": damage(aw["atk"], a["def"] * story_data.GUARD_MULTIPLIER)}
+                                     for a in party_stats]
     if kz_group:
         out["quest"] = KZ
         out["area"] = "extra" if extra else story_data.KZ_STAGES[stage_no - 1]["area"]
-        out["foes"] = [kz_foe_config(e, kz_stats[n], ally, n, EXTRA if extra else stage_no) for n, e in enumerate(kz_group)]
+        out["foes"] = [kz_foe_config(e, kz_stats[n], ally, n, EXTRA if extra else stage_no, party_stats) for n, e in enumerate(kz_group)]
+        for f in out["foes"]:          # 敵の攻撃で受けるダメージは、受ける人の防御で変わる
+            f["hits"] = [{"hit_damage": damage(f["atk"], a["def"]), "hit_damage_guard": damage(f["atk"], a["def"] * story_data.GUARD_MULTIPLIER)}
+                         for a in party_stats]
         f0 = dict(out["foes"][0])
         out["enemy"].update({k: f0[k] for k in ("hit_damage", "hit_damage_guard", "phys_cut", "heal", "double", "heavy", "weak", "resist_elem")})
         for k in ("tap_damage", "tap_damage_up", "tap_damage_break", "tap_damage_up_break"):

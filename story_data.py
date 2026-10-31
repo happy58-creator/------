@@ -478,7 +478,7 @@ SPELL_LEVELS = (1, 4, 7)
 MAX_BOOK_SPELLS = 2            # 魔導書で覚えられる魔法の数（1人）
 MAGIC_COEF_K = 10
 MP_COST_CUT = 0.2
-SPELL_POWER = {"small": 30, "mid": 45, "big": 65, "huge": 90}
+SPELL_POWER = {"small": 60, "mid": 90, "big": 130, "huge": 180}   # 1ターン60回当てる前提（魔力＝攻撃力なら、小で連打1ターン分）
 SPELL_ALL_RATE = 0.7
 MAGIC_DEF_RATE = 0.5
 ELEMENT_WEAK = 1.5
@@ -600,14 +600,14 @@ KZ_STAGE_COUNT = 10
 #   になるように、敵全員のHPの合計と、1ターンに受けるダメージを決め、役割（KZ_ROLES の hp / atk）の比で分ける。
 #   防御力は、今までのクエストの同じ番号のステージの敵（イージーの値）× 難易度の倍率 × 役割の def。
 #   推奨レベル：イージー Lv.1〜3、ノーマル Lv.3〜5、ハード Lv.5〜8、ベリーハード Lv.8〜10
-KZ_TAPS = 45
+KZ_TAPS = 60
 KZ_REF = {   # (キャラ, レベル, 装備の 攻撃・防御・HP)
     "easy": (3, 3, (0, 0, 0)), "normal": (5, 5, (3, 6, 15)), "hard": (7, 8, (8, 15, 40)), "very_hard": (9, 10, (20, 30, 60)),
 }
 KZ_TURNS = {     # ふつうのステージ（最初, 最後）・中ボス・ボス。エクストラはボスの KZ_EXTRA_TURNS 倍
-    "easy": ((2.0, 3.0), 4, 5), "normal": ((3.0, 4.0), 5, 6), "hard": ((4.0, 5.0), 6, 7.5), "very_hard": ((5.0, 6.0), 7, 9),
+    "easy": ((2.5, 3.5), 5, 6), "normal": ((3.5, 4.5), 6, 7), "hard": ((4.5, 5.5), 7, 8.5), "very_hard": ((5.5, 6.5), 8, 10),
 }
-KZ_DAMAGE = {"stage": (0.25, 0.40), "midboss": 0.6, "boss": 1.1, "extra": 1.5}
+KZ_DAMAGE = {"stage": (0.35, 0.55), "midboss": 0.85, "boss": 1.4, "extra": 1.9}
 KZ_EXTRA_TURNS = 1.5
 KZ_ROLES = {   # hp・atk は同じステージの中での分け方の比。def は防御力の倍率
     "zako":    {"hp": 1.0, "atk": 1.0, "def": 1.0},
