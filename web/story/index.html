@@ -1117,6 +1117,11 @@ const SKILL_FX = {
   gaius:  { color: "#ff6a5a", fx: async () => { slashes("#ffd0c8", 12, 45); await sleep(560); fxEl("flash", { background: "rgba(255,120,100,.35)" }); fxEl("burst", { "--c": "#ff6a5a" }); } },
   reino:  { color: "#6ff0ff", fx: async () => { fxEl("beam", { "--c": "#6ff0ff" }); await sleep(380); EFFECTS.thunder("#9ff6ff"); particles("#cffbff", 20, 50); } },
   garen:  { color: "#e8e8ff", fx: async () => { fxEl("crack"); shards("#e8e8ff", 26); await sleep(300); fxEl("shout", { "--c": "#a8a8ff" }).textContent = "防御崩壊"; fxEl("flash", { background: "rgba(220,220,255,.35)" }); } },
+  fiora:  { color: "#a8ffcf", fx: async () => {            // 色とりどりの微精霊が集まって、光になって降りそそぐ
+             const cs = ["#ff6a8a", "#ffd36a", "#7dffae", "#7fc8ff", "#c08cff", "#ffffff"];
+             for (let i = 0; i < 6; i++) setTimeout(() => particles(cs[i], 14, 70), i * 90);
+             await sleep(520); fxEl("rays", { "--c": "#c8ffe0" }); fxEl("circle", { "--c": "#7dffae" }); rising("#e8fff0", 26);
+             await sleep(380); fxEl("burst", { "--c": "#a8ffcf" }); fxEl("flash", { background: "rgba(220,255,235,.6)" }); } },
   astel:  { color: "#e8d8ff", fx: async () => { fxEl("implode"); await sleep(350);
              for (let i = 0; i < 3; i++) setTimeout(() => fxEl("circle", { "--c": ["#9fd8ff", "#ffd6f0", "#fff3b0"][i] }), i * 120);
              fxEl("beam", { "--c": "#e8d8ff" }); await sleep(420); fxEl("rays", { "--c": "#ffffff" });
@@ -1461,10 +1466,64 @@ function chantRate(sp, inside) {
 }
 function chantNeed() { const M = G.cfg.magic; return Math.ceil(M.chant_max * (1 - M.chant_cut * magCoef(curMag())) - 1e-9); }
 function elemOf(sp) { return (G.cfg.magic.elements || {})[sp.element] || { name: "無", icon: "🔷", color: "#9fc0ff" }; }
+// 使う意味があるか（HP満タンなのに回復、もう効いているのに強化…は使えない）
+//   who：かける相手の候補 [{st, ally}]（パーティなら立っている人。1人なら自分）
+function crew(selfOnly) {
+  if (!G.party || selfOnly) return [{ st: G, ally: G.cfg.ally, i: G.mi }];
+  memberSave();
+  return aliveMembers().map((i) => ({ st: G.members[i].st, ally: G.members[i].ally, i }));
+}
+const hasStatus = (st, ids) => (ids || Object.keys(st.status || {})).some((id) => (st.status || {})[id] > 0);
+function spellNeed(sp, c) {              // c = {st, ally}：この人にかける意味があるか
+  const st = c.st, a = c.ally;
+  switch (sp.kind) {
+    case "heal": return st.allyHp < a.max_hp - 1e-6 || (!!sp.mp_regen && st.mp < (a.max_mp || 0) - 1e-6) || (!!sp.cure_all && hasStatus(st));
+    case "full": return st.allyHp < a.max_hp - 1e-6;
+    case "mana": return st.allyHp < a.max_hp - 1e-6 || st.mp < (a.max_mp || 0) - 1e-6;
+    case "cure": return hasStatus(st);
+    case "protect": return !(st.guardTurns > 0);
+    case "brave": return !(st.braveTurns > 0);
+    case "haste": return !(st.hasteSpellTurns > 0);
+    case "rally": return !(st.braveTurns > 0) || !(st.magTurns > 0);
+    case "elemward": return !(st.elemWard > 0);
+    default: return true;
+  }
+}
+const NEED_MSG = { heal: "みんなHPは満タンだよ", full: "HPは満タンだよ", mana: "HPもMPも満タンだよ", cure: "状態異常の人がいないよ",
+                   protect: "もう防御アップ中だよ", brave: "もう攻撃アップ中だよ", haste: "もう連打の時間がのびているよ",
+                   rally: "もう攻撃・魔力アップ中だよ", elemward: "もう属性を無効にしているよ" };
 function spellBlocked(sp) {
   if (sp.kind === "revive") return !G.party ? "仲間がいるときに使える" : G.members.some((m) => m.dead) ? "" : "戦闘不能の仲間がいないよ";
-  if (sp.kind === "full" && !G.party && G.allyHp >= G.cfg.ally.max_hp - 1e-9) return "HPは満タンだよ";
-  return "";
+  if (sp.kind === "attack") return "";
+  const who = crew(sp.target === "self");
+  return who.some((c) => spellNeed(sp, c)) ? "" : (NEED_MSG[sp.kind] || "使う必要がないよ");
+}
+// アイテム：この人に使う意味があるか
+function itemNeed(it, c) {
+  const st = c.st, a = c.ally;
+  if (it.assist) return true;
+  const heal = (it.heal_rate || 0) > 0 && st.allyHp < a.max_hp - 1e-6;
+  const mp = (it.mp_rate || 0) > 0 && (a.max_mp || 0) > 0 && st.mp < a.max_mp - 1e-6;
+  const cure = (it.cure || []).length > 0 && hasStatus(st, it.cure);
+  return heal || mp || cure || (it.crit > 0 && !(st.critTurns > 0)) || (it.mag_mult > 0 && !(st.magTurns > 0))
+    || (it.haste_ms > 0 && !(st.hasteItemTurns > 0)) || (it.guard > 0 && !(st.guardTurns > 0))
+    || (it.atk_turns > 0 && !(st.atkTurns > 0)) || (it.ward > 0 && !(st.ward > 0));
+}
+function itemBlocked(it) {
+  if (it.revive > 0 && !it.assist) return "";
+  const targeted = G.party && !it.all && ((it.heal_rate || 0) > 0 || (it.mp_rate || 0) > 0 || (it.cure && it.cure.length));
+  const who = targeted || it.all ? crew() : crew(true);
+  if (who.some((c) => itemNeed(it, c))) return "";
+  if ((it.heal_rate || 0) > 0 && !(it.mp_rate > 0)) return "HPは満タンだよ";
+  if ((it.mp_rate || 0) > 0 && !(it.heal_rate > 0)) return "MPは満タンだよ";
+  if (it.cure && it.cure.length && !(it.heal_rate > 0)) return "治す状態異常がないよ";
+  if (it.atk_turns) return "もう攻撃力アップ中だよ";
+  if (it.guard) return "もう防御アップ中だよ";
+  if (it.crit) return "もう会心アップ中だよ";
+  if (it.mag_mult) return "もう魔力アップ中だよ";
+  if (it.haste_ms) return "もう連打の時間がのびているよ";
+  if (it.ward) return "もう封炎が効いているよ";
+  return "使う必要がないよ";
 }
 function openMagic() {
   const list = $("spellList"); list.innerHTML = "";
@@ -1496,7 +1555,8 @@ async function castSpell(sp) {
   if (G.party && sp.target === "ally") {           // パーティ：だれにかけるかえらぶ
     $("magicSheet").classList.remove("open");
     G.phase = "pick";
-    const t = await chooseMember(sp.kind === "revive" ? `${sp.name}：だれを生き返らせる？` : `${sp.name}：だれにかける？`, sp.kind === "revive");
+    const t = await chooseMember(sp.kind === "revive" ? `${sp.name}：だれを生き返らせる？` : `${sp.name}：だれにかける？`, sp.kind === "revive",
+                                 sp.kind === "revive" ? null : (c) => spellNeed(sp, c));
     G.phase = "player";
     if (t == null) return;
     G.spellTarget = t;
@@ -2042,6 +2102,7 @@ async function applySupport(sp, k, rate, cm) {
     G.allyHp = Math.min(T.max_hp, G.allyHp + (sp.kind === "full" ? T.max_hp * rate : T.max_hp * (sp.heal || 0) * k * rate * cm));
     if (sp.mp_heal) G.mp = Math.min(T.max_mp, G.mp + T.max_mp * sp.mp_heal * k * rate * cm);
     if (sp.mp_regen) { G.regenTurns = sp.regen_turns || 3; G.regenMp = T.max_mp * sp.mp_regen; }
+    if (sp.cure_all) for (const id of Object.keys(G.status)) G.status[id] = 0;
     popAt(mx, me.top, "+" + fmt(G.allyHp - before), "heal");
   } else if (sp.kind === "rally") {
     const m = 1 + sp.power * k * rate;
@@ -2082,6 +2143,9 @@ async function magicFx(sp, el) {
   } else if (sp.element === "light") {
     fxEl("pillar", { "--c": c }); fxEl("rays", { "--c": c });
     if (big) setTimeout(() => { fxEl("pillar", { "--c": "#ffffff" }); rising(c, 30); }, 260);
+  } else if (sp.element === "earth") {           // 地：岩が飛び、地面がゆれる
+    fxEl("crack"); shards(c, big ? 30 : 18); particles("#8a6a3a", big ? 30 : 16, 55);
+    if (big) setTimeout(() => { fxEl("crack"); shards("#e8d0a0", 24); fxEl("flash", { background: "rgba(210,170,100,.45)" }); }, 260);
   } else if (sp.element === "dark") {
     fxEl("implode"); fxEl("vignette", { "--c": "rgba(40,0,60,.75)" });
     setTimeout(() => { fxEl("ring", { "--c": c, "--s": 60 }); particles(c, 24, 55); }, 380);
@@ -2473,14 +2537,14 @@ function meteorAll(mult, r) {
   if (G.party) memberLoad(last);
 }
 // だれに使う？（回復・蘇生）。dead=true なら戦闘不能の人だけ、false なら立っている人だけ
-function chooseMember(title, dead) {
+function chooseMember(title, dead, ok) {
   return new Promise((res) => {
     memberSave();
     $("pickTitle").textContent = title;
     const list = $("pickList"); list.innerHTML = "";
     for (const [i, m] of G.members.entries()) {
       const b = document.createElement("button"); b.type = "button"; b.className = "opt";
-      b.disabled = dead ? !m.dead : m.dead;
+      b.disabled = dead ? !m.dead : m.dead || (ok && !ok({ st: m.st, ally: m.ally, i }));
       b.innerHTML = `<img src="${m.icon || ""}" alt=""><span style="flex:1"><b>${esc(m.ally.name.split("、").pop())}</b><br>` +
         `<small>${m.dead ? "戦闘不能" : `HP ${displayHp(m.st.allyHp)}/${Math.round(m.ally.max_hp)}　MP ${Math.floor(m.st.mp)}/${Math.round(m.ally.max_mp || 0)}`}</small></span>`;
       b.onclick = () => { $("pick").classList.remove("on"); res(i); };
@@ -2506,9 +2570,10 @@ function openSheet() {
                   it.ward ? `${it.ward}ターン黒炎にかからない` : "",
                   it.cure && it.cure.length ? it.cure.map((s) => (G.cfg.status[s] || {}).name || s).join("・") + "を治す" : ""].filter(Boolean).join("・");
     const canRevive = G.party && G.members.some((m) => m.dead);
-    const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0 || (reviveOnly && !canRevive);
+    const why = n > 0 ? itemBlocked(it) : "";
+    const b = document.createElement("button"); b.type = "button"; b.className = "itembtn"; b.disabled = n <= 0 || (reviveOnly && !canRevive) || !!why;
     const icon = G.icons[it.id] ? `<img src="${G.icons[it.id]}" alt="">` : "";
-    b.innerHTML = `${icon}<span class="n">×${n}</span><b>${it.name}</b><small>${esc(it.text || desc)}</small>`;
+    b.innerHTML = `${icon}<span class="n">×${n}</span><b>${it.name}</b><small>${esc(why ? "（" + why + "）" + (it.text || desc) : (it.text || desc))}</small>`;
     b.onclick = () => useItem(it);
     list.appendChild(b);
   }
@@ -2519,13 +2584,15 @@ async function useItem(it) {
   const reviveOnly = it.revive > 0 && !it.assist;
   if (G.phase !== "player" || G.usedItem || !(G.bag[it.id] > 0)) return;
   if (reviveOnly && !(G.party && G.members.some((m) => m.dead))) return;
+  if (itemBlocked(it)) return;
   // パーティ：回復・蘇生のアイテムは、使う人をえらぶ
   let target = null;
   const targeted = G.party && !it.assist && !it.all && (it.heal_rate > 0 || it.mp_rate > 0 || (it.cure && it.cure.length) || reviveOnly);
   if (targeted) {
     $("sheet").classList.remove("open");
     G.phase = "pick";
-    target = await chooseMember(reviveOnly ? `${it.name}：だれを生き返らせる？` : `${it.name}：だれに使う？`, reviveOnly);
+    target = await chooseMember(reviveOnly ? `${it.name}：だれを生き返らせる？` : `${it.name}：だれに使う？`, reviveOnly,
+                                reviveOnly ? null : (c) => itemNeed(it, c));
     G.phase = "player";
     if (target == null) return;
   }

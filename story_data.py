@@ -228,6 +228,45 @@ ALLIES = [
                # 必殺技の特別演出（grand）：暗転 → 星が集まり魔法陣 → 絵 → 技名 → 光の咆哮
                "scene": {"image": "skill_astel.webp", "grand": True, "reading": "そうせいのほうこう", "sub": "GENESIS ROAR"},
                "text": "銀河を呑む咆哮。攻撃力×140 の防御無視ダメージと、2ターン敵の防御を0にする"}},
+    # ---- 風哭きの森で仲間になる（quest: kz）。tier はレベルの上がりやすさ（今までのキャラの Lv にあたる）----
+    {"lv": 12, "tier": 3, "name": "鹿紋の槍兵、リーネ",     "hp": 15, "atk": 3, "def": 3, "max": {"hp": 46, "atk": 10, "def": 12}, "image": "ally_12.webp",
+     "magic": {"mp": (10, 38), "mag": (1, 9), "crit": 0.06, "spells": ["brave", "protect", "war_cry"]}, "class": "fighter",
+     "unlock": {"quest": "kz", "min_difficulty": "easy", "stage": 3, "chance": 0.35},
+     "abilities": [{"stat": "def", "value": 1}, {"stat": "def", "value": 1}, {"stat": "atk", "value": 3}],
+     "skill": {"name": "鹿角の一閃", "area": False, "type": "strike", "charge": 250, "power": 55, "anim": "kou", "text": "鹿のように駆けて槍で貫く。攻撃力×55 のダメージ"}},
+    {"lv": 13, "tier": 4, "name": "森の薬師、オルガ",       "hp": 18, "atk": 2, "def": 4, "max": {"hp": 50, "atk": 7, "def": 16}, "image": "ally_13.webp",
+     "magic": {"mp": (25, 90), "mag": (3, 20), "crit": 0.03, "spells": ["heal", "stone_bullet", "cure", "heal_all", "high_heal"]}, "class": "magic",
+     "unlock": {"quest": "kz", "min_difficulty": "normal", "stage": 4, "chance": 0.35},
+     "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 5}],
+     "skill": {"name": "森の癒し手", "area": True, "type": "guard", "charge": 250, "heal_rate": 0.25, "guard": 2, "anim": "mari", "text": "森の薬草の力で、最大HPの25%を回復して、2ターン防御力2倍"}},
+    {"lv": 14, "tier": 6, "name": "樹人の戦士、グラン",     "hp": 40, "atk": 7, "def": 8, "max": {"hp": 110, "atk": 20, "def": 30}, "image": "ally_14.webp",
+     "magic": {"mp": (10, 40), "mag": (1, 8), "crit": 0.04, "spells": ["protect", "guard_all", "war_cry"]}, "class": "fighter",
+     "unlock": {"quest": "kz", "min_difficulty": "normal", "stage": 7, "chance": 0.30},
+     "abilities": [{"stat": "hp", "value": 8}, {"stat": "hp", "value": 8}, {"stat": "def", "value": 10}],
+     "skill": {"name": "大樹の一撃", "area": False, "type": "strike", "charge": 300, "power": 65, "guard": 2, "anim": "arthur", "text": "大樹の斧をふり下ろす。攻撃力×65 のダメージと、2ターン防御力2倍"}},
+    {"lv": 15, "tier": 7, "name": "翠玉の魔女、シルヴァ",   "hp": 40, "atk": 6, "def": 5, "max": {"hp": 90, "atk": 20, "def": 14}, "image": "ally_15.webp",
+     "magic": {"mp": (32, 115), "mag": (4, 25), "crit": 0.03, "spells": ["stone_bullet", "rock_crush", "fire", "earthquake", "explosion"]}, "class": "magic",
+     "unlock": {"quest": "kz", "min_difficulty": "hard", "stage": 5, "chance": 0.35},
+     "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 8}],
+     "skill": {"name": "翠晶の大地震", "area": True, "type": "strike", "charge": 350, "power": 75, "pierce": True, "anim": "erina", "text": "翠玉の力で大地を割る。攻撃力×75 の防御無視ダメージ"}},
+    {"lv": 16, "tier": 8, "name": "蔦鎧の騎士、ヴェルデ",   "hp": 60, "atk": 13, "def": 12, "max": {"hp": 130, "atk": 34, "def": 34}, "image": "ally_16.webp",
+     "magic": {"mp": (15, 60), "mag": (2, 14), "crit": 0.07, "spells": ["brave", "guard_all", "haste_all"]}, "class": "fighter",
+     "unlock": {"quest": "kz", "min_difficulty": "hard", "stage": 8, "chance": 0.30},
+     "abilities": [{"stat": "atk", "value": 2}, {"stat": "atk", "value": 2}, {"stat": "def", "value": 10}],
+     "skill": {"name": "茨棘の連撃", "area": False, "type": "strike", "charge": 350, "power": 85, "anim": "gaius", "text": "茨のように何度も斬りつける。攻撃力×85 のダメージ"}},
+    {"lv": 17, "tier": 9, "name": "森の大賢者、エルド",     "hp": 70, "atk": 14, "def": 16, "max": {"hp": 140, "atk": 30, "def": 36}, "image": "ally_17.webp",
+     "magic": {"mp": (35, 130), "mag": (5, 30), "crit": 0.03, "spells": ["rock_crush", "thunder", "mana_heal", "earthquake", "meteor"]}, "class": "magic",
+     "unlock": {"quest": "kz", "min_difficulty": "very_hard", "stage": 7, "chance": 0.25},
+     "abilities": [{"stat": "def", "value": 3}, {"stat": "def", "value": 3}, {"stat": "atk", "value": 8}],
+     "skill": {"name": "古森の大魔法陣", "area": True, "type": "strike", "charge": 450, "power": 100, "pierce": True, "anim": "reino", "text": "古き森の魔法陣を開く。攻撃力×100 の防御無視ダメージ"}},
+    # 風哭きの森のエクストラ（黒翼の執行者）を倒すと、必ず仲間になる（unlock の kz_extra）
+    {"lv": 18, "tier": 10.5, "name": "翠の大精霊、フィオラ", "hp": 110, "atk": 36, "def": 40, "max": {"hp": 190, "atk": 58, "def": 62}, "image": "ally_18.webp",
+     "magic": {"mp": (45, 160), "mag": (6, 34), "crit": 0.06, "spells": ["fiora_lance", "fiora_bless", "fiora_guard", "fiora_chorus", "fiora_storm"]}, "class": "all",
+     "unlock": {"kz_extra": True, "chance": 1.0},
+     "abilities": [{"stat": "atk", "value": 4}, {"stat": "def", "value": 4},
+                   {"stat": "hp", "value": 40, "name": "微精霊の加護", "immune": ["black_flame", "wind", "freeze"]}],
+     "skill": {"name": "微精霊の大合唱", "area": True, "type": "strike", "charge": 520, "power": 130, "pierce": True, "anim": "fiora",
+               "text": "森じゅうの微精霊が集まり、光となって降りそそぐ。攻撃力×130 の防御無視ダメージ"}},
 ]
 
 # ---------------------------------------------------------------------------
@@ -545,6 +584,7 @@ ELEMENTS = {
     "light":   {"name": "光", "icon": "✨", "color": "#fff1b0"},
     "dark":    {"name": "闇", "icon": "🌑", "color": "#b07bff"},
     "wind":    {"name": "風", "icon": "🌪️", "color": "#9ff0c8"},
+    "earth":   {"name": "地", "icon": "🪨", "color": "#d1a866"},
     None:      {"name": "無", "icon": "🔷", "color": "#9fc0ff"},
 }
 
@@ -582,6 +622,16 @@ SPELLS = {
     "guard_all":   {"name": "ガードオール",       "element": None, "kind": "protect", "target": "allies", "turns": 2, "mp": 14},
     "haste_all":   {"name": "疾風の号令",         "element": None, "kind": "haste",   "target": "allies", "turns": 2, "seconds": 1.0, "mp": 12},
     "holy_all":    {"name": "セイントレイ",       "element": "light", "kind": "attack", "target": "enemies", "tier": "big", "mp": 30},
+    # 地の魔法（風哭きの森の仲間）
+    "stone_bullet":{"name": "ストーンバレット",   "element": "earth", "kind": "attack", "target": "enemy",   "tier": "small", "mp": 5},
+    "rock_crush":  {"name": "ロッククラッシュ",   "element": "earth", "kind": "attack", "target": "enemy",   "tier": "mid",   "mp": 11},
+    "earthquake":  {"name": "アースクエイク",     "element": "earth", "kind": "attack", "target": "enemies", "tier": "big",   "mp": 30},
+    # フィオラ専用（微精霊が慕う大精霊）
+    "fiora_lance": {"name": "微精霊の光槍",       "element": None, "kind": "attack", "target": "enemy",   "tier": "huge", "mp": 28, "only": 18},
+    "fiora_bless": {"name": "大精霊の祝福",       "element": None, "kind": "heal",    "target": "allies", "heal": 0.4, "cure_all": True, "mp": 24, "only": 18},
+    "fiora_guard": {"name": "精霊の守護",         "element": None, "kind": "protect", "target": "allies", "turns": 3, "mp": 18, "only": 18},
+    "fiora_chorus":{"name": "微精霊のささやき",   "element": None, "kind": "rally",   "target": "allies", "turns": 3, "power": 0.2, "mp": 18, "only": 18},
+    "fiora_storm": {"name": "微精霊の嵐",         "element": None, "kind": "attack", "target": "enemies", "tier": "huge", "mp": 46, "only": 18},
     # アステル専用（このゲームの代名詞。どれも3ターン続く）
     #   regen    : 味方全員のHP回復（中）＋ 3ターン、自分のターンのはじめに最大MPの mp_regen を回復
     #   rally    : 味方全員の攻撃力（連打のダメージ）と魔力を (1 + power × 魔力係数 × 詠唱率) 倍。3ターン（行動3回）

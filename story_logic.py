@@ -720,7 +720,8 @@ def weapon_attr_config(entry):
 def level_points_max(ally_lv):
     """そのキャラが Lv.10 になるのに要るポイント（コウからルナへ、順番に増える。アステルはルナより少し多い）"""
     low, high = story_data.LEVEL_POINTS
-    return low + (high - low) * (ally_lv - 1) / 9
+    tier = get_ally(ally_lv).get("tier", ally_lv)          # 風哭きの森の仲間は、今までのキャラの Lv にあたる tier
+    return low + (high - low) * (tier - 1) / 9
 
 
 def level_threshold(ally_lv, level):
@@ -875,7 +876,7 @@ def spell_short_text(spell_id):
         "cure": "状態異常を治す", "revive": "戦闘不能から復活（仲間がいるとき）", "protect": "防御力2倍",
         "brave": "攻撃のダメージアップ", "haste": f"連打の時間+{sp.get('seconds', 0):g}秒",
         "rally": f"攻撃力・魔力アップ（{sp.get('turns', 3)}ターン）", "elemward": f"属性の攻撃を無効（{sp.get('turns', 3)}ターン）",
-    }[kind] + (f"＋MP小回復（{sp['regen_turns']}ターン）" if sp.get("mp_regen") else "")
+    }[kind] + (f"＋MP小回復（{sp['regen_turns']}ターン）" if sp.get("mp_regen") else "") + ("＋状態異常を治す" if sp.get("cure_all") else "")
 
 
 def level_spells(ally_lv, level):
@@ -1159,13 +1160,15 @@ def roll_treasure(stage, difficulty_id, rng=random):
     return found
 
 
-def roll_unlocks(profile, stage, difficulty_id, rng=random):
-    """このクリアで仲間になるキャラの Lv（キャラごとに別々に抽選）"""
+def roll_unlocks(profile, stage, difficulty_id, rng=random, quest="main"):
+    """このクリアで仲間になるキャラの Lv（キャラごとに別々に抽選）。cond の quest（なければ闇の回廊）で仲間になる"""
     owned = set(profile["allies"])
     joined = []
     for ally in story_data.ALLIES:
         cond = ally["unlock"]
-        if ally["lv"] in owned or not cond or cond.get("extra") or cond["stage"] != stage:
+        if ally["lv"] in owned or not cond or cond.get("extra") or cond.get("kz_extra") or cond["stage"] != stage:
+            continue
+        if cond.get("quest", "main") != (KZ if quest == KZ else "main"):
             continue
         if at_least(difficulty_id, cond["min_difficulty"]) and rng.random() < cond["chance"]:
             joined.append(ally["lv"])
@@ -1209,8 +1212,9 @@ def clear_stage(profile, rng=random):
         rewards["money"] = gain
         run["extra"] = False
         run["extra_won"] = True
-        for ally in story_data.ALLIES if quest != KZ else []:          # 宇宙龍を倒すと仲間になるキャラ
-            if (ally["unlock"] or {}).get("extra") and ally["lv"] not in profile["allies"]:
+        for ally in story_data.ALLIES:          # エクストラを倒すと仲間になるキャラ（宇宙龍 → アステル、黒翼の執行者 → フィオラ）
+            cond = ally["unlock"] or {}
+            if (cond.get("kz_extra") if quest == KZ else cond.get("extra")) and ally["lv"] not in profile["allies"]:
                 profile["allies"].append(ally["lv"])
                 rewards["allies"].append(ally["lv"])
         rewards["enemy"] = enemy_key(enemy)
@@ -1251,7 +1255,7 @@ def clear_stage(profile, rng=random):
             uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng, stage), bonus)
             rewards["equipment"].append(thing_id)
             rewards["equipment_uids"].append(uid)
-    for lv in roll_unlocks(profile, stage, run["difficulty"], rng) if quest != KZ else []:
+    for lv in roll_unlocks(profile, stage, run["difficulty"], rng, quest=quest):
         profile["allies"].append(lv)
         rewards["allies"].append(lv)
     if stage >= stage_count(run["difficulty"], quest):
