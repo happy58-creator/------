@@ -45,8 +45,25 @@ html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-tes
 """
 
 
+def kz_args(config):
+    """風哭きの森：敵が何体もいる画面と、それぞれの当たりマスク（覚醒・大技の絵も）"""
+    foes = [story_logic.enemy_by_key(f["key"]) for f in config["foes"]]
+    out = {"scene_html": story_assets.kz_stage_html(foes, config["area"]),
+           "hit_masks": [story_assets.kz_hit_mask_uri(e) for e in foes]}
+    aw = foes[0].get("awaken") if len(foes) == 1 and config.get("awaken") else None
+    if aw:
+        awake = {**foes[0], "image": aw["image"], "cutout": aw.get("cutout", True), "name": aw["name"]}
+        out["awaken_scene_html"] = story_assets.kz_stage_html([awake], config["area"])
+        out["awaken_hit_mask"] = story_assets.kz_hit_mask_uri(awake)
+        if aw.get("special"):
+            out["awaken_special_image"] = story_assets.image_uri(f"enemies/{aw['special']['image']}")
+    return out
+
+
 def battle(config, key):
     """story_logic.battle_config() で作った設定で戦闘を始める"""
+    if config.get("foes"):
+        return _battle_kz(config, key)
     enemy = story_logic.enemy_by_key(config["enemy"]["key"])
     awaken = {}
     assist = config.get("assist")
@@ -78,6 +95,36 @@ def battle(config, key):
         equip_icons={e["id"]: story_assets.equipment_thumb(e["id"]) for part in ("gear", "acc") for e in config["loadout"][part]},
         status_icons={sid: uri for sid in story_data.STATUS_EFFECTS if (uri := story_assets.status_icon_uri(sid))},
         **awaken,
+        key=key,
+        default=None,
+    )
+
+
+def _common_args(config):
+    out = {}
+    assist = config.get("assist")
+    has_feather = any(i["id"] == "spirit_feather" and i["count"] > 0 for i in config["items"])
+    if assist and (assist["random"] or assist.get("rescue") or has_feather):
+        a = story_data.ASSIST
+        out["assist_images"] = {"sky": story_assets.image_uri(f"skills/{a['image']}"),
+                                "skill": story_assets.image_uri(f"skills/{a['skill_image']}")}
+    skill_scene = (config.get("skill") or {}).get("scene")
+    if skill_scene:
+        out["skill_scene_image"] = story_assets.image_uri(f"skills/{skill_scene['image']}")
+    return out
+
+
+def _battle_kz(config, key):
+    kz = kz_args(config)
+    return _component(
+        config=config,
+        scene_css=story_assets.SCENE_CSS,
+        hit_mask=kz["hit_masks"][0],
+        ally_icon=story_assets.ally_icon_uri(config["ally"]["lv"]),
+        item_icons={item["id"]: story_assets.item_thumb(item["id"], 192) for item in config["items"]},
+        equip_icons={e["id"]: story_assets.equipment_thumb(e["id"]) for part in ("gear", "acc") for e in config["loadout"][part]},
+        status_icons={sid: uri for sid in story_data.STATUS_EFFECTS if (uri := story_assets.status_icon_uri(sid))},
+        **_common_args(config), **kz,
         key=key,
         default=None,
     )

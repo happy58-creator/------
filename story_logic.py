@@ -47,8 +47,90 @@ def stages_for(difficulty_id):
     return [e for e in story_data.ENEMIES if e["difficulties"] is None or difficulty_id in e["difficulties"]]
 
 
-def stage_count(difficulty_id):
+def stage_count(difficulty_id, quest="main"):
+    if quest == KZ:
+        return story_data.KZ_STAGE_COUNT
     return len(stages_for(difficulty_id))
+
+
+# ---------------------------------------------------------------------------
+# クエスト「風哭きの森」（1ステージに敵が1〜3体）
+# ---------------------------------------------------------------------------
+KZ = "kz"
+
+
+def run_quest(run):
+    return (run or {}).get("quest") or "main"
+
+
+def mode_key(quest, difficulty_id):
+    """全クリアの記録（cleared_modes）に入れる名前。今までのクエストは難易度のIDのまま"""
+    return difficulty_id if quest != KZ else f"{KZ}:{difficulty_id}"
+
+
+def quest_label(quest):
+    return story_data.KZ_QUEST["name"] if quest == KZ else ""
+
+
+def kz_enemy(key):
+    return next(e for e in story_data.KZ_ENEMIES + [story_data.KZ_EXTRA_ENEMY] if e["id"] == key)
+
+
+def roll_group(stage, difficulty_id, rng=random):
+    """風哭きの森のステージで出る敵の ID（1〜3体）"""
+    st = story_data.KZ_STAGES[stage - 1]
+    lo, hi = st["count"][difficulty_id]
+    n = rng.randint(lo, hi)
+    keys = list(st.get("fixed", []))
+    if st.get("boss_pick"):
+        keys.insert(0, rng.choice(st["boss_pick"]))
+    while len(keys) < n and st.get("pool"):
+        keys.append(rng.choice(st["pool"]))
+    return keys
+
+
+def kz_ref_player(difficulty_id):
+    """強さを決めるときの基準のキャラ（推奨レベルの上のほう＋装備）"""
+    ally, level, (a, d, h) = story_data.KZ_REF[difficulty_id]
+    st = base_stats(ally, level)
+    return {"atk": st["atk"] + a, "def": st["def"] + d, "hp": st["hp"] + h}
+
+
+def kz_group_stats(group, stage, difficulty_id):
+    """風哭きの森のステージの敵みんなのステータス（目標のターン数と受けるダメージから逆算。KZ_TURNS の説明を参照）
+
+    group は敵のデータの一覧、stage はステージ番号（エクストラは EXTRA）"""
+    extra = stage == EXTRA
+    roles = [story_data.KZ_ROLES[e["role"]] for e in group]
+    base_stage = story_data.KZ_EXTRA_ENEMY["base_stage"] if extra else stage
+    base = stages_for("easy")[min(base_stage, 10) - 1]
+    diff = get_difficulty(difficulty_id)
+    P = kz_ref_player(difficulty_id)
+    (t0, t1), t_mid, t_boss = story_data.KZ_TURNS[difficulty_id]
+    dmg = story_data.KZ_DAMAGE
+    if extra:
+        turns, frac = t_boss * story_data.KZ_EXTRA_TURNS, dmg["extra"]
+    elif stage == story_data.KZ_STAGE_COUNT:
+        turns, frac = t_boss, dmg["boss"]
+    elif any(r.get("boss") for r in roles):
+        turns, frac = t_mid, dmg["midboss"]
+    else:
+        u = (min(stage, 8) - 1) / 7
+        turns, frac = t0 + (t1 - t0) * u, dmg["stage"][0] + (dmg["stage"][1] - dmg["stage"][0]) * u
+    defs = [base["def"] * diff["enemy_def"] * r["def"] for r in roles]
+    cuts = [r.get("phys_cut", 1.0) for r in roles]
+    hw = [r["hp"] for r in roles]
+    aw = [r["atk"] for r in roles]
+    # 敵みんなを倒すのに turns ターン：1体ずつ倒すとして、それぞれの「何ターンぶん」を役割の比で分ける
+    out = []
+    per_turn = frac * P["hp"] / turns * 1.3            # 倒した敵は攻撃しなくなるので、少し多めにしておく
+    for e, r, d, cut, h, a in zip(group, roles, defs, cuts, hw, aw):
+        t_i = turns * h / sum(hw)
+        hp = t_i * story_data.KZ_TAPS * damage(P["atk"], d) * cut * 0.85   # 1体ずつ倒すときのむだ（倒しきった後の余り）のぶん少し減らす
+        hit = per_turn * a / sum(aw) / (2 if e.get("double") else 1)
+        atk = hit / max(0.05, 1 - reduction(P["def"]))
+        out.append({"hp": float(round(hp)), "atk": round(atk, 1), "def": round(d, 1), "phys_cut": cut})
+    return out
 
 
 def stage_enemy(stage_no, difficulty_id):
@@ -69,12 +151,23 @@ def enemy_key(enemy):
 
 
 def enemy_by_key(key):
-    return next(e for e in story_data.ENEMIES + [story_data.EXTRA_ENEMY] if enemy_key(e) == key)
+    return next(e for e in story_data.ENEMIES + [story_data.EXTRA_ENEMY] + story_data.KZ_ENEMIES + [story_data.KZ_EXTRA_ENEMY]
+                if enemy_key(e) == key)
+
+
+def run_group(run):
+    """挑戦で次に戦う敵（一覧）"""
+    if run_quest(run) != KZ:
+        return [stage_enemy(EXTRA if run.get("extra") else run["stage"], run["difficulty"])]
+    if run.get("extra"):
+        return [story_data.KZ_EXTRA_ENEMY]
+    keys = run.get("group") or roll_group(run["stage"], run["difficulty"])
+    return [kz_enemy(k) for k in keys]
 
 
 def run_enemy(run):
-    """挑戦で次に戦う敵"""
-    return stage_enemy(EXTRA if run.get("extra") else run["stage"], run["difficulty"])
+    """挑戦で次に戦う敵（何体もいるときは、いちばん前＝ボス・中ボス・固定の敵）"""
+    return run_group(run)[0]
 
 
 def get_ally(lv):
@@ -784,7 +877,7 @@ def heal(hp, max_hp, item):
 # ---------------------------------------------------------------------------
 # 挑戦の始まりと終わり
 # ---------------------------------------------------------------------------
-def start_run(profile, ally_lv, difficulty_id, carried=None):
+def start_run(profile, ally_lv, difficulty_id, carried=None, quest="main"):
     """ステージ1から挑戦を始める。
 
     carried を渡さなければ、リュック（profile["pack"]）の中身をそのまま持っていく。
@@ -807,6 +900,7 @@ def start_run(profile, ally_lv, difficulty_id, carried=None):
     get_difficulty(difficulty_id)
     run = {
         "id": secrets.token_hex(6),
+        "quest": quest,
         "ally": ally_lv,
         "difficulty": difficulty_id,
         "stage": 1,
@@ -827,6 +921,9 @@ def start_run(profile, ally_lv, difficulty_id, carried=None):
 def begin_stage(profile):
     """ステージを始めるときのチェックポイント（いまのHPとかばん）を残す"""
     run = profile["run"]
+    if run_quest(run) == KZ and run.get("group_stage") != run["stage"]:     # 風哭きの森：このステージの敵を決める（やり直しても同じ）
+        run["group"] = roll_group(run["stage"], run["difficulty"])
+        run["group_stage"] = run["stage"]
     run["checkpoint"] = {"hp": run["hp"], "mp": run.get("mp"), "bag": copy.deepcopy(run["bag"]), "charge": run.get("charge", 0)}
 
 
@@ -937,8 +1034,11 @@ def clear_stage(profile, rng=random):
                "boss_where": None, "first_book": None, "items": [], "sent_home": [],
                "equipment": [], "equipment_uids": [], "ultra": [], "allies": [], "chests": 0, "finished": None, "extra_next": False}
     enemy = run_enemy(run)
-    if enemy_key(enemy) not in profile["defeated"]:
-        profile["defeated"].append(enemy_key(enemy))
+    quest = run_quest(run)
+    rewards["foes"] = len(run_group(run))
+    for foe in run_group(run):
+        if enemy_key(foe) not in profile["defeated"]:
+            profile["defeated"].append(enemy_key(foe))
     ultra = story_data.ULTRA_REWARDS.get(enemy_key(enemy))
     if ultra:
         attr_diff = story_data.ULTRA_ATTR_SWORDS.get(ultra)          # 沈黙の魔剣：属性を抽選
@@ -946,7 +1046,7 @@ def clear_stage(profile, rng=random):
         rewards["ultra"].append(ultra)
         rewards["ultra_uids"] = rewards.get("ultra_uids", []) + [uid]
     mult = story_data.MONEY_DIFF.get(run["difficulty"], 1.0)
-    final = not run.get("extra") and run["stage"] >= stage_count(run["difficulty"])
+    final = not run.get("extra") and run["stage"] >= stage_count(run["difficulty"], quest)
     if run.get("extra") or final:                 # ボス：特別なアイテムを1つ
         drop = roll_boss_drop(profile, rng)
         rewards["boss_drop"] = drop
@@ -957,7 +1057,7 @@ def clear_stage(profile, rng=random):
         rewards["money"] = gain
         run["extra"] = False
         run["extra_won"] = True
-        for ally in story_data.ALLIES:          # 宇宙龍を倒すと仲間になるキャラ
+        for ally in story_data.ALLIES if quest != KZ else []:          # 宇宙龍を倒すと仲間になるキャラ
             if (ally["unlock"] or {}).get("extra") and ally["lv"] not in profile["allies"]:
                 profile["allies"].append(ally["lv"])
                 rewards["allies"].append(ally["lv"])
@@ -993,11 +1093,11 @@ def clear_stage(profile, rng=random):
             uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng, stage), bonus)
             rewards["equipment"].append(thing_id)
             rewards["equipment_uids"].append(uid)
-    for lv in roll_unlocks(profile, stage, run["difficulty"], rng):
+    for lv in roll_unlocks(profile, stage, run["difficulty"], rng) if quest != KZ else []:
         profile["allies"].append(lv)
         rewards["allies"].append(lv)
-    if stage >= stage_count(run["difficulty"]):
-        if run["difficulty"] not in profile["cleared_modes"]:      # はじめての全クリア：魔導書を1冊
+    if stage >= stage_count(run["difficulty"], quest):
+        if mode_key(quest, run["difficulty"]) not in profile["cleared_modes"]:      # はじめての全クリア：魔導書を1冊
             book = first_clear_book(profile, rng)
             if book:
                 profile["items"][book] = profile["items"].get(book, 0) + 1
@@ -1007,7 +1107,8 @@ def clear_stage(profile, rng=random):
         rewards["money"] += bonus
         rewards["finished"] = finish_run(profile, "clear")
     else:
-        if not run["extra_seen"] and rng.random() < story_data.EXTRA_CHANCE:
+        chance = story_data.KZ_EXTRA_CHANCE if quest == KZ else story_data.EXTRA_CHANCE
+        if not run["extra_seen"] and rng.random() < chance:
             run["extra"] = True
             run["extra_seen"] = True
             rewards["extra_next"] = True
@@ -1056,11 +1157,11 @@ def finish_run(profile, outcome, run=None):
     profile["ability"][key] = round(before + gained, 2)
     if profile.get("run") is run:
         profile["run"] = None
-    if outcome == "clear" and run["difficulty"] not in profile["cleared_modes"]:
-        profile["cleared_modes"].append(run["difficulty"])
+    if outcome == "clear" and mode_key(run_quest(run), run["difficulty"]) not in profile["cleared_modes"]:
+        profile["cleared_modes"].append(mode_key(run_quest(run), run["difficulty"]))
     new_titles = take_new_titles(profile)
     return {
-        "outcome": outcome, "ally": run["ally"], "difficulty": run["difficulty"], "cleared": run["cleared"],
+        "outcome": outcome, "ally": run["ally"], "difficulty": run["difficulty"], "cleared": run["cleared"], "quest": run_quest(run),
         "extra_won": bool(run.get("extra_won")), "returned": returned, "lost": {},
         "ability_before": before, "ability_after": profile["ability"][key],
         "new_abilities": len(unlocked_abilities(run["ally"], profile["ability"][key])) - len(unlocked_abilities(run["ally"], before)),
@@ -1228,15 +1329,66 @@ def spell_config(spell_id):
             "text": spell_short_text(spell_id)}
 
 
-def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None, charge=0, ally_mp=None):
+def kz_foe_config(e, st, ally, idx, stage_label):
+    """風哭きの森の敵1体ぶんの、戦闘画面に渡す数字"""
+    return {
+        "idx": idx, "key": enemy_key(e), "lv": stage_label if stage_label != EXTRA else "???", "name": e["name"],
+        "title": e.get("title", ""), "lines": e["lines"], "effect": e["effect"],
+        "max_hp": st["hp"], "atk": st["atk"], "def": st["def"],
+        "gimmicks": [g for g in e["gimmicks"] if g != "meteor"], "meteor": "meteor" in e["gimmicks"],
+        "weak": e.get("weak"), "resist_elem": e.get("resist_elem"), "phys_cut": st["phys_cut"],
+        "heal": e.get("heal", 0), "double": bool(e.get("double")), "heavy": e.get("heavy", 0),
+        "cutout": e.get("cutout", True), "floating": bool(e.get("floating")),
+        "hit_damage": damage(st["atk"], ally["def"]), "hit_damage_guard": damage(st["atk"], ally["def"] * story_data.GUARD_MULTIPLIER),
+        "tap": _kz_taps({"def": st["def"], "phys_cut": st["phys_cut"]}, ally),
+    }
+
+
+def _kz_taps(foe, ally):
+    atk_up = max(i["atk_bonus"] for i in story_data.ITEMS)
+    cut = foe["phys_cut"]
+    return {"tap_damage": damage(ally["atk"], foe["def"]) * cut, "tap_damage_up": damage(ally["atk"] + atk_up, foe["def"]) * cut,
+            "tap_damage_break": damage(ally["atk"], 0) * cut, "tap_damage_up_break": damage(ally["atk"] + atk_up, 0) * cut}
+
+
+def kz_awaken_config(enemy_data, stats, ally, skill):
+    """風哭きの森のボス・エクストラの覚醒（今の強さの stat_rate 倍）"""
+    aw = enemy_data.get("awaken")
+    if not aw:
+        return None
+    atk, dfn = stats["atk"] * aw["stat_rate"], stats["def"] * aw["stat_rate"]
+    guard_def = ally["def"] * story_data.GUARD_MULTIPLIER
+    atk_up = max(i["atk_bonus"] for i in story_data.ITEMS)
+    cut = stats.get("phys_cut", 1.0)
+    out = {"hp_rate": aw["hp_rate"], "heal_rate": aw["heal_rate"], "name": aw["name"], "title": aw["title"],
+           "lines": aw["lines"], "effect": aw["effect"], "atk": atk, "def": dfn, "heavy": aw.get("heavy", 0),
+           "hit_damage": damage(atk, ally["def"]), "hit_damage_guard": damage(atk, guard_def),
+           "tap_damage": damage(ally["atk"], dfn) * cut, "tap_damage_up": damage(ally["atk"] + atk_up, dfn) * cut,
+           "special": {k: v for k, v in aw["special"].items() if k != "image"} if aw.get("special") else None}
+    if skill and skill.get("type") == "strike":
+        out["skill_damage"] = skill["damage_break"] if skill.get("pierce") else damage(skill["damage_break"], dfn)
+    return out
+
+
+def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, profile=None, bag=None, charge=0, ally_mp=None,
+                  quest="main", group=None):
     """戦闘コンポーネントに渡す設定（JSON にそのまま変換できる dict）
 
     stage_no はステージ番号（1から）か EXTRA。charge は必殺技のチャージ（挑戦の run["charge"]）。
     ally_hp を渡すと、そのHPから戦闘を始める（ステージをまたいだHPの引き継ぎ用）。
     profile を渡すと、アビリティと装備の補正を入れる。bag を渡すと、戦闘中に使えるアイテムを入れる。
     """
-    enemy_data = stage_enemy(stage_no, difficulty_id)
-    enemy = enemy_stats(enemy_data, difficulty_id)
+    kz_group = None
+    if quest == KZ:
+        kz_group = ([story_data.KZ_EXTRA_ENEMY] if stage_no == EXTRA
+                    else [kz_enemy(k) for k in (group or roll_group(stage_no, difficulty_id))])
+        kz_stage = story_data.KZ_EXTRA_ENEMY["base_stage"] if stage_no == EXTRA else stage_no
+        enemy_data = kz_group[0]
+        kz_stats = kz_group_stats(kz_group, EXTRA if stage_no == EXTRA else stage_no, difficulty_id)
+        enemy = kz_stats[0]
+    else:
+        enemy_data = stage_enemy(stage_no, difficulty_id)
+        enemy = enemy_stats(enemy_data, difficulty_id)
     ally = ally_stats(ally_lv, profile)
     max_hp = ally["hp"]
     resist = set(ally["resist"])
@@ -1266,6 +1418,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
                           "hit_scale": darkness["resist_hit_scale"] if "darkness" in resist else darkness["hit_scale"]}
     status["shadow"] = {"name": shadow["name"], "icon": shadow["icon"], "turns": shadow["turns"],
                         "evade_rate": shadow["evade_rate"] * rate("shadow")}
+    status["wind"] = {"name": effects["wind"]["name"], "icon": effects["wind"]["icon"], "turns": effects["wind"]["turns"]}
     freeze = effects["freeze"]
     status["freeze"] = {"name": freeze["name"], "icon": freeze["icon"], "turns": freeze["turns"],
                         "slow_ms": int(freeze["slow_seconds"] * rate("freeze") * 1000)}
@@ -1305,8 +1458,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         "shadow": {**_status_label("shadow"), "turns": fx["shadow"]["turns"], "evade_rate": fx["shadow"]["evade_rate"]},
     }
     extra = stage_no == EXTRA
-    count = stage_count(difficulty_id)
-    return {
+    count = stage_count(difficulty_id, quest)
+    out = {
         "round": round_id,
         "stage": stage_no,
         "stage_count": count,
@@ -1314,7 +1467,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         "final": not extra and stage_no == count,
         "enemy": {
             "key": enemy_key(enemy_data),
-            "lv": enemy_data["lv"],
+            "lv": enemy_data.get("lv", "???" if extra else stage_no),
             "name": enemy_data["name"],
             "title": enemy_data.get("title", ""),
             "lines": enemy_data["lines"],
@@ -1365,7 +1518,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
                                 rescue=profile is not None and not profile.get("rescue_used", False),   # アステルの援護
                                 n_allies=len(owned_allies(profile)) if profile is not None else 1),
         # エクストラ（宇宙龍）だけ：HPが半分を切ると覚醒する
-        "awaken": awaken_config(ally, max_hp, skill) if extra else None,
+        "awaken": (awaken_config(ally, max_hp, skill) if extra and quest != KZ else
+                   kz_awaken_config(enemy_data, enemy, ally, skill) if kz_group and len(kz_group) == 1 else None),
         "status": status,
         "status_chance": story_data.STATUS_CHANCE,
         "weapons": weapons,                  # 付けている剣の属性（攻撃が当たったときに発動の抽選）
@@ -1377,6 +1531,18 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
         "attack_ms": int(story_data.ATTACK_SECONDS * 1000),
         "pause_ms": int(story_data.TURN_PAUSE_SECONDS * 1000),
     }
+    if kz_group:
+        out["quest"] = KZ
+        out["area"] = "extra" if extra else story_data.KZ_STAGES[stage_no - 1]["area"]
+        out["foes"] = [kz_foe_config(e, kz_stats[n], ally, n, EXTRA if extra else stage_no) for n, e in enumerate(kz_group)]
+        f0 = dict(out["foes"][0])
+        out["enemy"].update({k: f0[k] for k in ("hit_damage", "hit_damage_guard", "phys_cut", "heal", "double", "heavy", "weak", "resist_elem")})
+        for k in ("tap_damage", "tap_damage_up", "tap_damage_break", "tap_damage_up_break"):
+            out["ally"][k] = out["foes"][0]["tap"][k]
+        out["heavy_every"] = story_data.KZ_HEAVY_EVERY
+        out["end_line"] = story_data.KZ_END_LINE if not extra and stage_no == count else ""
+        out["intro"] = "" if extra else story_data.KZ_STAGES[stage_no - 1].get("intro", "")
+    return out
 
 
 # ---------------------------------------------------------------------------

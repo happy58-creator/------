@@ -57,6 +57,8 @@ STATUS_EFFECTS = {
     "shadow":      {"icon": "👤", "name": "影",   "turns": 2, "evade_rate": 0.30, "resistible": True},
     # 凍え：次の自分の攻撃（連打）の時間が slow_seconds 秒みじかくなる。氷よけの指輪で半分
     "freeze":      {"icon": "❄️", "name": "凍え", "turns": 1, "slow_seconds": 1.0, "resistible": True},
+    # 突風：次の自分の攻撃（連打）のあいだ、敵が風でゆれて当てにくい
+    "wind":        {"icon": "🌪️", "name": "突風", "turns": 1, "resistible": False},
 }
 
 # ---------------------------------------------------------------------------
@@ -254,7 +256,7 @@ ITEMS = [
      "where": {"hard": 5, "very_hard": 5}},
     {"id": "purge_scroll", "icon": "🔥", "name": "黒炎払いの巻物",   "heal_rate": 0.0, "cure": ["black_flame"], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 10,
      "where": {"normal": 7, "hard": 5, "very_hard": 5}},
-    {"id": "holy_circle",  "icon": "🔯", "name": "浄化の魔法陣",     "heal_rate": 0.0, "cure": ["poison", "thunder", "fire", "black_flame", "freeze"], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 5,
+    {"id": "holy_circle",  "icon": "🔯", "name": "浄化の魔法陣",     "heal_rate": 0.0, "cure": ["poison", "thunder", "fire", "black_flame", "freeze", "wind"], "guard": 0, "atk_bonus": 0, "atk_turns": 0, "weight": 5,
      "where": {"easy": 10, "normal": 9, "hard": 8, "very_hard": 7}},
     # アステルの援護のあとにだけ出る、特別なアイテム（宝箱・ログインボーナス・最初の配布には出ない）
     #   special   : 特別なアイテム（宝箱などから出ない）
@@ -500,6 +502,7 @@ ELEMENTS = {
     "thunder": {"name": "雷", "icon": "⚡", "color": "#ffe14a"},
     "light":   {"name": "光", "icon": "✨", "color": "#fff1b0"},
     "dark":    {"name": "闇", "icon": "🌑", "color": "#b07bff"},
+    "wind":    {"name": "風", "icon": "🌪️", "color": "#9ff0c8"},
     None:      {"name": "無", "icon": "🔷", "color": "#9fc0ff"},
 }
 
@@ -540,6 +543,7 @@ ENEMY_SPELLS = {
     "thunder":     {"name": "ライトニング",   "element": "thunder"},
     "black_flame": {"name": "ダークフレア",   "element": "dark"},
     "freeze":      {"name": "フロストノヴァ", "element": "ice"},
+    "wind":        {"name": "ウィンドカッター", "element": "wind"},
 }
 
 # ---------------------------------------------------------------------------
@@ -573,3 +577,126 @@ SHOP_LINES = ["いらっしゃい。ゆっくり見ていっておくれ", "魔�
 # ボスのドロップ：最後のステージの敵・エクストラ（宇宙龍）を倒すと、BOSS_DROPS の比率で1つ（"book" は魔導書のどれか）
 #   その難易度をはじめて全クリアしたときは、魔導書を1冊（まだ持っていない物から）
 BOSS_DROPS = {"hi_ether": 40, "phoenix_down": 30, "last_elixir": 15, "book": 15}
+
+
+# ---------------------------------------------------------------------------
+# クエスト「風哭きの森」（1ステージに敵が1〜3体。イージー〜ベリーハードを選ぶ）
+#   今までのクエスト（id "main"）とは別。ステージは全部で KZ_STAGE_COUNT。
+#   敵の強さ：今までのクエストの、同じ番号のステージの敵（イージーの値）を元に
+#     HP・攻撃力 = 元 × KZ_SCALE × 役割の倍率 × 人数の倍率（KZ_SHARE。ボス・中ボスはかけない）
+#     防御力     = 元 × KZ_SCALE × 役割の倍率
+#   そのうえで、難易度の倍率（DIFFICULTIES）をかける。
+#   役割（role）：KZ_ROLES。phys_cut は剣（連打）のダメージにかける倍率（石の体）
+#   heal   : 回復役。自分のターンに、仲間の中でいちばん減っている敵を最大HPのこの割合だけ回復する
+#   double : 1ターンに2回攻撃する     heavy : 3回に1回、力をためて（予告して）次のターンにこの倍の一撃
+#   gimmicks に "wind"（突風）：次の自分の連打のあいだ、敵がゆれて当てにくい
+# ---------------------------------------------------------------------------
+KZ_QUEST = {"id": "kz", "name": "風哭きの森", "sub": "闇の柱と風の番人", "icon": "🌲"}
+KZ_STAGE_COUNT = 10
+# 強さの決め方（目標から逆算する）
+#   基準のキャラ（KZ_REF：推奨レベルの上のほうのキャラと、そのくらいで持っていそうな装備）が、1ターン KZ_TAPS 回当てたとき
+#     ・敵を全部倒すのにかかるターン数 = KZ_TURNS（ふつうのステージは最初→ステージ8へ直線で増える）
+#     ・そのステージで受けるダメージ（アイテムなし）= 最大HP × KZ_DAMAGE
+#   になるように、敵全員のHPの合計と、1ターンに受けるダメージを決め、役割（KZ_ROLES の hp / atk）の比で分ける。
+#   防御力は、今までのクエストの同じ番号のステージの敵（イージーの値）× 難易度の倍率 × 役割の def。
+#   推奨レベル：イージー Lv.1〜3、ノーマル Lv.3〜5、ハード Lv.5〜8、ベリーハード Lv.8〜10
+KZ_TAPS = 45
+KZ_REF = {   # (キャラ, レベル, 装備の 攻撃・防御・HP)
+    "easy": (3, 3, (0, 0, 0)), "normal": (5, 5, (3, 6, 15)), "hard": (7, 8, (8, 15, 40)), "very_hard": (9, 10, (20, 30, 60)),
+}
+KZ_TURNS = {     # ふつうのステージ（最初, 最後）・中ボス・ボス。エクストラはボスの KZ_EXTRA_TURNS 倍
+    "easy": ((2.0, 3.0), 4, 5), "normal": ((3.0, 4.0), 5, 6), "hard": ((4.0, 5.0), 6, 7.5), "very_hard": ((5.0, 6.0), 7, 9),
+}
+KZ_DAMAGE = {"stage": (0.25, 0.40), "midboss": 0.6, "boss": 1.1, "extra": 1.5}
+KZ_EXTRA_TURNS = 1.5
+KZ_ROLES = {   # hp・atk は同じステージの中での分け方の比。def は防御力の倍率
+    "zako":    {"hp": 1.0, "atk": 1.0, "def": 1.0},
+    "healer":  {"hp": 0.8, "atk": 0.6, "def": 0.9},
+    "tank":    {"hp": 1.5, "atk": 0.8, "def": 1.5},
+    "fast":    {"hp": 0.8, "atk": 1.1, "def": 0.8},
+    "mage":    {"hp": 0.9, "atk": 1.15, "def": 0.8},
+    "stone":   {"hp": 1.2, "atk": 1.0, "def": 1.2, "phys_cut": 0.5},
+    "midboss": {"hp": 3.0, "atk": 2.0, "def": 1.2, "boss": True},
+    "boss":    {"hp": 1.0, "atk": 1.0, "def": 1.3, "boss": True},
+    "extra":   {"hp": 1.0, "atk": 1.0, "def": 1.5, "boss": True},
+}
+KZ_EXTRA_CHANCE = 0.02
+KZ_HEAVY_EVERY = 3              # heavy の敵は、この回数に1回力をためる
+KZ_AREAS = {
+    "forest": {"name": "静寂の森",   "bg": "bg_kz_forest.webp"},
+    "valley": {"name": "黒風の渓谷", "bg": "bg_kz_valley.webp"},
+    "gate":   {"name": "番人の迷宮", "bg": "bg_kz_gate.webp"},
+    "extra":  {"name": "闇の柱の門", "bg": "bg_kz_extra.webp"},
+}
+_C = lambda e, n, h, v: {"easy": e, "normal": n, "hard": h, "very_hard": v}
+# ステージ：fixed は必ず出る敵、boss_pick はこの中から1体（中ボス）、pool から残りの数だけ選ぶ（同じ敵が重なってもよい）
+#   count は難易度ごとの (最少, 最多) の体数（fixed・boss_pick もふくむ）
+KZ_STAGES = [
+    {"area": "forest", "name": "森の入口",     "pool": ["kz_01", "kz_02"], "count": _C((1, 1), (1, 2), (2, 2), (2, 3))},
+    {"area": "forest", "name": "木もれ日の小道", "pool": ["kz_01", "kz_02"], "count": _C((1, 2), (2, 2), (2, 3), (3, 3))},
+    {"area": "forest", "name": "苔むした祭壇", "fixed": ["kz_03"], "pool": ["kz_01", "kz_02"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    {"area": "valley", "name": "黒く染まる木々", "pool": ["kz_04", "kz_05", "kz_06", "kz_07", "kz_08", "kz_02"], "count": _C((1, 2), (2, 2), (2, 3), (3, 3))},
+    {"area": "valley", "name": "突風の吊り橋", "pool": ["kz_04", "kz_05", "kz_06", "kz_07", "kz_08", "kz_02"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    {"area": "valley", "name": "渓谷の奥",     "boss_pick": ["kz_09", "kz_10"], "pool": ["kz_05", "kz_06", "kz_07"], "count": _C((1, 1), (1, 2), (2, 2), (2, 3))},
+    {"area": "gate",   "name": "迷宮の門",     "fixed": ["kz_12"], "pool": ["kz_11"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    {"area": "gate",   "name": "迷宮の深部",   "pool": ["kz_13", "kz_14", "kz_15", "kz_11"], "count": _C((2, 2), (2, 3), (3, 3), (3, 3))},
+    {"area": "gate",   "name": "雷の祭壇",     "boss_pick": ["kz_16", "kz_20"], "count": _C((1, 1), (1, 1), (1, 1), (1, 1))},
+    {"area": "gate",   "name": "最奥",         "fixed": ["kz_17"], "count": _C((1, 1), (1, 1), (1, 1), (1, 1)),
+     "intro": "門の前に、くずれた盾と槌が落ちている……これは、風の番人の……？"},
+]
+# 敵（image は assets/story/enemies/ の名前。cutout=False は背景つきの1枚絵で、1体だけで出る）
+KZ_ENEMIES = [
+    {"id": "kz_01", "name": "鎧ネズミの斥候", "role": "zako", "image": "kz_01.webp", "cutout": True, "gimmicks": [],
+     "lines": ["チュチュッ！", "ここは通さないチュ", "ナイフの錆にしてやる！"], "effect": {"type": "claw", "color": "#c9a46b"}},
+    {"id": "kz_02", "name": "黒羽のハーピー", "role": "fast", "image": "kz_02.webp", "cutout": True, "floating": True, "gimmicks": ["wind"],
+     "lines": ["キィィーッ！", "風が、おかしいの……", "吹き飛ばしてあげる！"], "effect": {"type": "claw", "color": "#9ff0c8"}},
+    {"id": "kz_03", "name": "森のトカゲ呪術師", "role": "healer", "heal": 0.15, "image": "kz_03.webp", "cutout": True, "gimmicks": ["poison"],
+     "lines": ["森の精よ、仲間を癒やせ", "シュルル……", "祭壇を汚すな"], "effect": {"type": "magic", "color": "#6dff9a"}},
+    {"id": "kz_04", "name": "翠鎧の女戦士", "role": "tank", "image": "kz_04.webp", "cutout": True, "gimmicks": [], "weak": "thunder", "resist_elem": "ice",
+     "lines": ["この盾、くだけるものか！", "はあぁっ！", "闇の柱には近づかせない"], "effect": {"type": "slash", "color": "#bfe8c8"}},
+    {"id": "kz_05", "name": "紫雷の闇剣士", "role": "fast", "image": "kz_05.webp", "cutout": True, "gimmicks": ["thunder"], "weak": "light", "resist_elem": "thunder",
+     "lines": ["雷よ、刃に宿れ", "……遅い", "しびれて動けまい"], "effect": {"type": "slash", "color": "#c69bff"}},
+    {"id": "kz_06", "name": "双刃の暗殺者", "role": "fast", "image": "kz_06.webp", "cutout": True, "gimmicks": ["shadow"], "weak": "light", "resist_elem": "dark",
+     "lines": ["……影から影へ", "ふたつの刃、よけられるか", "背中を見せたな"], "effect": {"type": "slash", "color": "#e070ff"}},
+    {"id": "kz_07", "name": "宵闇の術師", "role": "mage", "image": "kz_07.webp", "cutout": True, "gimmicks": ["darkness"], "weak": "light", "resist_elem": "dark",
+     "lines": ["宵闇よ、目をふさげ", "ククク……", "光など、ここには届かぬ"], "effect": {"type": "void", "color": "#9a6bff"}},
+    {"id": "kz_08", "name": "髑髏杖の闇術師", "role": "mage", "image": "kz_08.webp", "cutout": True, "gimmicks": ["black_flame"], "weak": "light", "resist_elem": "dark",
+     "lines": ["黒き炎に焼かれよ", "闇の柱は、もうすぐ完成する", "髑髏が笑っておるわ"], "effect": {"type": "magic", "color": "#b26bff"}},
+    {"id": "kz_09", "name": "闇蜘蛛アラクネ", "role": "midboss", "image": "kz_09.webp", "cutout": True, "gimmicks": ["poison", "shadow"], "weak": "fire", "resist_elem": "dark",
+     "lines": ["わたしの巣に、ようこそ", "毒はお好き？", "もう逃げられないわよ"], "effect": {"type": "claw", "color": "#8a6bbf"}},
+    {"id": "kz_10", "name": "虹翼のキマイラ", "role": "midboss", "double": True, "image": "kz_10.webp", "cutout": True, "gimmicks": ["fire", "wind"], "weak": "ice", "resist_elem": "fire",
+     "lines": ["グルルルァ！", "三つの首が、おまえを見ている", "ガアァァッ！"], "effect": {"type": "fire", "color": "#ff9a5a"}},
+    {"id": "kz_11", "name": "台座のガーゴイル", "role": "stone", "image": "kz_11.webp", "cutout": True, "gimmicks": [], "weak": "thunder", "resist_elem": "ice",
+     "lines": ["……ゴゴゴ", "石の眠りを、さますな", "門に近づく者は砕く"], "effect": {"type": "claw", "color": "#b8b0a0"}},
+    {"id": "kz_12", "name": "呪石の魔像", "role": "stone", "heavy": 2.5, "image": "kz_12.webp", "cutout": True, "gimmicks": [], "weak": "thunder", "resist_elem": "dark",
+     "lines": ["門ヲ……マモル……", "ルーンが、光る……", "ツブレロ"], "effect": {"type": "void", "color": "#7fb0ff"}},
+    {"id": "kz_13", "name": "顔なき魔導師", "role": "mage", "image": "kz_13.webp", "cutout": True, "gimmicks": ["darkness", "freeze"], "weak": "light", "resist_elem": "dark",
+     "lines": ["顔など、とうに捨てた", "魔法陣よ、まわれ", "あなたの光も、いただくわ"], "effect": {"type": "magic", "color": "#d27bff"}},
+    {"id": "kz_14", "name": "虹炎の闇術師", "role": "mage", "image": "kz_14.webp", "cutout": True, "gimmicks": ["fire", "thunder", "freeze"], "weak": "dark", "resist_elem": "fire",
+     "lines": ["七色の炎を見せてやろう", "どの属性がお好みかな？", "王の御前だ、ひれ伏せ"], "effect": {"type": "radiance", "color": "#ff7af0"}},
+    {"id": "kz_15", "name": "百眼の影", "role": "tank", "image": "kz_15.webp", "cutout": True, "floating": True, "gimmicks": ["shadow"], "weak": "light", "resist_elem": "dark",
+     "lines": ["……ミテイル……", "ヒャクノメガ、オマエヲ……", "ニガサナイ"], "effect": {"type": "void", "color": "#6f7bff"}},
+    {"id": "kz_16", "name": "雷鳴の大魔導師", "role": "midboss", "double": True, "image": "kz_16.webp", "cutout": False, "gimmicks": ["thunder"], "weak": "ice", "resist_elem": "thunder",
+     "lines": ["雷鳴よ、我が声となれ", "祭壇は、すでに闇のもの", "砕け散れ！"], "effect": {"type": "thunder", "color": "#9ad8ff"}},
+    {"id": "kz_17", "name": "風の番人", "role": "boss", "double": True, "image": "kz_17.webp", "cutout": True, "gimmicks": ["wind"], "weak": "thunder", "resist_elem": "ice",
+     "title": "森を護りし者",
+     "lines": ["……ここは、通さぬ……", "風よ……我が刃に……", "森を……まもる……のだ……"], "effect": {"type": "slash", "color": "#7dffb8"},
+     # 覚醒：HPが半分を切ると、闇に呑まれた姿に変わる。攻撃・防御は stat_rate 倍、heavy の一撃も使う
+     "awaken": {"hp_rate": 0.5, "heal_rate": 0.2, "stat_rate": 1.25, "name": "闇纏いの番人", "title": "闇に堕ちた風",
+                "image": "kz_18.webp", "cutout": True, "heavy": 2.5,
+                "lines": ["風は……闇に、なった", "もう、なにも護らない", "消えろ"], "effect": {"type": "void", "color": "#8bff9a"}}},
+    {"id": "kz_20", "name": "星冠の死王", "role": "midboss", "image": "kz_20.webp", "cutout": False, "gimmicks": ["black_flame", "meteor"], "weak": "light", "resist_elem": "dark",
+     "lines": ["星々は、わが冠", "ひれ伏せ、小さき者よ", "宇宙の果てに還るがいい"], "effect": {"type": "cosmic", "color": "#c49bff"}},
+]
+# エクストラ：黒翼の執行者（風哭きの森のステージのあいだに、まれに現れる。強さは難易度で変わる）
+KZ_EXTRA_ENEMY = {
+    "id": "kz_19", "name": "黒翼の執行者", "title": "闇の柱より来たる者", "role": "extra", "base_stage": 9,
+    "image": "kz_19.webp", "cutout": True, "floating": True, "gimmicks": ["black_flame", "shadow", "wind"], "weak": "light", "resist_elem": "dark",
+    "lines": ["……番人を堕としたのは、私だ", "その翼で、どこまで飛べる？", "闇の柱の礎となれ"], "effect": {"type": "void", "color": "#b07bff"},
+    "awaken": {"hp_rate": 0.5, "heal_rate": 0.25, "stat_rate": 1.3, "name": "黒翼の執行者・解放", "title": "星を裂く翼",
+               "image": "kz_19_awake.webp", "cutout": True, "heavy": 2.5,
+               "lines": ["……少し、本気を見せよう", "星の魔法陣よ、開け", "終わりだ"], "effect": {"type": "cosmic", "color": "#d27bff"},
+               "special": {"name": "星裂く黒翼の魔法陣", "chance": 0.08, "damage_rate": 0.22, "image": "kz_19_special.webp",
+                           "line": "……魔法陣よ、すべてを裂け"}},
+}
+KZ_END_LINE = "……番人が倒れたか。だが、柱はまだ立っている"

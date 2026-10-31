@@ -56,7 +56,7 @@ def log_run(summary, run_id):
     history.log_once(
         "ストーリー", f"story-{run_id}",
         キャラ=L.get_ally(summary["ally"])["name"],
-        難易度=L.get_difficulty(summary["difficulty"])["name"],
+        難易度=(L.quest_label(summary.get("quest", "main")) + " " if summary.get("quest") == L.KZ else "") + L.get_difficulty(summary["difficulty"])["name"],
         結果=OUTCOME_NAMES[summary["outcome"]],
         クリアしたステージ=summary["cleared"],
         アビリティ=f"+{summary['ability_after'] - summary['ability_before']:g}",
@@ -168,6 +168,27 @@ def counts_text(counts):
 
 def hp_bar(hp, max_hp):
     st.progress(min(1.0, max(0.0, hp / max_hp)), text=f"❤️ HP {L.display_hp(hp)} / {max_hp:g}")
+
+
+def run_title(run):
+    """「風哭きの森 ノーマル」のような、挑戦の名前（今までのクエストは難易度だけ）"""
+    q = L.quest_label(L.run_quest(run))
+    return (q + " " if q else "") + L.get_difficulty(run["difficulty"])["name"]
+
+
+def foes_label(run):
+    """次に戦う敵の名前（何体もいれば「・」でつなぐ）"""
+    foes = L.run_group(run)
+    if L.run_quest(run) != L.KZ:
+        return f"Lv.{foes[0]['lv']} {foes[0]['name']}"
+    names = {}
+    for e in foes:
+        names[e["name"]] = names.get(e["name"], 0) + 1
+    return "・".join(n + (f"×{c}" if c > 1 else "") for n, c in names.items())
+
+
+def extra_enemy(run):
+    return story_data.KZ_EXTRA_ENEMY if L.run_quest(run) == L.KZ else story_data.EXTRA_ENEMY
 
 
 def mp_bar(mp, max_mp):
@@ -655,7 +676,7 @@ def view_home():
             loadout_buttons("home", "_story_inv")
         col_info.markdown(right, unsafe_allow_html=True)
         if run:
-            st.caption(f"📌 挑戦中：{L.get_difficulty(run['difficulty'])['name']} {stage_label(run)}"
+            st.caption(f"📌 挑戦中：{run_title(run)} {stage_label(run)}"
                        "（「クエスト」から続きを遊べるよ。挑戦中はキャラを変えられないよ）")
             if not st.session_state.story_confirm_new:
                 if st.button("⏹ クエストを中断", key="_story_home_abandon", width="stretch"):
@@ -716,13 +737,27 @@ def view_quest_list():
     if st.session_state.story_ally not in owned:
         st.session_state.story_ally = 1
     compact_title("クエスト一覧", "遊ぶクエストをえらんでね")
+    rec = {"easy": "推奨Lv.1〜3", "normal": "推奨Lv.3〜5", "hard": "推奨Lv.5〜8", "very_hard": "推奨Lv.8〜10"}
     with st.container(key="story_quests"):
+        st.markdown("**🏰 闇の回廊**")
         for diff in story_data.DIFFICULTIES:
             label = f"{diff['name']}（{L.stage_count(diff['id'])}ステージ）"
             if diff["id"] in profile["cleared_modes"]:
                 label += "　🏆クリア"
             if st.button(label, key=f"_story_diff_{diff['id']}", width="stretch"):
                 st.session_state.story_difficulty = diff["id"]
+                st.session_state.story_quest = "main"
+                go("ready")
+        q = story_data.KZ_QUEST
+        st.markdown(f"**{q['icon']} {q['name']}** <span style='font-size:13px;opacity:.75'>― {q['sub']}（1ステージに敵が何体も出るよ）</span>",
+                    unsafe_allow_html=True)
+        for diff in story_data.DIFFICULTIES:
+            label = f"{diff['name']}（{story_data.KZ_STAGE_COUNT}ステージ・{rec[diff['id']]}）"
+            if L.mode_key(L.KZ, diff["id"]) in profile["cleared_modes"]:
+                label += "　🏆クリア"
+            if st.button(label, key=f"_story_kz_{diff['id']}", width="stretch"):
+                st.session_state.story_difficulty = diff["id"]
+                st.session_state.story_quest = L.KZ
                 go("ready")
     st.caption("負けても、そのステージの最初から何度でもやり直せるよ。進み具合は自動で保存されるよ。")
 
@@ -741,7 +776,7 @@ def view_ready():
         loadout_buttons("ready", "_story_ready", counts=True)
         st.write("")
         if st.button("⚔️ 出発", key="_story_go", type="primary", width="stretch"):
-            L.start_run(profile, lv, diff["id"])
+            L.start_run(profile, lv, diff["id"], quest=st.session_state.get("story_quest", "main"))
             new_rewards(None)
             go_battle()
         st.caption("キャラはホームの「キャラクター変更」で変えられるよ。")
@@ -753,11 +788,11 @@ def view_continue(run):
     max_hp = L.ally_stats(run["ally"], profile)["hp"]
     with st.container(border=True):
         st.markdown(
-            f"#### 📌 続きから：{L.get_difficulty(run['difficulty'])['name']} {stage_label(run)} ／ "
+            f"#### 📌 続きから：{run_title(run)} {stage_label(run)} ／ "
             f"{short_name(run['ally'])} HP {L.display_hp(run['hp'])}/{max_hp:g}"
         )
         hp_bar(run["hp"], max_hp)
-        st.caption(f"クリアしたステージ：{run['cleared']} / {L.stage_count(run['difficulty'])}　"
+        st.caption(f"クリアしたステージ：{run['cleared']} / {L.stage_count(run['difficulty'], L.run_quest(run))}　"
                    f"リュック：{L.bag_total(run['bag'])} / {story_data.MAX_CARRY_ITEMS}こ　"
                    "（挑戦中はキャラを変えられないよ）")
         with st.container(key="story_ready"):
@@ -887,7 +922,7 @@ def view_battle():
     stage_no = L.EXTRA if run.get("extra") else run["stage"]
     st.markdown(story_battle.fullscreen_css(), unsafe_allow_html=True)
     config = L.battle_config(round_id, stage_no, run["difficulty"], run["ally"], run["hp"], profile, run["bag"],
-                             charge=run.get("charge", 0), ally_mp=L.run_mp(profile))
+                             charge=run.get("charge", 0), ally_mp=L.run_mp(profile), quest=L.run_quest(run), group=run.get("group"))
     result = story_battle.battle(config, key=f"story_battle_{round_id}")
     if not result or result.get("round") != round_id:
         return
@@ -928,7 +963,7 @@ def view_battle():
 def view_retry():
     run = profile["run"]
     enemy = L.run_enemy(run)
-    compact_title("💀 やられてしまった…", f"{stage_label(run)}　Lv.{enemy['lv']} {enemy['name']}")
+    compact_title("💀 やられてしまった…", f"{stage_label(run)}　{foes_label(run)}")
     st.markdown("負けても大丈夫。このステージを始めたときの HP とかばんに もどして、もう一度 挑戦できるよ。")
     hp_bar(run["hp"], L.ally_stats(run["ally"], profile)["hp"])
     counts = L.bag_counts(run["bag"])
@@ -943,12 +978,12 @@ def view_retry():
 def view_extra_lost():
     """エクストラ（宇宙龍）に負けたとき：もう一度戦うか、先へ進むか（どちらも負けにはならない）"""
     run = profile["run"]
-    enemy = story_data.EXTRA_ENEMY
-    compact_title("🐉 宇宙龍に やられてしまった…", f"Lv.{enemy['lv']} {enemy['name']} ― {enemy['title']}")
+    enemy = extra_enemy(run)
+    compact_title(f"🌑 {enemy['name']}に やられてしまった…", f"{enemy['name']} ― {enemy['title']}")
     with st.container(key="story_next"):
         col_img, col_text = st.columns([2, 3])
         col_img.image(str(story_assets.enemy_image_path(enemy)), width="stretch")
-        col_text.markdown("負けにはならないよ。HP は、宇宙龍と戦い始めたときに もどったよ。")
+        col_text.markdown(f"負けにはならないよ。HP は、{enemy['name']}と戦い始めたときに もどったよ。")
         with col_text:
             hp_bar(run["hp"], L.ally_stats(run["ally"], profile)["hp"])
     col_retry, col_skip = st.columns(2)
@@ -959,7 +994,7 @@ def view_extra_lost():
         L.begin_stage(profile)
         save()
         new_rewards(None)
-        st.session_state.story_notice = "宇宙龍は 去っていった…（この挑戦では もう現れない）"
+        st.session_state.story_notice = f"{enemy['name']}は 去っていった…（この挑戦では もう現れない）"
         go("between")
 
 
@@ -974,12 +1009,13 @@ def view_between():
     max_mp = L.ally_stats(run["ally"], profile)["mp"]
     notice = st.session_state.pop("story_notice", None)
     if rewards and rewards.get("extra"):
-        compact_title("🌟 EXTRA STAGE クリア！", f"{story_data.EXTRA_ENEMY['name']} を たおした！")
+        compact_title("🌟 EXTRA STAGE クリア！", f"{extra_enemy(run)['name']} を たおした！")
     elif rewards:
         enemy = L.enemy_by_key(rewards["enemy"])
-        compact_title(f"🎉 ステージ{rewards['stage']} クリア！", f"Lv.{enemy['lv']} {enemy['name']} を たおした！")
+        who = f"Lv.{enemy['lv']} {enemy['name']}" if "lv" in enemy else enemy["name"] + ("たち" if rewards.get("foes", 1) > 1 else "")
+        compact_title(f"🎉 ステージ{rewards['stage']} クリア！", f"{who} を たおした！")
     else:
-        compact_title(f"📌 {stage_label(run)} へ", f"{short_name(run['ally'])} ／ {L.get_difficulty(run['difficulty'])['name']}")
+        compact_title(f"📌 {stage_label(run)} へ", f"{short_name(run['ally'])} ／ {run_title(run)}")
     if notice:
         st.info(notice)
     if rewards and not show_recruits(rewards):
@@ -989,7 +1025,7 @@ def view_between():
     with st.container(key="story_next"):
         col_img, col_text = st.columns([2, 3])
         if run.get("extra"):
-            col_img.markdown(f"<img src='{story_assets.silhouette_uri(L.enemy_key(story_data.EXTRA_ENEMY))}' "
+            col_img.markdown(f"<img src='{story_assets.silhouette_uri(L.enemy_key(extra_enemy(run)))}' "
                              "style='width:100%;border-radius:10px;filter:drop-shadow(0 0 12px #b48cff)'>", unsafe_allow_html=True)
             with col_text:
                 st.markdown("**⚠️ EXTRA STAGE**　ただならぬ気配……**？？？** が 行く手をはばんでいる！")
@@ -999,18 +1035,27 @@ def view_between():
                 if st.button("⚔️ 立ち向かう", type="primary", width="stretch"):
                     go_battle()
         else:
-            enemy = L.run_enemy(run)
-            final = run["stage"] == L.stage_count(run["difficulty"])
+            foes = L.run_group(run)
+            enemy = foes[0]
+            final = run["stage"] == L.stage_count(run["difficulty"], L.run_quest(run))
             label = "FINAL STAGE" if final else f"ステージ{run['stage']}"
-            col_img.image(str(story_assets.enemy_image_path(enemy)), width="stretch")
+            if len(foes) == 1:
+                col_img.image(str(story_assets.enemy_image_path(enemy)), width="stretch")
+            else:
+                col_img.markdown("<div style='display:flex;gap:2px;align-items:flex-end'>" + "".join(
+                    f"<img src='{story_assets.thumb_uri('enemies/' + e['image'], 260)}' style='flex:1;min-width:0;max-height:200px;object-fit:contain'>"
+                    for e in foes) + "</div>", unsafe_allow_html=True)
             with col_text:
-                st.markdown(f"**次の敵**：{label}<br>Lv.{enemy['lv']} {enemy['name']}", unsafe_allow_html=True)
-                if enemy["gimmicks"]:
+                area = story_data.KZ_STAGES[run["stage"] - 1]["area"] if L.run_quest(run) == L.KZ else None
+                where = f"（{story_data.KZ_AREAS[area]['name']}）" if area else ""
+                st.markdown(f"**次の敵**：{label}{where}<br>{foes_label(run)}", unsafe_allow_html=True)
+                gims = list(dict.fromkeys(g for e in foes for g in e["gimmicks"] if g in story_data.STATUS_EFFECTS))
+                if gims:
                     st.caption("とくちょう：" + "・".join(
-                        f"{story_data.STATUS_EFFECTS[g]['icon']}{story_data.STATUS_EFFECTS[g]['name']}" for g in enemy["gimmicks"]))
-                if enemy.get("weak"):
-                    w = story_data.ELEMENTS[enemy["weak"]]
-                    st.caption(f"弱点：{w['icon']}{w['name']}の魔法")
+                        f"{story_data.STATUS_EFFECTS[g]['icon']}{story_data.STATUS_EFFECTS[g]['name']}" for g in gims))
+                weaks = list(dict.fromkeys(e["weak"] for e in foes if e.get("weak")))
+                if weaks:
+                    st.caption("弱点：" + "・".join(f"{story_data.ELEMENTS[w]['icon']}{story_data.ELEMENTS[w]['name']}" for w in weaks) + "の魔法")
                 hp_bar(run["hp"], max_hp)
                 mp_bar(L.run_mp(profile), max_mp)
                 if st.button(f"⚔️ {label} へ すすむ", type="primary", width="stretch"):
@@ -1063,7 +1108,8 @@ def view_end():
     name = short_name(summary["ally"])
     difficulty = L.get_difficulty(summary["difficulty"])["name"]
     if summary["outcome"] == "clear":
-        boss = L.stages_for(summary["difficulty"])[-1]["name"]
+        boss = (L.kz_enemy("kz_17")["name"] if summary.get("quest") == L.KZ
+                else L.stages_for(summary["difficulty"])[-1]["name"])
         compact_title("👑 全クリア！", f"{name} は {boss}を たおした！（{difficulty}）")
     else:
         compact_title("🏳️ 挑戦を 終えた", f"{name} ／ {difficulty} ／ ステージ{summary['cleared']}まで クリア")

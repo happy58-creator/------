@@ -481,6 +481,20 @@
   .spark.crit { width:44px; height:44px; margin:-22px 0 0 -22px; border-color:#ffd36a; box-shadow:0 0 20px rgba(255,211,106,.9); }
   #reviveList { display:flex; flex-direction:column; gap:8px; margin:0 0 10px; }
   #reviveList .btn { min-height:48px; font-size:16px; }
+
+  /* ---- 風哭きの森：敵が何体も ---- */
+  .kz-foe { transition: opacity .8s ease, filter .25s ease; }
+  .kz-foe.sel { filter: drop-shadow(0 0 6px #ffe28a) drop-shadow(0 0 16px rgba(255,210,110,.7)); }
+  .kz-foe.dead { opacity: 0 !important; pointer-events: none; }
+  .kz-foe.gust { animation: gust .55s ease-in-out infinite alternate; }
+  @keyframes gust { from { transform: translateX(-72%) rotate(-4deg); } to { transform: translateX(-28%) rotate(4deg); } }
+  .foebar { position:absolute; z-index:41; height:7px; border-radius:5px; background:#221b21; border:1px solid rgba(255,255,255,.35); overflow:hidden; pointer-events:none;
+    transform:translateX(-50%); transition:opacity .6s; }
+  .foebar > div { height:100%; background:linear-gradient(#ef6a5f,#b3271f); transition:width .35s; }
+  .foebar.sel { border-color:#ffe28a; box-shadow:0 0 8px rgba(255,220,120,.8); }
+  .foebar.dead { opacity:0; }
+  .foetag { position:absolute; z-index:41; transform:translate(-50%,-100%); font:800 11px/1.2 sans-serif; color:#fff; text-shadow:0 1px 3px #000; pointer-events:none; white-space:nowrap; }
+  .foetag.dead { opacity:0; }
 </style>
 <style id="sceneCss"></style>
 </head>
@@ -649,7 +663,7 @@ function start(args) {
     bag: Object.fromEntries(c.items.map((i) => [i.id, i.count])), used: {},
     taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, startAt: performance.now(), hitMask: null,
     tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {}, equipIcons: args.equip_icons || {},
-    status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0, freeze: 0 },   // 残りターン
+    status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0, freeze: 0, wind: 0 },   // 残りターン
     // 魔法・会心
     mp: c.ally.mp != null ? c.ally.mp : (c.ally.max_mp || 0), usedMp: 0, crits: 0, chantTaps: 0, casts: 0,
     critTurns: 0, critBonus: 0, magTurns: 0, magMult: 1, hasteItemTurns: 0, hasteItemMs: 0, hasteSpellTurns: 0, hasteSpellMs: 0,
@@ -685,6 +699,7 @@ function start(args) {
   $("warn").classList.remove("on"); $("dark").classList.remove("on"); $("stun").classList.remove("on");
   $("btnEnd").classList.remove("on"); $("hint").textContent = "";
   prepareHitMask(args.hit_mask);
+  initFoes(c, args);
   updateBars(); updateBadges();
   Streamlit.setHeight(Math.max(480, window.innerHeight));
   updateSkill();
@@ -692,6 +707,7 @@ function start(args) {
 }
 
 async function intro() {
+  if (G.cfg.intro) await banner(G.cfg.stage === G.cfg.stage_count ? "最奥" : "", G.cfg.intro, 2600);
   if (G.cfg.extra) await banner("EXTRA STAGE", G.cfg.enemy.title ? `${G.cfg.enemy.title}が現れた！` : "", 1600);
   if (G.cfg.final) await banner("FINAL STAGE", `Lv.${G.cfg.enemy.lv} ${G.cfg.enemy.name}`, 1600);
   await banner("たたかえ！", "", 900);
@@ -717,11 +733,12 @@ function prepareHitMask(uri) {
   };
   m.src = uri;
 }
-function isOnEnemy(x, y) {
-  const img = document.querySelector("#stage .st-target");
+function isOnEnemy(x, y, img, mask) {
+  img = img || document.querySelector("#stage .st-target");
   if (!img) return false;
+  if (mask === undefined) mask = G.hitMask;
   const r = img.getBoundingClientRect(), nw = img.naturalWidth, nh = img.naturalHeight;
-  if (!nw || !G.hitMask) return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+  if (!nw || !mask) return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
   const cs = getComputedStyle(img);
   const cover = cs.objectFit === "cover";
   const s = cover ? Math.max(r.width / nw, r.height / nh) : Math.min(r.width / nw, r.height / nh);
@@ -732,7 +749,7 @@ function isOnEnemy(x, y) {
   const ox = r.left + (r.width - dw) * pos[0];
   const oy = r.top + (r.height - dh) * fy;
   let u = (x - ox) / dw, v = (y - oy) / dh;
-  const m = G.hitMask;
+  const m = mask;
   if (G.status.darkness > 0) {           // 陰：重心を中心に、当たる範囲を縦横 hit_scale 倍に縮める
     const k = G.cfg.status.darkness.hit_scale;
     u = m.cx + (u - m.cx) / k; v = m.cy + (v - m.cy) / k;
@@ -745,8 +762,9 @@ function isOnEnemy(x, y) {
   }
   return false;
 }
+function curTarget() { return (G && G.multi && foeEl(G.cur)) || document.querySelector("#stage .st-target"); }
 function enemyCenter() {
-  const img = document.querySelector("#stage .st-target");
+  const img = curTarget();
   const r = img.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height * 0.45 };
 }
@@ -765,6 +783,7 @@ function updateBars() {
   $("allyIcon").classList.toggle("low", ap <= 30 && ap > 0);
   $("enemyNum").textContent = `${displayHp(G.enemyHp).toLocaleString()} / ${Math.round(e.max_hp).toLocaleString()}`;
   $("allyNum").textContent = `${displayHp(G.allyHp)} / ${Math.round(a.max_hp)}`;
+  if (G.multi) layoutFoeBars();
   const mp = Math.max(0, G.mp), mx = a.max_mp || 0;
   $("mpBar").querySelector(".fill").style.width = (mx > 0 ? mp / mx * 100 : 0) + "%";
   $("mpNum").textContent = `MP ${Math.floor(mp + 1e-9)} / ${Math.round(mx)}`;
@@ -914,6 +933,7 @@ $("sheetClose").onclick = () => $("sheet").classList.remove("open");
 
 let perTapMult = 1;
 async function attack() {
+  if (G.multi) return attackMulti();
   G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
   await banner("よーい……", G.status.freeze > 0 ? "❄️ 凍えて 連打の時間が短い！" : "", 700);
   await banner("スタート！", "", 450);
@@ -941,7 +961,7 @@ async function attack() {
     if (G.cfg.skill) { G.charge = Math.min(G.cfg.skill.charge, G.charge + 1); updateSkill(); }   // 当たった回数でチャージ
     $("combo").querySelector(".c").textContent = G.tapHits;
     $("combo").querySelector(".d").textContent = fmt(G.tapDamage) + " ダメージ";
-    const img = document.querySelector("#stage .st-target");
+    const img = curTarget();
     img.classList.add("hit"); clearTimeout(img._t); img._t = setTimeout(() => img.classList.remove("hit"), 60);
     if (navigator.vibrate) navigator.vibrate(8);
   };
@@ -970,7 +990,7 @@ async function attack() {
     await banner("アタック！", boost > 1 ? `号令でダメージ×${boost}！` : "", 500);
     playerAttackFx(G.tapHits);
     await sleep(240);
-    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
     shake();
     const c = enemyCenter(); popAt(c.x, c.y, fmt(G.tapDamage), "big");
     hitEnemy(total); updateBars();
@@ -994,7 +1014,7 @@ async function attack() {
 
 // 自分の行動（攻撃・魔法）のあと：倒したら勝ち。メテオの予告。そして敵のターン
 async function afterAction() {
-  if (G.enemyHp <= 1e-9) return finish("win");
+  if (foesDown()) return finish("win");
   // メテオ：敵のHPが半分を切ったら予告を出し、次の敵のターンの攻撃をメテオにする（1回だけ）
   if (G.cfg.enemy.meteor && !G.meteorUsed && !G.meteorPending && G.enemyHp < G.cfg.enemy.max_hp * G.cfg.meteor.trigger_rate) {
     G.meteorPending = true;
@@ -1201,14 +1221,14 @@ async function astelAssist(kind) {
   // 4. ダメージと、敵の防御崩壊
   const c = enemyCenter();
   const dmg = G.eBreak > 0 ? as.damage_break : as.damage, hit = Math.min(dmg, G.enemyHp);
-  const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+  const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
   shake(); popAt(c.x, c.y, fmt(dmg), "big");
   hitEnemy(hit); updateBars();
   if (as.break_turns) { G.eBreak = Math.max(G.eBreak, as.break_turns); popAt(c.x, c.y + 70, "💥 防御崩壊！", "proc"); }
   popAt(window.innerWidth / 2, window.innerHeight * 0.3, `✨ ${as.speaker || "アステル"}の援護！`, "info");
   updateBadges();
   await sleep(1100);
-  if (G.enemyHp <= 1e-9) { finish("win"); return true; }
+  if (foesDown()) { finish("win"); return true; }
   return false;
 }
 async function useSkill() {
@@ -1229,7 +1249,7 @@ async function useSkill() {
   const c = enemyCenter(), me = $("allyIcon").getBoundingClientRect();
   if (s.type === "strike") {
     const dmg = G.eBreak > 0 ? s.damage_break : s.damage, hit = Math.min(dmg, G.enemyHp);
-    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
     shake(); popAt(c.x, c.y, fmt(dmg), "big");
     hitEnemy(hit); updateBars();
     if (s.guard) G.guardTurns = Math.max(G.guardTurns, s.guard);
@@ -1250,7 +1270,7 @@ async function useSkill() {
   }
   updateBars(); updateBadges();
   await sleep(900);
-  if (G.enemyHp <= 1e-9) return finish("win");
+  if (foesDown()) return finish("win");
   G.phase = "player"; setButtons(true); updateSkill();
 }
 
@@ -1314,6 +1334,7 @@ const TIPS = {
   mag_up: ["魔力アップ", "魔力が上がり、魔法が強く・MPが少なくてすむ"],
   haste: ["連打の時間アップ", "連打できる時間がのびている（合わせて3秒まで）"],
   brave: ["ブレイブ", "攻撃（連打）のダメージが上がっている"],
+  wind: ["突風", "次の攻撃（連打）のあいだ、敵が風でゆれて当てにくい。自分の攻撃1回で消える"],
   weak: ["弱点", "この属性の魔法は1.5倍のダメージ。剣の攻撃には関係ない"],
   foe_poison: ["敵：毒", "剣の毒で、敵が毎ターンダメージを受けている"],
   foe_fire: ["敵：火", "剣の火で、敵が毎ターンダメージを受けている"],
@@ -1451,7 +1472,13 @@ async function resolveSpell(sp, rate) {
   const crit = (sp.kind === "attack" || sp.kind === "heal" || sp.kind === "mana") && Math.random() < critChance;
   const cm = crit ? M.magic_crit_mult : 1;
   if (crit) { G.crits++; await banner("会心！", `${sp.name}の効果 ×${M.magic_crit_mult}`, 650, "win"); }
-  if (sp.kind === "attack") {
+  if (sp.kind === "attack" && G.multi && sp.target === "enemies") {      // 敵全体：生きている敵みんなに
+    const keep = G.cur;
+    for (const i of aliveFoes()) { foeLoad(i); await spellHit(sp, rate, cm, el, M, i === aliveFoes()[0]); }
+    foeLoad(G.foes[keep].dead ? (aliveFoes()[0] ?? keep) : keep);
+  } else if (sp.kind === "attack") {
+    await spellHit(sp, rate, cm, el, M, true);
+  } else if (false) {
     const elemMult = sp.element !== "none" && sp.element === e.weak ? M.weak : sp.element !== "none" && sp.element === e.resist_elem ? M.resist : 1;
     const raw = curMag() * sp.power * (sp.target === "enemies" ? M.all_rate : 1) * rate * cm * elemMult;
     const def = G.eBreak > 0 ? 0 : e.def * M.def_rate;
@@ -1460,7 +1487,7 @@ async function resolveSpell(sp, rate) {
     (EFFECTS[fx] || EFFECTS.magic)(el.color);
     if (sp.target === "enemies" || sp.power >= 65) setTimeout(() => { fxEl("ring", { "--c": el.color, "--s": 60 }); particles(el.color, 20, 60); }, 250);
     await sleep(420);
-    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
     shake();
     const c = enemyCenter(); popAt(c.x, c.y, fmt(dmg), "big");
     if (elemMult > 1) popAt(c.x, c.y + 80, `${el.icon} 弱点！`, "proc");
@@ -1495,6 +1522,415 @@ async function resolveSpell(sp, rate) {
     popAt(mx, me.top, `連打 +${sp.seconds}秒（${G.hasteSpellTurns}回）`, "info");
   }
   updateBars(); updateBadges();
+}
+
+// ---------------------------------------------------------------------------
+// 風哭きの森：敵が何体も（G.multi）。いま狙っている敵（G.cur）の数字を G.enemyHp・G.cfg.enemy などに入れて動かし、
+// ほかの敵の数字は G.foes[i] にしまっておく（foeLoad で入れかえる）
+// ---------------------------------------------------------------------------
+function loadMask(uri) {
+  return new Promise((res) => {
+    if (!uri) return res(null);
+    const m = new Image();
+    m.onload = () => {
+      const cv = document.createElement("canvas"); cv.width = m.naturalWidth; cv.height = m.naturalHeight;
+      const ctx = cv.getContext("2d", { willReadFrequently: true }); ctx.drawImage(m, 0, 0);
+      const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+      let sx = 0, sy = 0, n = 0;
+      for (let y = 0; y < cv.height; y += 2) for (let x = 0; x < cv.width; x += 2) if (data[(y * cv.width + x) * 4] > 127) { sx += x; sy += y; n++; }
+      res({ w: cv.width, h: cv.height, data, cx: n ? sx / n / cv.width : 0.5, cy: n ? sy / n / cv.height : 0.5 });
+    };
+    m.onerror = () => res(null);
+    m.src = uri;
+  });
+}
+function initFoes(c, args) {
+  G.multi = !!c.foes;
+  if (!G.multi) return;
+  G.foes = c.foes.map((f, i) => ({ cfg: i === 0 ? c.enemy : f, tap: f.tap, hp: f.max_hp, eDots: {}, eStatus: { thunder: 0, darkness: 0, darkMult: 1, shadow: 0 },
+                                     eBreak: 0, mask: null, dead: false, attacks: 0, charging: false }));
+  G.cur = 0; G.sel = 0;
+  (args.hit_masks || []).forEach((u, i) => loadMask(u).then((m) => { if (G.foes[i]) G.foes[i].mask = m; }));
+  for (const el of document.querySelectorAll(".foebar, .foetag")) el.remove();
+  G.foes.forEach((f, i) => {
+    if (G.foes.length < 2) return;
+    const bar = document.createElement("div"); bar.className = "foebar"; bar.innerHTML = "<div></div>"; bar.dataset.idx = i; $("app").appendChild(bar);
+    const tag = document.createElement("div"); tag.className = "foetag"; tag.dataset.idx = i; tag.textContent = f.cfg.name; $("app").appendChild(tag);
+  });
+  for (const img of document.querySelectorAll("#stage .st-target")) img.addEventListener("load", layoutFoeBars);
+  setTimeout(layoutFoeBars, 300);
+  window.addEventListener("resize", layoutFoeBars);
+  markSel();
+}
+function foeEl(i) {
+  return $("stage").querySelector(`.st-target[data-idx="${i}"]`) || (G.foes && G.foes.length === 1 ? $("stage").querySelector(".st-target") : null);
+}
+function foeSave() {
+  if (!G.multi) return;
+  const f = G.foes[G.cur];
+  f.hp = G.enemyHp; f.eDots = G.eDots; f.eStatus = G.eStatus; f.eBreak = G.eBreak;
+}
+function foeLoad(i) {
+  if (!G.multi || i == null) return;
+  foeSave();
+  G.cur = i;
+  const f = G.foes[i];
+  G.enemyHp = f.hp; G.eDots = f.eDots; G.eStatus = f.eStatus; G.eBreak = f.eBreak;
+  G.cfg.enemy = f.cfg; Object.assign(G.cfg.ally, f.tap);
+  if (G.foes.length > 1) G.hitMask = f.mask;
+}
+function aliveFoes() { return G.foes.map((f, i) => i).filter((i) => !G.foes[i].dead); }
+// 倒れた敵を消し、狙っていた敵が倒れたら次の敵を狙う。全員倒れたら true
+function foesDown() {
+  if (!G.multi) return G.enemyHp <= 1e-9;
+  foeSave();
+  for (const [i, f] of G.foes.entries()) {
+    if (!f.dead && f.hp <= 1e-9 && !(G.foes.length === 1)) {
+      f.dead = true;
+      const el = foeEl(i); if (el) el.classList.add("dead");
+    }
+  }
+  if (G.foes.length === 1) return G.enemyHp <= 1e-9;
+  const alive = aliveFoes();
+  if (!alive.length) return true;
+  if (G.foes[G.sel].dead) G.sel = alive[0];
+  if (G.foes[G.cur].dead) foeLoad(G.sel);
+  markSel(); layoutFoeBars();
+  return false;
+}
+function selectFoe(i) {
+  if (!G.multi || G.foes[i].dead) return;
+  G.sel = i; foeLoad(i); markSel(); updateBars(); updateBadges();
+}
+function markSel() {
+  if (!G.multi) return;
+  G.foes.forEach((f, i) => { const el = foeEl(i); if (el) el.classList.toggle("sel", G.foes.length > 1 && i === G.sel && !f.dead); });
+  const e = G.foes[G.sel].cfg, n = aliveFoes().length;
+  $("enemyName").textContent = `Lv.${e.lv} ${e.name}` + (n > 1 ? `（ほか${n - 1}体）` : "");
+  const weak = e.weak && G.cfg.magic ? G.cfg.magic.elements[e.weak] : null;
+  $("enemyWeak").textContent = weak ? `弱点：${weak.name}` : ""; $("enemyWeak").classList.toggle("on", !!weak);
+}
+function layoutFoeBars() {
+  if (!G || !G.multi || G.foes.length < 2) return;
+  for (const [i, f] of G.foes.entries()) {
+    const el = foeEl(i), bar = document.querySelector(`.foebar[data-idx="${i}"]`), tag = document.querySelector(`.foetag[data-idx="${i}"]`);
+    if (!el || !bar) continue;
+    const r = el.getBoundingClientRect(), hp = i === G.cur ? G.enemyHp : f.hp;
+    // 絵が実際に描かれている範囲（下寄せ・はみ出さない大きさ）
+    const nw = el.naturalWidth || 1, nh = el.naturalHeight || 1, k = Math.min(r.width / nw, r.height / nh);
+    const dw = nw * k, dh = nh * k, top = r.bottom - dh;
+    const w = Math.max(56, Math.min(110, dw * 0.8));
+    bar.style.left = tag.style.left = r.left + r.width / 2 + "px";
+    bar.style.top = Math.max(100, top - 4) + "px"; bar.style.width = w + "px";
+    tag.style.top = Math.max(100, top - 4) - 2 + "px";
+    bar.firstElementChild.style.width = Math.max(0, hp / f.cfg.max_hp * 100) + "%";
+    bar.classList.toggle("sel", i === G.sel); bar.classList.toggle("dead", f.dead); tag.classList.toggle("dead", f.dead);
+  }
+}
+function foeAt(x, y) {
+  for (const i of aliveFoes().slice().reverse()) {          // 手前（あと）に描いた敵から
+    const el = foeEl(i);
+    if (el && isOnEnemy(x, y, el, G.foes.length === 1 ? G.hitMask : G.foes[i].mask)) return i;
+  }
+  return -1;
+}
+// 自分のターンに敵をタップすると、狙う敵が変わる（魔法・必殺技はこの敵に）
+$("app").addEventListener("pointerdown", (ev) => {
+  if (!G || !G.multi || G.phase !== "player" || G.foes.length < 2) return;
+  if (ev.target.closest("button, #sheet, #magicSheet, #gearSheet, .hud, #tip, .dialog, #confirm")) return;
+  const i = foeAt(ev.clientX, ev.clientY);
+  if (i >= 0 && i !== G.sel) selectFoe(i);
+});
+
+async function attackMulti() {
+  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
+  await banner("よーい……", G.status.freeze > 0 ? "❄️ 凍えて 連打の時間が短い！" : G.status.wind > 0 ? "🌪️ 突風で 敵がゆれている！" : "", 700);
+  await banner("スタート！", "", 450);
+  G.phase = "tapping"; G.tapHits = 0; G.tapDamage = 0;
+  for (const f of G.foes) { f.tapDamage = 0; f.tapHits = 0; }
+  foeSave();
+  const gust = G.status.wind > 0;
+  if (gust) for (const i of aliveFoes()) foeEl(i)?.classList.add("gust");
+  $("tapzone").classList.add("on"); $("gearBtn").style.visibility = "hidden"; $("app").classList.add("tapping"); $("tip").style.display = "none"; $("timer").style.display = "block"; $("combo").style.display = "block";
+  $("combo").querySelector(".c").textContent = "0"; $("combo").querySelector(".d").textContent = "";
+  const t0 = performance.now(), dur = attackMs();
+  const critRate = currentCrit(), critMult = (G.cfg.magic || {}).crit_mult || 2;
+  const brave = G.braveTurns > 0 ? G.braveMult : 1;
+  $("tapzone").onpointerdown = (ev) => {
+    ev.preventDefault();
+    if (G.phase !== "tapping") return;
+    G.taps++;
+    const i = foeAt(ev.clientX, ev.clientY);
+    const sp = document.createElement("div"); sp.className = "spark" + (i >= 0 ? "" : " miss");
+    sp.style.left = ev.clientX + "px"; sp.style.top = ev.clientY + "px"; $("app").appendChild(sp); setTimeout(() => sp.remove(), 380);
+    if (i < 0) { G.misses++; return; }
+    const f = G.foes[i], broken = f.eBreak > 0, t = f.tap;
+    const perTap = G.atkTurns > 0 ? (broken ? t.tap_damage_up_break : t.tap_damage_up) : (broken ? t.tap_damage_break : t.tap_damage);
+    G.hits++; G.tapHits++; f.tapHits++;
+    const crit = Math.random() < critRate;
+    const d = perTap * brave * (crit ? critMult : 1);
+    f.tapDamage += d; G.tapDamage += d;
+    if (crit) { G.crits++; sp.classList.add("crit"); popAt(ev.clientX, ev.clientY - 30, "会心！", "proc crit-pop"); }
+    if (G.cfg.skill) { G.charge = Math.min(G.cfg.skill.charge, G.charge + 1); updateSkill(); }
+    $("combo").querySelector(".c").textContent = G.tapHits;
+    $("combo").querySelector(".d").textContent = fmt(G.tapDamage) + " ダメージ";
+    const el = foeEl(i); el.classList.add("hit"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("hit"), 60);
+    if (navigator.vibrate) navigator.vibrate(8);
+  };
+  await new Promise((resolve) => {
+    const tick = () => {
+      const p = Math.min(1, (performance.now() - t0) / dur);
+      $("timer").firstElementChild.style.width = (1 - p) * 100 + "%";
+      if (p < 1) requestAnimationFrame(tick); else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+  G.phase = "strike";
+  for (const i of aliveFoes()) foeEl(i)?.classList.remove("gust");
+  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping"); $("timer").style.display = "none";
+  const boost = G.boost; G.boost = 1;
+  await sleep(150);
+  $("combo").style.display = "none";
+  const evaded = G.tapHits > 0 && G.status.shadow > 0 && Math.random() < G.cfg.status.shadow.evade_rate;
+  if (G.tapHits === 0) {
+    await banner("ミス！", "敵に当たらなかった", 900);
+  } else if (evaded) {
+    await banner("回避された！", "影に攻撃をかわされた", 1000, "lose");
+  } else {
+    await banner("アタック！", boost > 1 ? `号令でダメージ×${boost}！` : "", 500);
+    playerAttackFx(G.tapHits);
+    await sleep(240);
+    shake();
+    const keep = G.sel;
+    for (const i of aliveFoes()) {
+      const f = G.foes[i];
+      if (!(f.tapDamage > 0)) continue;
+      foeLoad(i);
+      const dmg = f.tapDamage * boost;
+      const img = foeEl(i); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+      const c = enemyCenter(); popAt(c.x, c.y, fmt(dmg), "big");
+      if (f.cfg.phys_cut < 1) popAt(c.x, c.y + 70, "かたい！ 剣が効きにくい", "proc");
+      hitEnemy(Math.min(dmg, G.enemyHp)); updateBars();
+      if (G.enemyHp > 1e-9) await procWeapons(dmg);
+      foeSave();
+    }
+    if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+    foeLoad(G.foes[keep].dead ? keep : keep);
+    foesDown();
+  }
+  if (G.atkTurns > 0) G.atkTurns--;
+  for (const k of ["darkness", "shadow", "freeze", "wind"]) if (G.status[k] > 0) G.status[k]--;
+  if (G.critTurns > 0) G.critTurns--;
+  if (G.hasteItemTurns > 0) G.hasteItemTurns--;
+  if (G.hasteSpellTurns > 0) G.hasteSpellTurns--;
+  if (G.braveTurns > 0) G.braveTurns--;
+  if (G.magTurns > 0) G.magTurns--;
+  updateBars(); updateBadges();
+  await sleep(1100);
+  await afterAction();
+}
+
+// 攻撃魔法1回ぶん（いま G.cur にいる敵へ）
+async function spellHit(sp, rate, cm, el, M, fx) {
+  const e = G.cfg.enemy;
+  const elemMult = sp.element !== "none" && sp.element === e.weak ? M.weak : sp.element !== "none" && sp.element === e.resist_elem ? M.resist : 1;
+  const raw = curMag() * sp.power * (sp.target === "enemies" ? M.all_rate : 1) * rate * cm * elemMult;
+  const def = G.eBreak > 0 ? 0 : e.def * M.def_rate;
+  const dmg = raw * (1 - def / (def + M.defense_k));
+  if (fx) {
+    const kind = { fire: "fire", thunder: "thunder", ice: "magic", light: "radiance", dark: "void", none: "magic" }[sp.element] || "magic";
+    (EFFECTS[kind] || EFFECTS.magic)(el.color);
+    if (sp.target === "enemies" || sp.power >= 65) setTimeout(() => { fxEl("ring", { "--c": el.color, "--s": 60 }); particles(el.color, 20, 60); }, 250);
+    await sleep(420);
+    shake();
+    if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+  }
+  const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+  const c = enemyCenter(); popAt(c.x, c.y, fmt(dmg), "big");
+  if (elemMult > 1) popAt(c.x, c.y + 80, `${el.icon} 弱点！`, "proc");
+  else if (elemMult < 1) popAt(c.x, c.y + 80, "いまひとつ…", "proc");
+  hitEnemy(dmg); foeSave(); updateBars();
+  await sleep(G.multi ? 250 : 0);
+}
+
+// 敵のターン（何体も）：敵の持続ダメージ → 覚醒 → 自分の持続ダメージ → 1体ずつ行動
+async function enemyTurnMulti() {
+  if (G.phase === "end") return;
+  G.phase = "enemy";
+  const r = $("allyIcon").getBoundingClientRect(), bub = $("bubble");
+  const keep = G.sel;
+  // 0. 剣の毒・火・黒炎（敵ごと）
+  for (const i of aliveFoes()) {
+    foeLoad(i);
+    let edot = 0;
+    for (const id of Object.keys(G.eDots)) { edot += G.eDots[id].shift(); if (!G.eDots[id].length) delete G.eDots[id]; }
+    if (edot > 0) {
+      const c = enemyCenter();
+      const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+      popAt(c.x, c.y, "-" + fmt(edot), "edot");
+      hitEnemy(Math.min(edot, G.enemyHp)); foeSave(); updateBars(); updateBadges();
+      await sleep(650);
+    }
+  }
+  fxEl("vignette", { "--c": "rgba(150,60,220,.25)" });
+  if (foesDown()) return finish("win");
+  // 覚醒（ボス・エクストラ。1体のとき）
+  if (G.foes.length === 1) {
+    foeLoad(0);
+    if (G.cfg.awaken && !G.awakened && G.enemyHp <= G.cfg.enemy.max_hp * G.cfg.awaken.hp_rate) await awaken();
+  }
+  // 1. 自分の持続ダメージ
+  let dot = 0;
+  for (const id of DOTS) {
+    if (!(G.status[id] > 0)) continue;
+    const st = G.cfg.status[id];
+    dot += G.guardTurns > 0 ? st.damage_guard : st.damage;
+    G.status[id]--;
+  }
+  if (dot > 0) {
+    fxEl("vignette", { "--c": "rgba(150,60,220,.55)" });
+    hurt(dot, r.left + r.width / 2 + 70, r.top - 10, "dot");
+    updateBadges();
+    await sleep(800);
+    if (G.allyHp <= 1e-9) { const res = await saveFromDown(); if (res === "won") return; if (res === "saved") { foeLoad(G.sel); await sleep(G.cfg.pause_ms); return playerTurn(); } return finish("lose"); }
+  }
+  if (G.status.thunder > 0) G.status.thunder--;
+  // 2. 1体ずつ行動
+  for (const i of aliveFoes()) {
+    if (G.phase === "end") return;
+    foeLoad(i);
+    const e = G.cfg.enemy, f = G.foes[i];
+    if (G.eStatus.thunder > 0) {
+      G.eStatus.thunder--;
+      const c = enemyCenter(); EFFECTS.thunder("#ffe96a"); popAt(c.x, c.y, "⚡ しびれて動けない！", "proc");
+      if (G.eBreak > 0) G.eBreak--;
+      foeSave(); updateBadges(); await sleep(1000); continue;
+    }
+    if (e.heal) {                                  // 回復役：減っている仲間（自分もふくむ）を回復
+      foeSave();
+      const hurtIdx = aliveFoes().filter((j) => G.foes[j].hp < G.foes[j].cfg.max_hp * 0.75)
+        .sort((a, b) => G.foes[a].hp / G.foes[a].cfg.max_hp - G.foes[b].hp / G.foes[b].cfg.max_hp)[0];
+      if (hurtIdx != null && Math.random() < 0.7) {
+        bub.style.setProperty("--bubble", "#6dff9a"); bub.textContent = e.lines[0]; bub.style.display = "block";
+        await sleep(900); bub.style.display = "none";
+        foeLoad(hurtIdx);
+        const heal = G.cfg.enemy.max_hp * e.heal;
+        G.enemyHp = Math.min(G.cfg.enemy.max_hp, G.enemyHp + heal); foeSave();
+        const c = enemyCenter(); popAt(c.x, c.y, "+" + fmt(heal), "heal"); fxEl("ring", { "--c": "#6dff9a", "--s": 30 });
+        updateBars(); await sleep(800);
+        foeLoad(i); if (G.eBreak > 0) G.eBreak--; foeSave();
+        continue;
+      }
+    }
+    const times = e.double ? 2 : 1;
+    for (let k = 0; k < times; k++) {
+      const res = await foeAttack(i);
+      if (res === "won" || res === "lose") return;
+      if (res === "saved") { foeLoad(G.sel); await sleep(G.cfg.pause_ms); return playerTurn(); }
+      if (G.phase === "end") return;
+    }
+    if (G.eBreak > 0) G.eBreak--;
+    foeSave();
+  }
+  if (G.guardTurns > 0) G.guardTurns--;
+  if (G.ward > 0) G.ward--;
+  foeLoad(G.foes[keep] && !G.foes[keep].dead ? keep : G.sel);
+  markSel(); updateBars(); updateBadges();
+  const as = G.cfg.assist;
+  if (as && as.random && !G.assistRandom && G.assistImages && Math.random() < as.chance) {
+    if (await astelAssist("random")) return;
+  }
+  await sleep(G.cfg.pause_ms);
+  playerTurn();
+}
+
+// 敵1体の攻撃1回。"won"（援護で勝った）/ "lose" / "saved"（倒れそうになって立ち上がった）/ ""
+async function foeAttack(i) {
+  const e = G.cfg.enemy, f = G.foes[i], bub = $("bubble"), r = $("allyIcon").getBoundingClientRect();
+  const sp = G.awakened && G.cfg.awaken && G.cfg.awaken.special;
+  const special = !!(sp && !G.meteorPending && (G.specialNext || Math.random() < sp.chance));
+  G.specialNext = false;
+  // 力をためる（heavy）：3回に1回は予告だけ。次の攻撃が重い一撃
+  let heavyNow = false;
+  if (e.heavy && !special && !G.meteorPending) {
+    if (f.charging) { heavyNow = true; f.charging = false; }
+    else if ((f.attacks + 1) % (G.cfg.heavy_every || 3) === 0) {
+      f.attacks++; f.charging = true;
+      bub.style.setProperty("--bubble", "#ff5a5a"); bub.textContent = "……力をためている"; bub.style.display = "block";
+      const c = enemyCenter(); fxEl("ring", { "--c": "#ff5a5a", "--s": 45 });
+      popAt(c.x, c.y + 60, "⚠️ 次の攻撃は重い一撃！", "info");
+      await sleep(1300); bub.style.display = "none";
+      return "";
+    }
+  }
+  const preStatus = !special && !G.meteorPending && !heavyNow && e.gimmicks.length && Math.random() < G.cfg.status_chance ? pick(e.gimmicks) : null;
+  const espell = preStatus && G.cfg.enemy_spells ? G.cfg.enemy_spells[preStatus] : null;
+  bub.style.setProperty("--bubble", espell ? espell.color : e.effect.color);
+  bub.textContent = special ? sp.line : G.meteorPending ? "……星よ、堕ちよ" : heavyNow ? "はあぁぁっ！！" : espell ? `「${espell.name}」！` : pick(e.lines);
+  bub.style.display = "block";
+  if (espell) { fxEl("ring", { "--c": espell.color, "--s": 40 }); particles(espell.color, 12, 40); }
+  const fc = enemyCenter(); fxEl("ring", { "--c": e.effect.color, "--s": 18, left: fc.x + "px" });
+  await sleep(900);
+  f.attacks++; G.enemyAttacks++;
+  let newStatus = null;
+  const mult = G.eStatus.darkness > 0 ? G.eStatus.darkMult : 1;
+  if (G.eStatus.darkness > 0) G.eStatus.darkness--;
+  const dodged = G.eStatus.shadow > 0 && Math.random() < G.cfg.enemy_status.shadow.evade_rate;
+  if (G.eStatus.shadow > 0) G.eStatus.shadow--;
+  if (G.meteorPending && G.meteorScene) { bub.style.display = "none"; await specialScene(G.meteorScene.name, G.meteorScene.image, G.meteorScene.focus); }
+  if (G.barrier > 0 && !dodged) {
+    G.barrier--;
+    if (G.meteorPending) { G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on"); }
+    (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color); await sleep(380);
+    fxEl("circle", { "--c": "#7fc8ff" }); popAt(r.left + r.width / 2 + 70, r.top - 10, "🔰 障壁で防いだ！", "heal");
+  } else if (dodged) {
+    if (G.meteorPending) { G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on"); }
+    (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color); await sleep(380);
+    popAt(r.left + r.width / 2 + 70, r.top - 10, "👤 よけた！", "heal");
+  } else if (G.meteorPending) {
+    G.meteorPending = false; G.meteorUsed = true; $("warn").classList.remove("on");
+    EFFECTS.cosmic("#ff9a3a"); fxEl("vignette", { "--c": "rgba(255,90,0,.7)" }); await sleep(380); shake();
+    hurt(G.allyHp * G.cfg.meteor.current_hp_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
+    if (!(G.ward > 0)) G.status.black_flame = G.cfg.status.black_flame.turns;
+    newStatus = "black_flame";
+  } else if (special) {
+    bub.style.display = "none";
+    await specialScene(sp.name, G.awakenArgs && G.awakenArgs.special, "50% 50%");
+    if (G.ward > 0 || G.guardTurns > 0) {
+      G.ward = 0; G.guardTurns = 0; updateBadges(); fxEl("flash", { background: "rgba(160,80,255,.45)" });
+      popAt(window.innerWidth / 2, window.innerHeight * 0.45, "💥 守りの術式が破られた！", "info"); await sleep(700);
+    }
+    EFFECTS.cosmic("#d27bff"); fxEl("vignette", { "--c": "rgba(40,0,60,.85)" }); await sleep(380); shake();
+    hurt(G.cfg.ally.max_hp * sp.damage_rate * mult, r.left + r.width / 2 + 70, r.top - 10);
+    newStatus = inflict("black_flame");
+  } else {
+    if (espell) {
+      const kind = { fire: "fire", thunder: "thunder", ice: "magic", dark: "void", wind: "ghost" }[espell.element] || "magic";
+      (EFFECTS[kind] || EFFECTS.magic)(espell.color);
+    } else (EFFECTS[e.effect.type] || EFFECTS.slash)(e.effect.color);
+    if (heavyNow) { fxEl("vignette", { "--c": "rgba(255,40,40,.6)" }); fxEl("flash", { background: "rgba(255,120,120,.35)" }); }
+    await sleep(380); shake();
+    const base = G.guardTurns > 0 ? e.hit_damage_guard : e.hit_damage;
+    hurt(base * mult * (heavyNow ? e.heavy : 1), r.left + r.width / 2 + 70, r.top - 10);
+    if (heavyNow) popAt(window.innerWidth / 2, window.innerHeight * 0.4, "💥 重い一撃！", "info");
+    if (preStatus) newStatus = inflict(preStatus);
+  }
+  if (navigator.vibrate) navigator.vibrate(90);
+  foeSave(); updateBadges();
+  if (newStatus && G.allyHp > 1e-9) {
+    const st = G.cfg.status[newStatus];
+    await sleep(300);
+    popAt(window.innerWidth / 2, window.innerHeight * 0.55, `${st.icon} ${st.name}！`, "info");
+  }
+  await sleep(600);
+  bub.style.display = "none";
+  if (G.allyHp <= 1e-9) {
+    const res = await saveFromDown();
+    if (res === "won") return "won";
+    if (res !== "saved") { finish("lose"); return "lose"; }
+    return "saved";
+  }
+  return "";
 }
 
 function openSheet() {
@@ -1603,6 +2039,7 @@ async function procWeapons(base) {
 }
 
 async function enemyTurn() {
+  if (G.multi) return enemyTurnMulti();
   if (G.phase === "end") return;
   G.phase = "enemy";
   const e = G.cfg.enemy, bub = $("bubble"), r = $("allyIcon").getBoundingClientRect();
@@ -1615,7 +2052,7 @@ async function enemyTurn() {
   if (edot > 0) {
     const c = enemyCenter(), dmg = Math.min(edot, G.enemyHp);
     fxEl("vignette", { "--c": "rgba(150,60,220,.45)" });
-    const img = document.querySelector("#stage .st-target"); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+    const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
     popAt(c.x, c.y, "-" + fmt(edot), "edot");
     hitEnemy(dmg); updateBars(); updateBadges();
     await sleep(900);
@@ -1804,11 +2241,14 @@ async function awaken() {
   if (old) old.remove();
   const cur = $("stage").querySelector(".st-scene"); if (cur) cur.classList.remove("awake-in", "on");
   if (args.mask) { G.hitMask = null; prepareHitMask(args.mask); }
+  if (G.multi) layoutFoeBars();
   // 3. 強さが変わる（攻撃・防御。こちらの与えるダメージも計算し直した値にする）
   const e = G.cfg.enemy, a = G.cfg.ally;
   Object.assign(e, { name: A.name, title: A.title, lines: A.lines, effect: A.effect, atk: A.atk, def: A.def,
                      hit_damage: A.hit_damage, hit_damage_guard: A.hit_damage_guard });
   a.tap_damage = A.tap_damage; a.tap_damage_up = A.tap_damage_up;
+  if (A.heavy) e.heavy = A.heavy;
+  if (G.multi) { G.foes[0].tap = { ...G.foes[0].tap, tap_damage: A.tap_damage, tap_damage_up: A.tap_damage_up }; G.foes[0].hp = G.enemyHp; }
   if (G.cfg.skill && A.skill_damage != null) G.cfg.skill.damage = A.skill_damage;
   $("enemyName").textContent = `Lv.${e.lv} ${A.name}`;
   await banner("覚醒", `${A.name} ― ${A.title}`, 1700, "lose");
@@ -1882,6 +2322,7 @@ async function finish(result) {
   $("hint").textContent = "";
   if (result === "lose") $("allyIcon").classList.add("down");
   const elapsed = performance.now() - G.startAt;
+  if (result === "win" && G.cfg.end_line) { fxEl("dim", {}); await banner("？？？", G.cfg.end_line, 2800, "lose"); }
   if (result === "win") await banner("撃破！", `${G.turn}ターン ／ ${G.hits}ヒット`, 0, "win");
   else if (result === "escape") await banner("にげた！", "先へ進もう", 0, "");
   else if (result === "lose") await banner("やられた…", `敵の残りHP ${displayHp(G.enemyHp).toLocaleString()}`, 0, "lose");

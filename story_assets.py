@@ -284,6 +284,33 @@ def stage_html(enemy):
     return f'<div class="st-scene {scene}" data-enemy="{Path(enemy["image"]).stem}">{layers}{body}</div>'
 
 
+# 風哭きの森：1ステージに1〜3体。背景（エリアの絵）の上に、切り抜いた敵を横に並べる
+_KZ_SLOTS = {1: [(50, 74, 96)], 2: [(29, 62, 60), (71, 62, 60)], 3: [(19, 54, 44), (50, 60, 46), (81, 54, 44)]}
+
+
+def kz_stage_html(foes, area):
+    """foes は敵のデータの一覧（1〜3体）。1枚絵の敵（cutout=False）は1体だけで出る"""
+    if len(foes) == 1 and not foes[0].get("cutout", True):
+        e = foes[0]
+        uri = image_uri(f"enemies/{e['image']}")
+        return (f'<div class="st-scene image" data-enemy="{Path(e["image"]).stem}"><img class="st-photo-bg" src="{uri}" alt="" draggable="false">'
+                f'<img class="st-photo st-target" data-idx="0" src="{uri}" alt="{e["name"]}" draggable="false"></div>')
+    bg = image_uri(f"backgrounds/{story_data.KZ_AREAS[area]['bg']}")
+    body = []
+    for i, (e, (left, height, maxw)) in enumerate(zip(foes, _KZ_SLOTS[len(foes)])):
+        floating = " floating" if e.get("floating") else ""
+        z = 4 if len(foes) == 3 and i == 1 else 3
+        src = image_uri("enemies/" + e["image"])
+        body.append(f'<img class="st-enemy st-target kz-foe{floating}" data-idx="{i}" src="{src}" '
+                    f'alt="{e["name"]}" draggable="false" style="left:{left}%;height:{height}%;max-width:{maxw}%;z-index:{z}">')
+    return (f'<div class="st-scene kz {area}" data-enemy="{Path(foes[0]["image"]).stem}">'
+            f'<img class="st-bg" src="{bg}" alt="" draggable="false">{"".join(body)}</div>')
+
+
+def kz_hit_mask_uri(e):
+    return image_uri(f"hitmasks/{Path(e['image']).with_suffix('.png').name}")
+
+
 # ---------------------------------------------------------------------------
 # 味方
 #   カード（キャラ選択画面）: 背景つきの全身。上部の名札で、元の絵のタイトル部分を隠す
