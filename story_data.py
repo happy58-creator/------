@@ -218,7 +218,7 @@ ALLIES = [
      "abilities": [{"stat": "atk", "value": 3}, {"stat": "atk", "value": 3}, {"stat": "hp", "value": 40}], "skill": {"name": "光帝の裁き", "type": "strike", "charge": 500, "power": 120, "pierce": True, "anim": "luna", "scene": {"image": "skill_luna.webp", "focus": "50% 26%"}, "text": "天から光の柱が降りる。攻撃力×120 の防御無視ダメージ"}},
     # エクストラステージ（極点の宇宙龍）を倒すと、必ず仲間になる（unlock の extra）。いちばん強いキャラ
     {"lv": 11, "name": "極点の宇宙龍、アステル",   "hp": 120, "atk": 40, "def": 42, "max": {"hp": 200, "atk": 62, "def": 65},
-     "image": "ally_11.webp", "magic": {"mp": (40, 150), "mag": (5, 32), "crit": 0.08, "spells": ["war_cry", "guard_all", "haste_all"]}, "class": "fighter", "unlock": {"extra": True, "chance": 1.0},
+     "image": "ally_11.webp", "magic": {"mp": (40, 150), "mag": (5, 32), "crit": 0.08, "spells": ["rune_bolt", "war_cry", "heal_all", "holy_all", "guard_all"]}, "class": "all", "unlock": {"extra": True, "chance": 1.0},
      # アビリティ3「聖霊の加護」：HP+50 と、基本の状態異常（毒・雷・火）にかからない
      "abilities": [{"stat": "atk", "value": 4}, {"stat": "def", "value": 4},
                    {"stat": "hp", "value": 50, "name": "聖霊の加護", "immune": ["poison", "thunder", "fire"]}],
@@ -476,13 +476,19 @@ ASSIST = {"chance": 0.01, "chance_min": 0.000001, "chance_allies": (1, 4), "ally
 #   会心：連打の1回ごとに会心率で、その1回が CRIT_MULT 倍（防御は効く）。魔法は会心率の MAGIC_CRIT_RATE 倍の確率で MAGIC_CRIT_MULT 倍
 # ---------------------------------------------------------------------------
 SPELL_LEVELS = (1, 4, 7)            # 魔法系以外（3つ）
-SPELL_LEVELS_MAGIC = (1, 3, 5, 7, 9)   # 魔法系（5つ）
+SPELL_LEVELS_MAGIC = (1, 1, 4, 7, 9)   # 魔法系（5つ。はじめから2つ）
+SPELL_LEVELS_ALL = (1, 3, 5, 7, 9)     # 万能（5つ。敵1体・敵全体の攻撃魔法をふくむ）
 # キャラの系統：magic（魔法系。連打は狙った敵1体にだけ当たる。攻撃・回復の魔法）／fighter（それ以外。連打は何体にも当たる。強化の魔法）
 #   系統ごとに、基本のステータスにかける倍率
 CLASS_MULT = {
     "magic":   {"hp": 0.9,  "atk": 0.75, "def": 0.9, "mp": 1.3, "mag": 1.3},
     "fighter": {"hp": 1.15, "atk": 1.2,  "def": 1.1, "mp": 0.7, "mag": 0.6},
+    "all":     {"hp": 1.05, "atk": 1.0,  "def": 1.0, "mp": 1.0, "mag": 1.0},     # 万能（いまはアステルだけ）
 }
+# 必殺技の範囲：魔法系・万能は「範囲」（攻撃は敵全体、回復・守りは味方全員）、戦士系は「単体」（敵1体・自分）
+#   範囲の攻撃は、1体あたり SKILL_AREA_RATE 倍（全体 ＜ 単体）
+SKILL_AREA_CLASSES = ("magic", "all")
+SKILL_AREA_RATE = 0.7
 MAX_BOOK_SPELLS = 2            # 魔導書で覚えられる魔法の数（1人）
 MAGIC_COEF_K = 10
 MP_COST_CUT = 0.2

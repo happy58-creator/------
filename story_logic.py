@@ -767,6 +767,25 @@ def base_stats(ally_lv, level=1):
     return stats
 
 
+def class_name(ally_lv):
+    return {"magic": "魔法系", "all": "万能", "fighter": "戦士系"}.get(get_ally(ally_lv).get("class"), "戦士系")
+
+
+def skill_area(ally_lv):
+    """必殺技が範囲（敵全体・味方全員）か"""
+    return get_ally(ally_lv).get("class") in story_data.SKILL_AREA_CLASSES
+
+
+def skill_target_tag(ally_lv):
+    """必殺技の範囲の表示（【敵全体】など）"""
+    t, area = get_ally(ally_lv)["skill"]["type"], skill_area(ally_lv)
+    if t == "strike":
+        return "【敵全体】" if area else "【敵1体】"
+    if t in ("guard", "barrier"):
+        return "【味方全員】" if area else "【自分】"
+    return "【敵1体】" if t == "break" else "【自分】"
+
+
 def is_caster(ally_lv):
     """魔法系のキャラか（連打は狙った敵1体にだけ当たる）"""
     return get_ally(ally_lv).get("class") == "magic"
@@ -848,7 +867,9 @@ def spell_short_text(spell_id):
 def level_spells(ally_lv, level):
     """レベルで覚えている魔法 [(覚えるレベル, 魔法ID), ...]（まだ覚えていない物も、learned=False で返す）"""
     spells = (get_ally(ally_lv).get("magic") or {}).get("spells", [])
-    levels = story_data.SPELL_LEVELS_MAGIC if is_caster(ally_lv) else story_data.SPELL_LEVELS
+    cls = get_ally(ally_lv).get("class")
+    levels = (story_data.SPELL_LEVELS_MAGIC if cls == "magic" else story_data.SPELL_LEVELS_ALL if cls == "all"
+              else story_data.SPELL_LEVELS)
     return [{"id": sid, "level": need, "learned": level >= need} for need, sid in zip(levels, spells)]
 
 
@@ -1427,8 +1448,10 @@ def _status_label(status_id):
 def skill_config(ally_lv, ally, enemy, max_hp, charge=0):
     """戦闘画面に渡す必殺技。ダメージや回復量はここで計算しておく"""
     skill = dict(get_ally(ally_lv)["skill"])
+    skill["area"] = skill_area(ally_lv)
+    skill["tag"] = skill_target_tag(ally_lv)
     if skill["type"] == "strike":
-        raw = ally["atk"] * skill["power"]
+        raw = ally["atk"] * skill["power"] * (story_data.SKILL_AREA_RATE if skill["area"] else 1.0)
         skill["break_turns"] = skill.get("break", 0)       # 敵の防御を0にするターン数（創世の咆哮）
         skill["damage"] = raw if skill.get("pierce") else damage(raw, enemy["def"])
         skill["damage_break"] = raw                       # 敵の防御が0のとき
@@ -1644,7 +1667,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
                                                    else [s["id"] for s in level_spells(ally_lv, 1) if s["learned"]])],
         "magic": {
             "coef_k": story_data.MAGIC_COEF_K, "cost_cut": story_data.MP_COST_CUT, "def_rate": story_data.MAGIC_DEF_RATE,
-            "defense_k": story_data.DEFENSE_K, "all_rate": story_data.SPELL_ALL_RATE,
+            "defense_k": story_data.DEFENSE_K, "all_rate": story_data.SPELL_ALL_RATE, "enemy_def_k": story_data.DEFENSE_K,
             "weak": story_data.ELEMENT_WEAK, "resist": story_data.ELEMENT_RESIST,
             "chant_max": story_data.CHANT_MAX_TAPS, "chant_cut": story_data.CHANT_MAG_CUT, "chant_tps": story_data.CHANT_TAPS_PER_SEC,
             "chant_min": story_data.CHANT_MIN_RATE, "crit_mult": story_data.CRIT_MULT,

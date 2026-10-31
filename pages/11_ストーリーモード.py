@@ -365,7 +365,7 @@ def ally_panel_parts(lv, split=False):
            f"<div style='height:100%;width:{progress * 100:.0f}%;background:linear-gradient(90deg,#4aa3c9,#8fe0ff)'></div></div></div>")
     skill = ally["skill"]
     skill_html = (f"<div style='font-size:12px;margin-top:6px;color:#ffe28a'>✨ 必殺技：<b>{skill['name']}</b>"
-                  f"（コンボ{skill['charge']}でチャージ）<div style='color:#d8ccb0'>{skill['text']}</div></div>")
+                  f"（コンボ{skill['charge']}でチャージ）<div style='color:#d8ccb0'>{L.skill_target_tag(lv) + skill['text']}</div></div>")
     gauges = []
     for i, (ability, gauge) in enumerate(zip(ally["abilities"], L.ability_gauges(L.ability_points(profile, lv))), start=1):
         mark = "✅" if gauge >= 1 else "🔒"
@@ -425,7 +425,7 @@ def ally_detail_html(lv):
   <p class="sd-text">{esc(story_guide.ALLY_TEXT.get(lv, ''))}</p>
   <table class="sd-stats"><tr><th></th><th>はじめ（Lv.1）</th><th>最大（Lv.{story_data.LEVEL_MAX}）</th></tr>{rows}</table>
   <div class="sd-sec">✨ 必殺技：{esc(skill['name'])}<small>（コンボ{skill['charge']}でチャージ）</small></div>
-  <p class="sd-text">{esc(skill['text'])}</p>
+  <p class="sd-text">{esc(L.skill_target_tag(lv) + skill['text'])}</p>
   <div class="sd-sec">🔓 アビリティ<small>（遊ぶほど順に解放）</small></div>
   <ol class="sd-list">{abilities}</ol>
   <div class="sd-sec">🤝 仲間になるには</div>

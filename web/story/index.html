@@ -1292,7 +1292,25 @@ async function useSkill() {
   }
   await sleep(250);
   const c = enemyCenter(), me = $("allyIcon").getBoundingClientRect();
-  if (s.type === "strike") {
+  if (s.type === "strike" && s.area && G.multi && aliveFoes().length > 1) {     // 範囲：敵全体（1体あたり0.7倍。防御はそれぞれ）
+    const keep = G.sel, K = G.cfg.magic.defense_k;
+    fxEl("flash", { background: "rgba(255,255,255,.5)" }); $("stage").classList.add("quake"); setTimeout(() => $("stage").classList.remove("quake"), 600);
+    for (const i of aliveFoes()) {
+      foeLoad(i);
+      const d = G.cfg.enemy.def, raw = s.damage_break;
+      const dmg = G.eBreak > 0 || s.pierce ? raw : raw * (1 - d / (d + K));
+      const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
+      const cc = enemyCenter(); popAt(cc.x, cc.y, fmt(dmg), "big");
+      hitEnemy(Math.min(dmg, G.enemyHp)); updateBars();
+      if (s.stun) G.eStatus.thunder = Math.max(G.eStatus.thunder, s.stun);
+      if (s.break_turns) G.eBreak = Math.max(G.eBreak, s.break_turns);
+      foeSave(); await sleep(220);
+    }
+    if (s.stun) popAt(c.x, c.y + 70, "⚡ みんな動けない！", "proc");
+    if (s.break_turns) popAt(c.x, c.y + 70, "💥 全体の防御崩壊！", "proc");
+    foeLoad(G.foes[keep] && !G.foes[keep].dead ? keep : (aliveFoes()[0] ?? keep));
+    if (s.guard) G.guardTurns = Math.max(G.guardTurns, s.guard);
+  } else if (s.type === "strike") {
     const dmg = G.eBreak > 0 ? s.damage_break : s.damage, hit = Math.min(dmg, G.enemyHp);
     const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
     shake(); popAt(c.x, c.y, fmt(dmg), "big");
@@ -1300,16 +1318,28 @@ async function useSkill() {
     if (s.guard) G.guardTurns = Math.max(G.guardTurns, s.guard);
     if (s.stun) { G.eStatus.thunder = Math.max(G.eStatus.thunder, s.stun); popAt(c.x, c.y + 70, "⚡ 動けない！", "proc"); }
     if (s.break_turns) { G.eBreak = Math.max(G.eBreak, s.break_turns); popAt(c.x, c.y + 70, "💥 防御崩壊！", "proc"); }
-  } else if (s.type === "guard") {
-    const before = G.allyHp;
-    G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + s.heal);
-    popAt(me.left + me.width / 2 + 60, me.top, "+" + fmt(G.allyHp - before), "heal");
-    G.guardTurns = Math.max(G.guardTurns, s.guard);
+  } else if (s.type === "guard" || s.type === "barrier") {
+    // 範囲なら味方全員（パーティ全員）。回復量は、それぞれの最大HPの割合
+    const caster = G.mi, rate = s.heal_rate != null ? s.heal_rate : 0;
+    for (const i of (s.area && G.party ? aliveMembers() : [null])) {
+      if (i !== null) memberLoad(i);
+      const m = $("allyIcon").getBoundingClientRect();
+      if (s.type === "guard") {
+        const before = G.allyHp;
+        G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + (i === null || i === caster ? s.heal : G.cfg.ally.max_hp * rate));
+        popAt(m.left + m.width / 2 + 60, m.top, "+" + fmt(G.allyHp - before), "heal");
+        G.guardTurns = Math.max(G.guardTurns, s.guard);
+      } else {
+        G.barrier = s.blocks;
+        for (const id of ["poison", "fire", "black_flame", "thunder"]) G.status[id] = 0;
+        fxEl("circle", { "--c": "#7fc8ff" });
+      }
+      updateBars(); updateBadges(); if (G.party) renderParty();
+      if (i !== null) await sleep(300);
+    }
+    if (G.party) memberLoad(caster);
   } else if (s.type === "boost") {
     G.boost = s.mult;
-  } else if (s.type === "barrier") {
-    G.barrier = s.blocks;
-    for (const id of ["poison", "fire", "black_flame", "thunder"]) G.status[id] = 0;
   } else if (s.type === "break") {
     G.eBreak = s.turns;
   }
@@ -1857,16 +1887,30 @@ async function aimPhase(sp) {
   dot.style.left = wp[0] + "px"; dot.style.top = wp[1] + "px";
   $("app").classList.add("chanting");
   box.classList.add("on");
-  const W = window.innerWidth, H = window.innerHeight, ph1 = Math.random() * 6, ph2 = Math.random() * 6;
+  const W = window.innerWidth, H = window.innerHeight;
   let cx = W / 2, cy = H * 0.42, stopped = false;
+  // 通り道：時間内に必ず1〜3回、弱点（赤い点）の上を通る曲線（Catmull-Rom）。速さは aim_speed で区間の数が増える
+  const segs = Math.max(5, Math.round(6 * (M.aim_speed || 1)));
+  const rnd = () => [W * (0.12 + Math.random() * 0.76), H * (0.18 + Math.random() * 0.5)];
+  const way = []; for (let k = 0; k <= segs; k++) way.push(rnd());
+  const nWeak = 1 + Math.floor(Math.random() * 3), slots = [];
+  for (let k = 1; k < segs && slots.length < nWeak; k++) slots.push(k);
+  slots.sort(() => Math.random() - 0.5);
+  const use = []; for (const k of slots) if (use.length < nWeak && !use.some((u) => Math.abs(u - k) < 2)) use.push(k);
+  for (const k of use) way[k] = [wp[0], wp[1]];
+  const P = [way[0], ...way, way[way.length - 1]];
+  const at = (u) => {          // u: 0..1
+    const f = Math.min(segs - 1e-6, u * segs), k = Math.floor(f), t = f - k;
+    const [p0, p1, p2, p3] = [P[k], P[k + 1], P[k + 2], P[k + 3]];
+    const cr = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
+    return [cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])];
+  };
   box.onpointerdown = (ev) => { ev.preventDefault(); stopped = true; };
   const t0 = performance.now();
   await new Promise((resolve) => {
     const tick = () => {
       const t = (performance.now() - t0) / 1000;
-      const v = M.aim_speed || 1;
-      cx = W / 2 + W * 0.34 * Math.sin(1.7 * v * t + ph1);
-      cy = H * 0.42 + H * 0.2 * Math.sin(2.4 * v * t + ph2);
+      [cx, cy] = at(Math.min(1, t * 1000 / (M.aim_ms || 4000)));
       ring.style.left = cx + "px"; ring.style.top = cy + "px";
       if (stopped || t * 1000 >= (M.aim_ms || 4000)) resolve(); else requestAnimationFrame(tick);
     };
