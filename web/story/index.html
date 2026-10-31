@@ -607,7 +607,7 @@
     <div class="cap"></div>
     <div class="count"><div class="c">0</div><div class="d"></div></div>
     <div class="bars">
-      <div class="r"><span style="color:#ffd2bd;font-weight:700">詠唱率</span><div class="track rate"><div></div></div><b class="rateNum">0%</b></div>
+      <div class="r"><span class="rateLbl" style="color:#ffd2bd;font-weight:700">詠唱率</span><div class="track rate"><div></div></div><b class="rateNum">0%</b></div>
       <div class="r"><span style="color:#bfb196">のこり</span><div class="track time"><div></div></div><b class="timeNum" style="color:#f4ecda;font-size:12px">0秒</b></div>
       <div style="text-align:center;color:#ffe0b0;font-weight:700;font-size:14px">円の中を連打して、魔力をためよう！</div>
     </div>
@@ -700,7 +700,7 @@ function start(args) {
   $("stage").innerHTML = args.scene_html;
   G = {
     round: c.round, cfg: c, enemyHp: c.enemy.max_hp, allyHp: c.ally.hp,
-    phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0, defDown: 0,
+    phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0, defDown: 0, regenTurns: 0, regenMp: 0, elemWard: 0,
     bag: Object.fromEntries(c.items.map((i) => [i.id, i.count])), used: {},
     taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, startAt: performance.now(), hitMask: null,
     tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {}, equipIcons: args.equip_icons || {},
@@ -856,6 +856,8 @@ function updateBadges() {
   if (G.barrier > 0) html.push(`<span class="badge skill" data-tip="barrier">🔰 障壁 あと${G.barrier}回</span>`);
   if (G.eBreak > 0) html.push(`<span class="badge skill" data-tip="break">💥 敵の防御0 あと${G.eBreak}</span>`);
   if (G.ward > 0) html.push(`<span class="badge skill" data-tip="ward">📜 封炎 あと${G.ward}</span>`);
+  if (G.regenTurns > 0) html.push(`<span class="badge skill" data-tip="regen">💧 MP回復 あと${G.regenTurns}</span>`);
+  if (G.elemWard > 0) html.push(`<span class="badge skill" data-tip="elemward">🌌 属性無効 あと${G.elemWard}</span>`);
   if (G.defDown > 0) html.push(`<span class="badge" style="background:#5a1a1a" data-tip="defdown">🛡️⬇ 防御ダウン あと${G.defDown}</span>`);
   if (G.blessing) html.push(`<span class="badge skill" data-tip="blessing">✨ 精霊の加護</span>`);
   $("badges").innerHTML = html.join("");
@@ -1297,8 +1299,8 @@ async function useSkill() {
     fxEl("flash", { background: "rgba(255,255,255,.5)" }); $("stage").classList.add("quake"); setTimeout(() => $("stage").classList.remove("quake"), 600);
     for (const i of aliveFoes()) {
       foeLoad(i);
-      const d = G.cfg.enemy.def, raw = s.damage_break;
-      const dmg = G.eBreak > 0 || s.pierce ? raw : raw * (1 - d / (d + K));
+      const d = G.cfg.enemy.def, raw = s.damage_break, fl = s.floor_raw || 0, dm = d * (G.cfg.magic.def_rate || 0.5);
+      const dmg = Math.max(G.eBreak > 0 || s.pierce ? raw : raw * (1 - d / (d + K)), fl * (1 - dm / (dm + K)));   // 魔法の攻撃を下回らない
       const img = curTarget(); img.classList.remove("struck"); void img.offsetWidth; img.classList.add("struck");
       const cc = enemyCenter(); popAt(cc.x, cc.y, fmt(dmg), "big");
       hitEnemy(Math.min(dmg, G.enemyHp)); updateBars();
@@ -1451,6 +1453,12 @@ function spellCost(sp) {
   if (sp.mp_rate) return Math.max(1, Math.ceil(G.cfg.ally.max_mp * Math.max(sp.mp_floor, sp.mp_rate * cut) - 1e-9));
   return Math.max(1, Math.ceil(sp.mp * cut - 1e-9));
 }
+// 詠唱の結果：攻撃魔法はタップ数そのもの（上限なし）、回復・強化は満点に対する割合（最大100%）
+function chantRate(sp, inside) {
+  const M = G.cfg.magic;
+  if (sp.kind === "attack") return Math.max(M.chant_min_taps || 5, inside);
+  return Math.max(M.chant_min, Math.min(1, inside / chantNeed()));
+}
 function chantNeed() { const M = G.cfg.magic; return Math.ceil(M.chant_max * (1 - M.chant_cut * magCoef(curMag())) - 1e-9); }
 function elemOf(sp) { return (G.cfg.magic.elements || {})[sp.element] || { name: "無", icon: "🔷", color: "#9fc0ff" }; }
 function spellBlocked(sp) {
@@ -1472,7 +1480,7 @@ function openMagic() {
   }
   $("magicMp").textContent = `MP ${Math.floor(G.mp + 1e-9)} / ${Math.round(G.cfg.ally.max_mp)}`;
   const need = chantNeed();
-  $("magicNote").textContent = `えらぶと「詠唱」。円の中を ${need}回 連打で満点（約${(need / G.cfg.magic.chant_tps).toFixed(1)}秒）。` +
+  $("magicNote").textContent = `えらぶと「詠唱」。攻撃魔法は${((G.cfg.magic.chant_attack_ms || 4000) / 1000)}秒のあいだ円の中を押した回数ぶん強くなる（上限なし）。回復・強化は ${need}回で満点。押した回数は必殺技もためる。` +
     (G.cfg.enemy.weak ? `弱点の${G.cfg.magic.elements[G.cfg.enemy.weak].name}は1.5倍！` : "") + " 敵1体の魔法は、詠唱のあと動く円をタップで止めてねらう（赤い点が弱点）。魔法を使うと、このターンは攻撃できないよ。";
   $("sheet").classList.remove("open");
   $("magicSheet").classList.add("open");
@@ -1496,7 +1504,9 @@ async function castSpell(sp) {
   $("magicSheet").classList.remove("open"); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
   G.phase = "chant"; setButtons(false); updateSkill();
   G.mp -= cost; G.usedMp += cost; G.casts++; updateBars();
-  const el = elemOf(sp), need = chantNeed(), ms = Math.round(need / G.cfg.magic.chant_tps * 1000);
+  const isAtk = sp.kind === "attack", M0 = G.cfg.magic;
+  const el = elemOf(sp), need = chantNeed(), ms = isAtk ? (M0.chant_attack_ms || 4000) : Math.round(need / M0.chant_tps * 1000);
+  const perTap = isAtk ? curMag() * sp.power * (sp.target === "enemies" ? M0.all_rate : M0.single_mult || 1) : 0;
   const ch = $("chant"), ring = ch.querySelector(".ring");
   const size = Math.min(sp.circle, window.innerWidth * 0.9, window.innerHeight * 0.5);
   ch.style.setProperty("--c", el.color);
@@ -1505,7 +1515,8 @@ async function castSpell(sp) {
   ch.querySelector(".cap").style.top = `calc(46% + ${size / 2 + 8}px)`;
   ch.querySelector(".cap").textContent = "この円の中だけ数えるよ";
   ch.querySelector(".count .c").textContent = "0";
-  ch.querySelector(".count .d").textContent = `／ ${need}回で満点`;
+  ch.querySelector(".rateLbl").textContent = isAtk ? "威力" : "詠唱率";
+  ch.querySelector(".count .d").textContent = isAtk ? `1タップ ${fmt(perTap)}（押すほど強い）` : `／ ${need}回で満点`;
   ch.querySelector(".rate > div").style.width = "0%"; ch.querySelector(".rateNum").textContent = "0%";
   $("gearBtn").style.visibility = "hidden"; $("app").classList.add("tapping", "chanting"); $("tip").style.display = "none";
   await banner(sp.name, "円の中を連打して詠唱！", 900);
@@ -1520,9 +1531,11 @@ async function castSpell(sp) {
     spk.style.left = ev.clientX + "px"; spk.style.top = ev.clientY + "px"; $("app").appendChild(spk); setTimeout(() => spk.remove(), 380);
     if (!ok) return;                                       // 円の外はノーカウント
     inside++;
+    if (G.cfg.skill) { G.charge = Math.min(G.cfg.skill.charge, G.charge + 1); updateSkill(); }   // 詠唱でも必殺技がたまる
     ch.querySelector(".count .c").textContent = inside;
-    const p = Math.min(1, inside / need);
-    ch.querySelector(".rate > div").style.width = p * 100 + "%"; ch.querySelector(".rateNum").textContent = Math.round(p * 100) + "%";
+    const p = isAtk ? Math.min(1, inside / 100) : Math.min(1, inside / need);
+    ch.querySelector(".rate > div").style.width = p * 100 + "%";
+    ch.querySelector(".rateNum").textContent = isAtk ? "約" + fmt(perTap * inside) : Math.round(p * 100) + "%";
     ring.classList.remove("pulse"); void ring.offsetWidth; ring.classList.add("pulse");
     if (navigator.vibrate) navigator.vibrate(5);
   };
@@ -1540,8 +1553,9 @@ async function castSpell(sp) {
   ch.classList.remove("on"); ch.onpointerdown = null;
   $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping", "chanting");
   G.chantTaps += inside;
-  const rate = Math.max(G.cfg.magic.chant_min, Math.min(1, inside / need));
-  await banner(`詠唱率 ${Math.round(rate * 100)}%`, rate >= 1 ? "満点！" : rate <= G.cfg.magic.chant_min + 1e-9 ? "最低でも少しは効くよ" : "", 750);
+  const rate = chantRate(sp, inside);
+  if (isAtk) await banner(`${inside}タップ！`, inside < (M0.chant_min_taps || 5) ? "最低でも少しは効くよ" : `1タップ ${fmt(perTap)} × ${rate}`, 750);
+  else await banner(`詠唱率 ${Math.round(rate * 100)}%`, rate >= 1 ? "満点！" : rate <= M0.chant_min + 1e-9 ? "最低でも少しは効くよ" : "", 750);
   await resolveSpell(sp, rate);
   if (G.magTurns > 0) G.magTurns--;                      // 魔力アップは行動の回数で減る
   updateBars(); updateBadges();
@@ -1976,7 +1990,7 @@ function autoPlan() {
   }
   if (Object.values(G.status).some((t) => t > 0)) { const cu = has((sp) => sp.kind === "cure" && sp.target !== "ally"); if (cu.length && Math.random() < 0.5) return { spell: cu[0] }; }
   const atk = has((sp) => sp.kind === "attack");
-  if (G.cfg.ally.caster && atk.length) {
+  if ((G.cfg.ally.caster || G.cfg.ally.cls === "all") && atk.length) {
     const many = aliveFoes().length >= 2, e = G.cfg.enemy;
     const score = (sp) => (sp.power || 60) * (sp.target === "enemies" ? (many ? aliveFoes().length : 1) * (G.cfg.magic.all_rate || 0.45) : G.cfg.magic.single_mult || 1.5)
                           * (sp.element && sp.element === e.weak ? 1.5 : sp.element && sp.element === e.resist_elem ? 0.5 : 1);
@@ -1984,7 +1998,8 @@ function autoPlan() {
     if (Math.random() < 0.85) return { spell: best };
   }
   if (!G.cfg.ally.caster) {
-    const buff = has((sp) => (sp.kind === "brave" && !(G.braveTurns > 0)) || (sp.kind === "protect" && sp.target === "allies" && !(G.guardTurns > 0)));
+    const buff = has((sp) => (sp.kind === "brave" && !(G.braveTurns > 0)) || (sp.kind === "rally" && !(G.braveTurns > 0))
+                          || (sp.kind === "protect" && sp.target === "allies" && !(G.guardTurns > 0)));
     if (buff.length && Math.random() < 0.3) return { spell: pick(buff), target: buff[0].target === "ally" ? G.mi : null };
   }
   return {};
@@ -1994,12 +2009,13 @@ async function autoCast(sp, target) {
   $("magicSheet").classList.remove("open"); $("sheet").classList.remove("open");
   G.phase = "chant"; setButtons(false); updateSkill();
   const cost = spellCost(sp); G.mp -= cost; G.usedMp += cost; G.casts++; updateBars();
-  const M = G.cfg.magic, need = chantNeed(), ms = need / M.chant_tps * 1000;
+  const M = G.cfg.magic, need = chantNeed(), ms = sp.kind === "attack" ? (M.chant_attack_ms || 4000) : need / M.chant_tps * 1000;
   const inside = Math.round(autoTaps() * ms / (G.cfg.attack_ms || 3000));
+  if (G.cfg.skill) { G.charge = Math.min(G.cfg.skill.charge, G.charge + inside); updateSkill(); }
   const el = elemOf(sp); fxEl("ring", { "--c": el.color, "--s": 50 }); particles(el.color, 16, 40);
   G.chantTaps += inside;
-  const rate = Math.max(M.chant_min, Math.min(1, inside / need));
-  await banner(`オート：${sp.name}`, `詠唱率 ${Math.round(rate * 100)}%`, 900);
+  const rate = chantRate(sp, inside);
+  await banner(`オート：${sp.name}`, sp.kind === "attack" ? `${inside}タップ` : `詠唱率 ${Math.round(rate * 100)}%`, 900);
   G.phase = "spell"; G.autoNow = true;
   try { await resolveSpell(sp, rate); } finally { G.autoNow = false; }
   if (G.magTurns > 0) G.magTurns--;
@@ -2025,7 +2041,16 @@ async function applySupport(sp, k, rate, cm) {
     const before = G.allyHp;
     G.allyHp = Math.min(T.max_hp, G.allyHp + (sp.kind === "full" ? T.max_hp * rate : T.max_hp * (sp.heal || 0) * k * rate * cm));
     if (sp.mp_heal) G.mp = Math.min(T.max_mp, G.mp + T.max_mp * sp.mp_heal * k * rate * cm);
+    if (sp.mp_regen) { G.regenTurns = sp.regen_turns || 3; G.regenMp = T.max_mp * sp.mp_regen; }
     popAt(mx, me.top, "+" + fmt(G.allyHp - before), "heal");
+  } else if (sp.kind === "rally") {
+    const m = 1 + sp.power * k * rate;
+    G.braveMult = G.braveTurns > 0 ? Math.max(G.braveMult || 1, m) : m; G.braveTurns = Math.max(G.braveTurns, sp.turns);
+    G.magMult = G.magTurns > 0 ? Math.max(G.magMult || 1, m) : m; G.magTurns = Math.max(G.magTurns, sp.turns);
+    popAt(mx, me.top, `攻撃・魔力×${Math.round(m * 100) / 100}`, "info");
+  } else if (sp.kind === "elemward") {
+    G.elemWard = sp.turns;
+    popAt(mx, me.top, "🌌 属性無効", "heal");
   } else if (sp.kind === "cure") {
     for (const id of Object.keys(G.status)) G.status[id] = 0;
   } else if (sp.kind === "protect") {
@@ -2157,6 +2182,8 @@ async function enemyTurnMulti() {
   if (!G.party && G.guardTurns > 0) G.guardTurns--;
   if (!G.party && G.ward > 0) G.ward--;
   if (!G.party && G.defDown > 0) G.defDown--;
+  if (!G.party && G.elemWard > 0) G.elemWard--;
+  if (!G.party && G.regenTurns > 0) { G.mp = Math.min(G.cfg.ally.max_mp || 0, G.mp + G.regenMp); G.regenTurns--; }
   foeLoad(G.foes[keep] && !G.foes[keep].dead ? keep : G.sel);
   markSel(); updateBars(); updateBadges();
   const as = G.cfg.assist;
@@ -2243,6 +2270,11 @@ async function foeAttack(i) {
       G.defDown = Math.max(G.defDown, sp.def_down_turns || 3);
       setTimeout(() => popAt(window.innerWidth / 2, window.innerHeight * 0.5, `🛡️⬇ 防御力 ${Math.round(sp.def_down * 100)}%ダウン！`, "info"), 500);
     }
+  } else if (espell && G.elemWard > 0) {           // 星界の帳：属性の攻撃を無効
+    bub.style.display = "none";
+    fxEl("circle", { "--c": "#b9a6ff" }); particles("#e8dcff", 18, 45);
+    popAt(r.left + r.width / 2 + 70, r.top - 10, `🌌 ${espell.name}を無効化！`, "heal");
+    await sleep(500);
   } else {
     if (espell) {
       const kind = { fire: "fire", thunder: "thunder", ice: "magic", dark: "void", wind: "ghost" }[espell.element] || "magic";
@@ -2289,7 +2321,7 @@ async function foeAttack(i) {
 // ほかの人の数字は G.members[i].st にしまっておく（memberLoad で入れかえる）
 // ---------------------------------------------------------------------------
 const MKEYS = ["allyHp", "mp", "status", "charge", "skillUsed", "usedItem", "atkTurns", "guardTurns", "critTurns", "critBonus", "magTurns", "magMult",
-               "hasteItemTurns", "hasteItemMs", "hasteSpellTurns", "hasteSpellMs", "braveTurns", "braveMult", "boost", "barrier", "ward", "blessing", "defDown"];
+               "hasteItemTurns", "hasteItemMs", "hasteSpellTurns", "hasteSpellMs", "braveTurns", "braveMult", "boost", "barrier", "ward", "blessing", "defDown", "regenTurns", "regenMp", "elemWard"];
 function initParty(c, args) {
   G.party = !!(c.party && c.party.length);
   G.mi = 0; G.actQ = [];
@@ -2310,7 +2342,7 @@ function initParty(c, args) {
              status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0, freeze: 0, wind: 0 },
              charge: (m.skill && m.skill.start) || 0, skillUsed: false, usedItem: false, atkTurns: 0, guardTurns: 0, critTurns: 0, critBonus: 0,
              magTurns: 0, magMult: 1, hasteItemTurns: 0, hasteItemMs: 0, hasteSpellTurns: 0, hasteSpellMs: 0, braveTurns: 0, braveMult: 1,
-             boost: 1, barrier: 0, ward: 0, blessing: false, defDown: 0 };
+             boost: 1, barrier: 0, ward: 0, blessing: false, defDown: 0, regenTurns: 0, regenMp: 0, elemWard: 0 };
   }
   $("party").classList.add("on");
   G.autoSub = loadAuto();
@@ -2366,7 +2398,8 @@ function partyTurn() {
   if (!G.actQ.length) {
     // 新しいターン：防御アップ・封炎は全員ぶん1減らす
     memberSave();
-    for (const m of G.members) { if (m.st.guardTurns > 0 && G.turn > 0) m.st.guardTurns--; if (m.st.ward > 0 && G.turn > 0) m.st.ward--; if (m.st.defDown > 0 && G.turn > 0) m.st.defDown--; }
+    for (const m of G.members) { if (m.st.guardTurns > 0 && G.turn > 0) m.st.guardTurns--; if (m.st.ward > 0 && G.turn > 0) m.st.ward--; if (m.st.defDown > 0 && G.turn > 0) m.st.defDown--; if (m.st.elemWard > 0 && G.turn > 0) m.st.elemWard--;
+      if (m.st.regenTurns > 0 && G.turn > 0 && !m.dead) { m.st.mp = Math.min(m.ally.max_mp || 0, m.st.mp + m.st.regenMp); m.st.regenTurns--; } }
     Object.assign(G, G.members[G.mi].st);
     G.actQ = aliveMembers(); G.turn++;
   }

@@ -1416,12 +1416,17 @@ def spell_line(sid, stats):
     elem = story_data.ELEMENTS[sp["element"]]
     extra = ""
     if "power" in n:
-        extra = f"威力 {n['power']:.0f}"
+        extra = f"1タップ {n['power']:.1f}（タップ数ぶん・上限なし）"
     elif "heal" in n:
-        extra = f"HP +{n['heal']:.0f}" + (f"・MP +{n['mp_heal']:.0f}" if n.get("mp_heal") else "")
+        extra = (f"HP +{n['heal']:.0f}" + (f"・MP +{n['mp_heal']:.0f}" if n.get("mp_heal") else "")
+                 + (f"・毎ターンMP +{n['mp_regen']:.0f}" if n.get("mp_regen") else ""))
     elif sp["kind"] == "brave":
         extra = f"攻撃×{1 + n['boost']:.2f}（{n['turns']}回）"
     elif sp["kind"] == "protect":
+        extra = f"{n['turns']}ターン"
+    elif sp["kind"] == "rally":
+        extra = f"攻撃・魔力×{1 + n['boost']:.2f}（{n['turns']}ターン）"
+    elif sp["kind"] == "elemward":
         extra = f"{n['turns']}ターン"
     elif sp["kind"] == "haste":
         extra = f"+{n['seconds']:g}秒（{n['turns']}回）"

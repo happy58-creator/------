@@ -178,6 +178,8 @@ EXTRA_ENEMY = {
 #   charge は「1ターン50回当てる」として、コウの5ターン分（250）を基準に決めた。最短でも4ターン分。
 #   （はじめは25回で決めていたが、実際は平均50回くらいなので、charge を2倍、攻撃系の power も2倍にした。
 #     そのうえで弱めだったコウ・アーサー・エリナの power を少し上げた）
+#   area: True なら範囲（攻撃は敵全体・1体あたり SKILL_AREA_RATE 倍、回復・守り・障壁は味方全員）、False なら単体（敵1体・自分）
+#         魔法系・万能は範囲、戦士系は単体。攻撃の必殺技は、そのキャラの攻撃魔法（60タップ）の SKILL_MAGIC_FLOOR 倍を下回らない
 #   type:
 #     strike : 攻撃力 × power のダメージ。pierce なら敵の防御で減らない。guard ターン防御2倍、stun ターン敵が動けない
 #     guard  : 最大HPの heal_rate を回復して、guard ターン防御力2倍
@@ -197,32 +199,32 @@ STAT_CURVE = 1.3
 
 ALLIES = [
     {"lv": 1,  "name": "平凡な農民、コウ",         "hp": 10, "atk": 1, "def": 1, "max": {"hp": 34, "atk": 7, "def": 8},  "image": "ally_01.webp", "magic": {"mp": (8, 30), "mag": (1, 5), "crit": 0.05, "spells": ["quick", "brave", "war_cry"]}, "class": "fighter", "unlock": None,
-     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "def", "value": 3}], "skill": {"name": "渾身のひと振り", "type": "strike", "charge": 250, "power": 50, "anim": "kou", "scene": {"image": "skill_kou.webp", "focus": "50% 30%"}, "text": "大きく振りかぶって一撃。攻撃力×50 のダメージ"}},
+     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "def", "value": 3}], "skill": {"name": "渾身のひと振り", "area": False, "type": "strike", "charge": 250, "power": 50, "anim": "kou", "scene": {"image": "skill_kou.webp", "focus": "50% 30%"}, "text": "大きく振りかぶって一撃。攻撃力×50 のダメージ"}},
     {"lv": 2,  "name": "新米自警団員、マリ",       "hp": 11, "atk": 2, "def": 1, "max": {"hp": 35, "atk": 7, "def": 9},  "image": "ally_02.webp", "magic": {"mp": (15, 50), "mag": (2, 12), "crit": 0.03, "spells": ["heal", "cure", "mana_heal", "heal_all", "revive"]}, "class": "magic", "unlock": None,
-     "abilities": [{"stat": "def", "value": 1}, {"stat": "def", "value": 1}, {"stat": "atk", "value": 4}], "skill": {"name": "守りの誓い", "type": "guard", "charge": 200, "heal_rate": 0.2, "guard": 3, "anim": "mari", "scene": {"image": "skill_mari.webp", "focus": "45% 30%"}, "text": "光の盾でHPを最大の20%回復し、3ターン防御力2倍"}},
+     "abilities": [{"stat": "def", "value": 1}, {"stat": "def", "value": 1}, {"stat": "atk", "value": 4}], "skill": {"name": "守りの誓い", "area": True, "type": "guard", "charge": 200, "heal_rate": 0.2, "guard": 3, "anim": "mari", "scene": {"image": "skill_mari.webp", "focus": "45% 30%"}, "text": "光の盾でHPを最大の20%回復し、3ターン防御力2倍"}},
     {"lv": 3,  "name": "新兵中隊長、アレックス",   "hp": 13, "atk": 2, "def": 3, "max": {"hp": 40, "atk": 8, "def": 10},  "image": "ally_03.webp", "magic": {"mp": (12, 40), "mag": (2, 10), "crit": 0.06, "spells": ["brave", "war_cry", "haste_all"]}, "class": "fighter", "unlock": None,
-     "abilities": [{"stat": "hp", "value": 3}, {"stat": "hp", "value": 3}, {"stat": "atk", "value": 3}], "skill": {"name": "突撃号令", "type": "boost", "charge": 200, "mult": 2, "anim": "alex", "scene": {"image": "skill_alex.webp", "focus": "45% 25%"}, "text": "号令で奮い立ち、次の攻撃のダメージが2倍"}},
+     "abilities": [{"stat": "hp", "value": 3}, {"stat": "hp", "value": 3}, {"stat": "atk", "value": 3}], "skill": {"name": "突撃号令", "area": False, "type": "boost", "charge": 200, "mult": 2, "anim": "alex", "scene": {"image": "skill_alex.webp", "focus": "45% 25%"}, "text": "号令で奮い立ち、次の攻撃のダメージが2倍"}},
     {"lv": 4,  "name": "魔導戦術家、セリス",       "hp": 16, "atk": 2, "def": 5, "max": {"hp": 45, "atk": 6, "def": 18},  "image": "ally_04.webp", "magic": {"mp": (25, 90), "mag": (3, 20), "crit": 0.02, "spells": ["fire", "ice", "mana_heal", "thunderbolt", "explosion"]}, "class": "magic", "unlock": {"min_difficulty": "normal", "stage": 3, "chance": 0.30},
-     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "hp", "value": 10}], "skill": {"name": "魔法障壁", "type": "barrier", "charge": 250, "blocks": 2, "anim": "celis", "scene": {"image": "skill_celis.webp", "focus": "40% 35%"}, "text": "魔法陣の障壁で敵の攻撃2回を無効にし、状態異常も治す"}},
+     "abilities": [{"stat": "atk", "value": 1}, {"stat": "atk", "value": 1}, {"stat": "hp", "value": 10}], "skill": {"name": "魔法障壁", "area": True, "type": "barrier", "charge": 250, "blocks": 2, "anim": "celis", "scene": {"image": "skill_celis.webp", "focus": "40% 35%"}, "text": "魔法陣の障壁で敵の攻撃2回を無効にし、状態異常も治す"}},
     {"lv": 5,  "name": "先鋭近衛騎士、アーサー",   "hp": 22, "atk": 4, "def": 4, "max": {"hp": 60, "atk": 11, "def": 13},  "image": "ally_05.webp", "magic": {"mp": (15, 55), "mag": (2, 14), "crit": 0.05, "spells": ["protect", "guard_all", "brave"]}, "class": "fighter", "unlock": {"min_difficulty": "hard", "stage": 1, "chance": 0.30},
-     "abilities": [{"stat": "def", "value": 2}, {"stat": "def", "value": 2}, {"stat": "hp", "value": 15}], "skill": {"name": "聖盾撃", "type": "strike", "charge": 300, "power": 60, "guard": 2, "anim": "arthur", "scene": {"image": "skill_arthur.webp", "focus": "40% 25%"}, "text": "聖なる盾ごと突撃。攻撃力×60 のダメージと、2ターン防御力2倍"}},
+     "abilities": [{"stat": "def", "value": 2}, {"stat": "def", "value": 2}, {"stat": "hp", "value": 15}], "skill": {"name": "聖盾撃", "area": False, "type": "strike", "charge": 300, "power": 60, "guard": 2, "anim": "arthur", "scene": {"image": "skill_arthur.webp", "focus": "40% 25%"}, "text": "聖なる盾ごと突撃。攻撃力×60 のダメージと、2ターン防御力2倍"}},
     {"lv": 6,  "name": "古代魔導研究者、エリナ",   "hp": 30, "atk": 6, "def": 3, "max": {"hp": 70, "atk": 17, "def": 8},  "image": "ally_06.webp", "magic": {"mp": (30, 110), "mag": (4, 24), "crit": 0.02, "spells": ["rune_bolt", "blizzard", "heal", "explosion", "meteor"]}, "class": "magic", "unlock": {"min_difficulty": "normal", "stage": 6, "chance": 0.40},
-     "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 8}], "skill": {"name": "古代魔法・崩壊", "type": "strike", "charge": 350, "power": 70, "pierce": True, "anim": "erina", "scene": {"image": "skill_erina.webp", "focus": "50% 33%"}, "text": "古代文字が崩れ落ちる。攻撃力×70 の防御無視ダメージ"}},
+     "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 8}], "skill": {"name": "古代魔法・崩壊", "area": True, "type": "strike", "charge": 350, "power": 70, "pierce": True, "anim": "erina", "scene": {"image": "skill_erina.webp", "focus": "50% 33%"}, "text": "古代文字が崩れ落ちる。攻撃力×70 の防御無視ダメージ"}},
     {"lv": 7,  "name": "王宮近衛隊長、ガイウス",   "hp": 45, "atk": 10, "def": 6, "max": {"hp": 95, "atk": 26, "def": 14},  "image": "ally_07.webp", "magic": {"mp": (10, 35), "mag": (1, 8), "crit": 0.1, "spells": ["gale_stance", "brave", "war_cry"]}, "class": "fighter", "unlock": {"min_difficulty": "normal", "stage": 7, "chance": 0.20},
-     "abilities": [{"stat": "atk", "value": 2}, {"stat": "atk", "value": 2}, {"stat": "atk", "value": 6}], "skill": {"name": "百裂剣", "type": "strike", "charge": 350, "power": 80, "anim": "gaius", "scene": {"image": "skill_gaius.webp", "focus": "30% 22%"}, "text": "目にも止まらぬ百の斬撃。攻撃力×80 のダメージ"}},
+     "abilities": [{"stat": "atk", "value": 2}, {"stat": "atk", "value": 2}, {"stat": "atk", "value": 6}], "skill": {"name": "百裂剣", "area": False, "type": "strike", "charge": 350, "power": 80, "anim": "gaius", "scene": {"image": "skill_gaius.webp", "focus": "30% 22%"}, "text": "目にも止まらぬ百の斬撃。攻撃力×80 のダメージ"}},
     {"lv": 8,  "name": "魔導工学の至高者、レイノ", "hp": 63, "atk": 13, "def": 15, "max": {"hp": 125, "atk": 28, "def": 32}, "image": "ally_08.webp", "magic": {"mp": (30, 120), "mag": (4, 26), "crit": 0.02, "spells": ["thunder", "rune_bolt", "cure", "thunderbolt", "meteor"]}, "class": "magic", "unlock": {"min_difficulty": "hard", "stage": 5, "chance": 0.60},
-     "abilities": [{"stat": "def", "value": 3}, {"stat": "def", "value": 3}, {"stat": "atk", "value": 8}], "skill": {"name": "魔導砲", "type": "strike", "charge": 400, "power": 70, "pierce": True, "stun": 1, "anim": "reino", "scene": {"image": "skill_reino.webp", "focus": "65% 30%"}, "text": "魔導砲の光線。攻撃力×70 の防御無視ダメージと、敵を1ターン動けなくする（雷が効かない敵にも効く）"}},
+     "abilities": [{"stat": "def", "value": 3}, {"stat": "def", "value": 3}, {"stat": "atk", "value": 8}], "skill": {"name": "魔導砲", "area": True, "type": "strike", "charge": 400, "power": 70, "pierce": True, "stun": 1, "anim": "reino", "scene": {"image": "skill_reino.webp", "focus": "65% 30%"}, "text": "魔導砲の光線。攻撃力×70 の防御無視ダメージと、敵を1ターン動けなくする（雷が効かない敵にも効く）"}},
     {"lv": 9,  "name": "概念の卵、ガレン",         "hp": 73, "atk": 20, "def": 19, "max": {"hp": 150, "atk": 36, "def": 40}, "image": "ally_09.webp", "magic": {"mp": (20, 80), "mag": (3, 18), "crit": 0.04, "spells": ["protect", "guard_all", "haste_all"]}, "class": "fighter", "unlock": {"min_difficulty": "hard", "stage": 5, "chance": 0.30},
-     "abilities": [{"stat": "hp", "value": 10}, {"stat": "hp", "value": 10}, {"stat": "def", "value": 15}], "skill": {"name": "概念崩し", "type": "break", "charge": 250, "turns": 3, "anim": "garen", "scene": {"image": "skill_garen.webp", "focus": "45% 28%"}, "text": "敵の「守る」という概念を壊し、3ターン敵の防御を0にする"}},
+     "abilities": [{"stat": "hp", "value": 10}, {"stat": "hp", "value": 10}, {"stat": "def", "value": 15}], "skill": {"name": "概念崩し", "area": False, "type": "break", "charge": 250, "turns": 3, "anim": "garen", "scene": {"image": "skill_garen.webp", "focus": "45% 28%"}, "text": "敵の「守る」という概念を壊し、3ターン敵の防御を0にする"}},
     {"lv": 10, "name": "至高の光帝、ルナ",         "hp": 100, "atk": 33, "def": 35, "max": {"hp": 160, "atk": 50, "def": 52}, "image": "ally_10.webp", "magic": {"mp": (35, 130), "mag": (5, 30), "crit": 0.03, "spells": ["holy", "high_heal", "heal_all", "full_heal", "holy_all"]}, "class": "magic", "unlock": {"min_difficulty": "very_hard", "stage": 7, "chance": 0.20},
-     "abilities": [{"stat": "atk", "value": 3}, {"stat": "atk", "value": 3}, {"stat": "hp", "value": 40}], "skill": {"name": "光帝の裁き", "type": "strike", "charge": 500, "power": 120, "pierce": True, "anim": "luna", "scene": {"image": "skill_luna.webp", "focus": "50% 26%"}, "text": "天から光の柱が降りる。攻撃力×120 の防御無視ダメージ"}},
+     "abilities": [{"stat": "atk", "value": 3}, {"stat": "atk", "value": 3}, {"stat": "hp", "value": 40}], "skill": {"name": "光帝の裁き", "area": True, "type": "strike", "charge": 500, "power": 120, "pierce": True, "anim": "luna", "scene": {"image": "skill_luna.webp", "focus": "50% 26%"}, "text": "天から光の柱が降りる。攻撃力×120 の防御無視ダメージ"}},
     # エクストラステージ（極点の宇宙龍）を倒すと、必ず仲間になる（unlock の extra）。いちばん強いキャラ
     {"lv": 11, "name": "極点の宇宙龍、アステル",   "hp": 120, "atk": 40, "def": 42, "max": {"hp": 200, "atk": 62, "def": 65},
-     "image": "ally_11.webp", "magic": {"mp": (40, 150), "mag": (5, 32), "crit": 0.08, "spells": ["rune_bolt", "war_cry", "heal_all", "holy_all", "guard_all"]}, "class": "all", "unlock": {"extra": True, "chance": 1.0},
+     "image": "ally_11.webp", "magic": {"mp": (40, 150), "mag": (5, 32), "crit": 0.08, "spells": ["astel_star", "astel_breath", "astel_pulse", "astel_veil", "astel_rain"]}, "class": "all", "unlock": {"extra": True, "chance": 1.0},
      # アビリティ3「聖霊の加護」：HP+50 と、基本の状態異常（毒・雷・火）にかからない
      "abilities": [{"stat": "atk", "value": 4}, {"stat": "def", "value": 4},
                    {"stat": "hp", "value": 50, "name": "聖霊の加護", "immune": ["poison", "thunder", "fire"]}],
-     "skill": {"name": "創世の咆哮", "type": "strike", "charge": 550, "power": 140, "pierce": True, "break": 2, "anim": "astel",
+     "skill": {"name": "創世の咆哮", "area": True, "type": "strike", "charge": 550, "power": 140, "pierce": True, "break": 2, "anim": "astel",
                # 必殺技の特別演出（grand）：暗転 → 星が集まり魔法陣 → 絵 → 技名 → 光の咆哮
                "scene": {"image": "skill_astel.webp", "grand": True, "reading": "そうせいのほうこう", "sub": "GENESIS ROAR"},
                "text": "銀河を呑む咆哮。攻撃力×140 の防御無視ダメージと、2ターン敵の防御を0にする"}},
@@ -489,6 +491,8 @@ CLASS_MULT = {
 #   範囲の攻撃は、1体あたり SKILL_AREA_RATE 倍（全体 ＜ 単体）
 SKILL_AREA_CLASSES = ("magic", "all")
 SKILL_AREA_RATE = 0.7
+SKILL_MAGIC_FLOOR = 1.2        # 必殺技（攻撃）は、そのキャラのいちばん強い攻撃魔法を60タップしたときの、この倍以上
+SKILL_FLOOR_TAPS = 60
 MAX_BOOK_SPELLS = 2            # 魔導書で覚えられる魔法の数（1人）
 MAGIC_COEF_K = 10
 MP_COST_CUT = 0.2
@@ -498,6 +502,13 @@ SPELL_ALL_RATE = 0.45     # 全体の魔法は、1体あたりで必ず敵1体�
 #   円の中に弱点（赤い点）→ AIM_RATES["weak"]、敵の体が全部入る → "full"、体の一部 → "part"、何も入らない → "miss"
 #   そのぶん、敵1体の魔法の威力は SPELL_SINGLE_MULT 倍。円の直径は詠唱の円 × AIM_SIZE
 SPELL_SINGLE_MULT = 1.5
+# 攻撃魔法はタップ数で決まる（上限なし）：1タップ = 魔力 × 基本の消費MP × MAGIC_TAP_RATE
+#   × 敵1体なら SPELL_SINGLE_MULT（とねらいの倍率）、敵全体なら SPELL_ALL_RATE。属性・会心・敵の防御（半分）は今までどおり
+#   詠唱の時間は CHANT_ATTACK_SECONDS 秒（回復・強化の魔法は今までどおり、満点の回数まで）
+#   詠唱で円の中を押した回数も、必殺技のチャージになる（どの魔法でも）
+MAGIC_TAP_RATE = 0.1
+CHANT_ATTACK_SECONDS = 4.0
+CHANT_MIN_TAPS = 5             # 1回も押せなくても、この回数ぶんは効く
 AIM_RATES = {"weak": 1.5, "full": 1.0, "part": 0.8, "miss": 0.1}
 AIM_MS = 4000
 AIM_SIZE = 0.45
@@ -571,6 +582,15 @@ SPELLS = {
     "guard_all":   {"name": "ガードオール",       "element": None, "kind": "protect", "target": "allies", "turns": 2, "mp": 14},
     "haste_all":   {"name": "疾風の号令",         "element": None, "kind": "haste",   "target": "allies", "turns": 2, "seconds": 1.0, "mp": 12},
     "holy_all":    {"name": "セイントレイ",       "element": "light", "kind": "attack", "target": "enemies", "tier": "big", "mp": 30},
+    # アステル専用（このゲームの代名詞。どれも3ターン続く）
+    #   regen    : 味方全員のHP回復（中）＋ 3ターン、自分のターンのはじめに最大MPの mp_regen を回復
+    #   rally    : 味方全員の攻撃力（連打のダメージ）と魔力を (1 + power × 魔力係数 × 詠唱率) 倍。3ターン（行動3回）
+    #   elemward : 味方全員、敵の属性の攻撃（魔法：炎・雷・氷・闇・風）を無効にする。3ターン
+    "astel_star":  {"name": "星墜とし",           "element": None, "kind": "attack", "target": "enemy",   "tier": "huge", "mp": 32, "only": 11},
+    "astel_rain":  {"name": "創星の光雨",         "element": None, "kind": "attack", "target": "enemies", "tier": "huge", "mp": 50, "only": 11},
+    "astel_breath":{"name": "星霊の息吹",         "element": None, "kind": "heal",    "target": "allies", "heal": 0.35, "mp_regen": 0.06, "regen_turns": 3, "mp": 22, "only": 11},
+    "astel_pulse": {"name": "銀河の鼓動",         "element": None, "kind": "rally",   "target": "allies", "turns": 3, "power": 0.25, "mp": 20, "only": 11},
+    "astel_veil":  {"name": "星界の帳",           "element": None, "kind": "elemward", "target": "allies", "turns": 3, "mp": 20, "only": 11},
     "gale_stance": {"name": "疾風の構え",         "element": None, "kind": "haste",   "target": "self",  "turns": 3, "seconds": 2.0, "mp": 8},
 }
 

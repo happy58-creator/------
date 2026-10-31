@@ -772,8 +772,21 @@ def class_name(ally_lv):
 
 
 def skill_area(ally_lv):
-    """必殺技が範囲（敵全体・味方全員）か"""
-    return get_ally(ally_lv).get("class") in story_data.SKILL_AREA_CLASSES
+    """必殺技が範囲（敵全体・味方全員）か（データの area。なければ系統で決める）"""
+    sk = get_ally(ally_lv)["skill"]
+    return bool(sk["area"]) if "area" in sk else get_ally(ally_lv).get("class") in story_data.SKILL_AREA_CLASSES
+
+
+def skill_magic_floor(ally_lv, mag):
+    """必殺技の攻撃の下限（防御前）：そのキャラの攻撃魔法を SKILL_FLOOR_TAPS 回押したときの、1体あたりのいちばん大きい値 × SKILL_MAGIC_FLOOR"""
+    best = 0.0
+    for sid in (get_ally(ally_lv).get("magic") or {}).get("spells", []):
+        sp = get_spell(sid)
+        if sp["kind"] != "attack":
+            continue
+        mult = story_data.SPELL_ALL_RATE if sp["target"] == "enemies" else story_data.SPELL_SINGLE_MULT
+        best = max(best, mag * spell_tap_power(sid) * mult * story_data.SKILL_FLOOR_TAPS)
+    return best * story_data.SKILL_MAGIC_FLOOR
 
 
 def skill_target_tag(ally_lv):
@@ -858,10 +871,11 @@ def spell_short_text(spell_id):
     if kind == "attack":
         return f"{who}・{elem}の攻撃（{size[sp['tier']]}）"
     return who + "・" + {
-        "heal": "HP回復" + ("（大）" if sp.get("heal", 0) >= 0.5 else "（小）"), "mana": "HP小＋MP小 回復", "full": "HP全回復",
+        "heal": "HP回復" + ("（大）" if sp.get("heal", 0) >= 0.5 else "（中）" if sp.get("heal", 0) >= 0.3 else "（小）"), "mana": "HP小＋MP小 回復", "full": "HP全回復",
         "cure": "状態異常を治す", "revive": "戦闘不能から復活（仲間がいるとき）", "protect": "防御力2倍",
         "brave": "攻撃のダメージアップ", "haste": f"連打の時間+{sp.get('seconds', 0):g}秒",
-    }[kind]
+        "rally": f"攻撃力・魔力アップ（{sp.get('turns', 3)}ターン）", "elemward": f"属性の攻撃を無効（{sp.get('turns', 3)}ターン）",
+    }[kind] + (f"＋MP小回復（{sp['regen_turns']}ターン）" if sp.get("mp_regen") else "")
 
 
 def level_spells(ally_lv, level):
@@ -920,9 +934,9 @@ def spell_numbers(spell_id, stats):
     mag, max_hp, max_mp = stats["mag"], stats["hp"], stats["mp"]
     k = mag_coef(mag)
     out = {"cost": spell_cost(spell_id, mag, max_mp), "taps": chant_taps(mag), "circle": chant_circle(spell_id)}
-    if sp["kind"] == "attack":
-        out["power"] = mag * story_data.SPELL_POWER[sp["tier"]] * (story_data.SPELL_ALL_RATE if sp["target"] == "enemies"
-                                                                    else story_data.SPELL_SINGLE_MULT)
+    if sp["kind"] == "attack":       # 1タップあたり
+        out["power"] = mag * spell_tap_power(spell_id) * (story_data.SPELL_ALL_RATE if sp["target"] == "enemies"
+                                                          else story_data.SPELL_SINGLE_MULT)
     elif sp["kind"] in ("heal", "mana", "revive"):
         out["heal"] = max_hp * sp["heal"] * k
         if sp.get("mp_heal"):
@@ -935,7 +949,18 @@ def spell_numbers(spell_id, stats):
             out["boost"] = sp["power"] * k
     elif sp["kind"] == "haste":
         out["seconds"], out["turns"] = sp["seconds"], sp["turns"]
+    elif sp["kind"] == "rally":
+        out["turns"], out["boost"] = sp["turns"], sp["power"] * k
+    elif sp["kind"] == "elemward":
+        out["turns"] = sp["turns"]
+    if sp.get("mp_regen"):
+        out["mp_regen"] = max_mp * sp["mp_regen"]
     return out
+
+
+def spell_tap_power(spell_id):
+    """攻撃魔法の1タップの威力（魔力にかける数）＝ 基本の消費MP × MAGIC_TAP_RATE"""
+    return get_spell(spell_id).get("mp", 0) * story_data.MAGIC_TAP_RATE
 
 
 def spell_turns(sp, k, rate=1.0):
@@ -1452,9 +1477,12 @@ def skill_config(ally_lv, ally, enemy, max_hp, charge=0):
     skill["tag"] = skill_target_tag(ally_lv)
     if skill["type"] == "strike":
         raw = ally["atk"] * skill["power"] * (story_data.SKILL_AREA_RATE if skill["area"] else 1.0)
+        floor = skill_magic_floor(ally_lv, ally.get("mag", 0))      # 魔法の攻撃を下回らない（魔法は敵の防御が半分だけ効く）
+        skill["floor_raw"] = floor
         skill["break_turns"] = skill.get("break", 0)       # 敵の防御を0にするターン数（創世の咆哮）
-        skill["damage"] = raw if skill.get("pierce") else damage(raw, enemy["def"])
-        skill["damage_break"] = raw                       # 敵の防御が0のとき
+        skill["damage"] = max(raw if skill.get("pierce") else damage(raw, enemy["def"]),
+                              damage(floor, enemy["def"] * story_data.MAGIC_DEF_RATE))
+        skill["damage_break"] = max(raw, floor)           # 敵の防御が0のとき
     if skill["type"] == "guard":
         skill["heal"] = max_hp * skill["heal_rate"]
     skill["start"] = max(0, min(skill["charge"], int(charge or 0)))
@@ -1465,7 +1493,7 @@ def spell_config(spell_id):
     """戦闘画面に渡す魔法1つ（ダメージ・消費MPは魔力で変わるので、画面側で計算する）"""
     sp = get_spell(spell_id)
     return {"id": spell_id, **{k: v for k, v in sp.items()}, "element": sp["element"] or "none",
-            "power": story_data.SPELL_POWER.get(sp.get("tier"), 0), "circle": chant_circle(spell_id),
+            "power": spell_tap_power(spell_id) if sp["kind"] == "attack" else sp.get("power", 0), "circle": chant_circle(spell_id),
             "text": spell_short_text(spell_id)}
 
 
@@ -1659,7 +1687,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "mp": max_mp if ally_mp is None else max(0.0, min(max_mp, float(ally_mp))),
             "mag": ally["mag"],
             "crit": ally["crit"],
-            "caster": is_caster(ally_lv),
+            "caster": is_caster(ally_lv), "cls": get_ally(ally_lv).get("class", "fighter"),
             "defdown_mult": defdown_mult(ally["def"]),
             "auto_median": auto_median(),
         },
@@ -1671,6 +1699,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
             "weak": story_data.ELEMENT_WEAK, "resist": story_data.ELEMENT_RESIST,
             "chant_max": story_data.CHANT_MAX_TAPS, "chant_cut": story_data.CHANT_MAG_CUT, "chant_tps": story_data.CHANT_TAPS_PER_SEC,
             "chant_min": story_data.CHANT_MIN_RATE, "crit_mult": story_data.CRIT_MULT,
+            "chant_attack_ms": int(story_data.CHANT_ATTACK_SECONDS * 1000), "chant_min_taps": story_data.CHANT_MIN_TAPS,
             "magic_crit_mult": story_data.MAGIC_CRIT_MULT, "magic_crit_rate": story_data.MAGIC_CRIT_RATE,
             "haste_max_ms": int(story_data.HASTE_MAX * 1000),
             "single_mult": story_data.SPELL_SINGLE_MULT, "aim": story_data.AIM_RATES, "aim_ms": story_data.AIM_MS,
@@ -1712,7 +1741,7 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
                          "tap_damage": damage(mst["atk"], enemy["def"]), "tap_damage_up": damage(mst["atk"] + atk_up, enemy["def"]),
                          "tap_damage_break": damage(mst["atk"], 0), "tap_damage_up_break": damage(mst["atk"] + atk_up, 0),
                          "max_mp": mst["mp"], "mp": max(0.0, min(mst["mp"], float(m.get("mp", mst["mp"])))),
-                         "mag": mst["mag"], "crit": mst["crit"], "caster": is_caster(lv),
+                         "mag": mst["mag"], "crit": mst["crit"], "caster": is_caster(lv), "cls": get_ally(lv).get("class", "fighter"),
                          "defdown_mult": defdown_mult(mst["def"]), "auto_median": auto_median(),
                          "hit_damage": damage(enemy["atk"], mst["def"]), "hit_damage_guard": damage(enemy["atk"], mst["def"] * story_data.GUARD_MULTIPLIER)},
                 "skill": skill_config(lv, mst, enemy, mst["hp"], m.get("charge", 0)),
