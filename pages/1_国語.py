@@ -329,7 +329,7 @@ def learn_tab(grade):
                     if lec["id"] not in quizzes:
                         quizzes[lec["id"]] = {"q": KL.make_quiz(lec["id"], random.Random()), "checked": False}
                     qz = quizzes[lec["id"]]
-                    with st.form(f"jp_lform_{lec['id']}"):
+                    with st.form(f"jp_lform_{lec['id']}", enter_to_submit=False):
                         for i, q in enumerate(qz["q"]):
                             st.markdown(f"**{i + 1}.** {q['q']}")
                             if q["type"] == "choice":

@@ -202,6 +202,8 @@ def enemy_key(enemy):
 
 
 def enemy_by_key(key):
+    if key in story_data.MAIN_CUTS:                # 闇の回廊の切り抜いた姿（enemy_05_cut など）
+        return group_enemy(key)
     return next(e for e in story_data.ENEMIES + [story_data.EXTRA_ENEMY] + story_data.KZ_ENEMIES + [story_data.KZ_EXTRA_ENEMY]
                 if enemy_key(e) == key)
 

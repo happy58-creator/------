@@ -107,6 +107,7 @@ def plain(tex):
 
 
 def new_questions():
+    st.session_state.calc_blank_warn = 0
     uid = st.session_state.calc_unit
     units = U.current_units(st.session_state.calc_course, st.session_state.calc_grade) if uid == MIX else [uid]
     rng = random.Random()
@@ -220,7 +221,8 @@ elif st.session_state.calc_step == "playing":
     with st.expander("✍️ 答えの書き方"):
         st.markdown(HOWTO)
 
-    with st.form(key="calc_form"):
+    # Enter で答えあわせにならないように（Enter は次の問題へ進む）
+    with st.form(key="calc_form", enter_to_submit=False):
         for i, q in enumerate(st.session_state.calc_questions):
             with st.container(border=True):
                 st.markdown(f"**問 {i + 1}**　<small>{U.UNITS[q['unit']][0]}</small>", unsafe_allow_html=True)
@@ -230,10 +232,51 @@ elif st.session_state.calc_step == "playing":
                 st.text_input("答え", key=f"calc_q_{i}", label_visibility="collapsed", placeholder="答えを入力")
         submitted = st.form_submit_button("🚨 答えあわせをする！", type="primary", use_container_width=True)
 
+    import streamlit.components.v1 as components
+    components.html("""<script>
+(() => {
+  const doc = window.parent.document;
+  const hook = () => {
+    const boxes = [...doc.querySelectorAll('.st-key-calc_form input[type="text"], [data-testid="stForm"] input[type="text"]')];
+    boxes.forEach((el, k) => {
+      if (el.dataset.enterNext) return;
+      el.dataset.enterNext = "1";
+      el.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter" || ev.isComposing || ev.keyCode === 229) return;   // 変換の確定の Enter はそのまま
+        ev.preventDefault(); ev.stopPropagation();
+        const all = [...doc.querySelectorAll('[data-testid="stForm"] input[type="text"]')];
+        const next = all[all.indexOf(el) + 1];
+        if (next) { next.focus(); next.scrollIntoView({ block: "center", behavior: "smooth" }); } else el.blur();
+      }, true);
+    });
+  };
+  hook(); let n = 0; const t = setInterval(() => { hook(); if (++n > 30) clearInterval(t); }, 300);
+})();
+</script>""", height=0)
+
     if submitted:
-        st.session_state.calc_user_answers = {i: st.session_state.get(f"calc_q_{i}", "") for i in range(len(st.session_state.calc_questions))}
-        st.session_state.calc_step = "result"
-        st.rerun()
+        answers = {i: st.session_state.get(f"calc_q_{i}", "") for i in range(len(st.session_state.calc_questions))}
+        blanks = sum(1 for v in answers.values() if not (v or "").strip())
+        if blanks and not st.session_state.get("calc_blank_ok"):
+            st.session_state.calc_blank_warn = blanks           # 空らんがあるときは、本当に答えあわせするか聞く
+        else:
+            st.session_state.calc_user_answers = answers
+            st.session_state.calc_step = "result"
+            st.session_state.calc_blank_warn = 0
+            st.session_state.calc_blank_ok = False
+            st.rerun()
+
+    if st.session_state.get("calc_blank_warn"):
+        st.warning(f"まだ {st.session_state.calc_blank_warn}問 空らんだよ。このまま答えあわせしてもいい？")
+        col_ok, col_back = st.columns(2)
+        if col_ok.button("このまま答えあわせする", type="primary", use_container_width=True):
+            st.session_state.calc_user_answers = {i: st.session_state.get(f"calc_q_{i}", "") for i in range(len(st.session_state.calc_questions))}
+            st.session_state.calc_step = "result"
+            st.session_state.calc_blank_warn = 0
+            st.rerun()
+        if col_back.button("もどって答える", use_container_width=True):
+            st.session_state.calc_blank_warn = 0
+            st.rerun()
 
     if st.button("やめて選びなおす"):
         st.session_state.calc_step = "setup"
