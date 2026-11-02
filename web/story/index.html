@@ -930,7 +930,9 @@ function shake() { const s = $("stage"); s.classList.remove("shake"); void s.off
 // ---------------------------------------------------------------------------
 // エフェクト（種類ごとに、#fx に一時的な要素を足す）
 // ---------------------------------------------------------------------------
+const MFX_CSS = new Set(["ring", "circle", "dome", "burst", "rays", "pillar", "beam", "bigslash"]);
 function fxEl(cls, style) {
+  if (MFX_CSS.has(cls) && typeof MFX !== "undefined" && MFX.css(cls, style)) return document.createElement("div");   // 光の粒の演出で描く
   const el = document.createElement("div"); el.className = "fx " + cls;
   for (const [k, v] of Object.entries(style || {})) {
     if (k.startsWith("--")) el.style.setProperty(k, v); else el.style[k] = v;   // CSS変数は setProperty でないと入らない
@@ -943,18 +945,20 @@ function fxSvg(inner) {
   el.innerHTML = inner; $("fx").appendChild(el); setTimeout(() => el.remove(), 1600); return el;
 }
 function particles(c, n, spread) {
+  if (typeof MFX !== "undefined") return MFX.particlesAt(innerWidth / 2, innerHeight * .45, c, n, spread);   // 光の粒の演出にそろえる
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2, d = (0.3 + Math.random() * 0.7) * spread;
     fxEl("particle", { "--c": c, "--dx": Math.cos(a) * d + "vmin", "--dy": Math.sin(a) * d + "vmin" });
   }
 }
 function slashes(c, n, delay) {
+  if (typeof MFX !== "undefined") return MFX.slashesFx(c, n, delay);
   for (let i = 0; i < n; i++) {
     setTimeout(() => fxEl("slash", { "--c": c, "--r": (-35 + (i % 2 ? 70 : 0) + (Math.random() * 20 - 10)) + "deg",
       "--o": `0, ${(Math.random() * 16 - 8)}vmin` }), i * (delay || 70));
   }
 }
-const EFFECTS = {
+const EFFECTS_CSS = {
   claw:   (c) => { slashes(c, 3, 60); fxEl("vignette", { "--c": "rgba(120,0,0,.6)" }); },
   slash:  (c) => { slashes(c, 1); fxEl("flash", { background: "rgba(255,255,255,.35)" }); fxEl("vignette", { "--c": "rgba(120,0,0,.55)" }); },
   ghost:  (c) => { fxEl("mist", { "--c": c }); setTimeout(() => slashes(c, 2, 90), 350); },
@@ -971,9 +975,12 @@ const EFFECTS = {
                    fxEl("flash", { background: "rgba(255,230,160,.45)" }); },
   silence:(c) => { fxEl("dim"); setTimeout(() => { fxEl("ring", { "--c": c, "--s": 80 }); fxEl("flash", { background: "rgba(120,140,255,.25)" }); }, 600); },
 };
-// 自分の攻撃：当たった回数が多いほど、斬撃が増える
+// 敵の攻撃などの演出：光の粒（MFX.attack）で描く。種類は前と同じ名前
+const EFFECTS = new Proxy({}, { get: (_, type) => (c) => MFX.attack(String(type), c) });
+// 自分の攻撃：当たった回数が多いほど、斬撃が増える（当てた敵それぞれに）
 function playerAttackFx(hits) {
   const n = Math.min(7, 2 + Math.floor(hits / 8));
+  if (G && G.multi) { const spots = aliveFoes().filter((i) => G.foes[i].tapDamage > 0).map(foeSpot); if (spots.length) return MFX.playerHit(spots, n); }
   slashes("#ffd36a", n, 55);
   setTimeout(() => { fxEl("burst", { "--c": "#ffb347" }); particles("#ffe9a8", 22, 50); fxEl("flash", { background: "rgba(255,255,255,.5)" }); }, n * 55);
 }
@@ -1118,12 +1125,14 @@ $("skillWrap").onclick = () => {
   useSkill();
 };
 function shards(c, n) {
+  if (typeof MFX !== "undefined") return MFX.shardsFx(c, n);
   for (let i = 0; i < n; i++) {
     const a = Math.random() * Math.PI * 2, d = 25 + Math.random() * 40;
     fxEl("shard", { "--c": c, "--dx": Math.cos(a) * d + "vmin", "--dy": Math.sin(a) * d + "vmin", "--r": (Math.random() * 720 - 360) + "deg" });
   }
 }
 function rising(c, n) {
+  if (typeof MFX !== "undefined") return MFX.risingFx(c, n);
   for (let i = 0; i < n; i++) setTimeout(() => fxEl("rise", { "--c": c, left: (10 + Math.random() * 80) + "vw" }), i * 40);
 }
 // キャラごとの演出（color はカットインの色にも使う）
@@ -1692,7 +1701,7 @@ async function resolveSpell(sp, rate) {
   const cm = crit ? M.magic_crit_mult : 1;
   if (crit) { G.crits++; await banner("会心！", `${sp.name}の効果 ×${M.magic_crit_mult}`, 650, "win"); }
   if (sp.target === "allies" && sp.kind !== "attack") {          // 味方全員（パーティ全員。1人なら自分）
-    const caster0 = G.mi;
+    const caster0 = G.mi; MFX.support(sp.kind, el.color);
     fxEl("flash", { background: "rgba(255,255,255,.35)" }); fxEl("ring", { "--c": el.color, "--s": 70 }); particles("#fff3c0", 30, 70);
     for (const i of (G.party ? aliveMembers() : [null])) { if (i !== null) memberLoad(i); await applySupport(sp, k, rate, cm); await sleep(250); }
     if (G.party) memberLoad(caster0);
@@ -1701,6 +1710,7 @@ async function resolveSpell(sp, rate) {
   }
   const caster = G.mi, tgt = G.spellTarget; G.spellTarget = null;
   if (tgt != null && tgt !== caster && sp.kind !== "attack") memberLoad(tgt);
+  if (sp.kind !== "attack") MFX.support(sp.kind, el.color);            // 回復・強化：光の粒
   const T = G.cfg.ally, me2 = $("allyIcon").getBoundingClientRect();
   if (sp.kind === "revive") {
     G.members[G.mi].dead = false;
@@ -2572,7 +2582,76 @@ const MFX = (() => {
     keep(slashes, (s) => s.t <= s.dur); keep(domes, (d) => d.t <= d.dur); keep(crystals, (c) => c.t <= c.dur); keep(parts, (p) => p.life > 0); keep(rings, (r) => r.t <= r.dur); keep(bolts, (b) => b.life > 0);
     requestAnimationFrame(frame);
   }
-  return { play, kindOf, skill };
+  // ---- そのほかの演出（敵の攻撃・回復や強化・アイテム・状態異常）もこのキャンバスで描く ----
+  const party = () => {        // 味方のいるところ（パーティ表示の少し上。HUD に隠れないように）
+    const pe = document.getElementById("party"), r = (pe && pe.offsetParent ? pe : document.getElementById("allyIcon")).getBoundingClientRect();
+    return { x: W / 2, y: Math.max(H * .4, Math.min(H * .72, r.top - U * .18)) }; };
+  const fromFoe = () => { try { const c = enemyCenter(); return { x: c.x, y: c.y }; } catch (e) { return { x: W / 2, y: H * .35 }; } };
+  // 敵の攻撃（EFFECTS の種類ごと）。to を省くと味方のところ
+  function attack(type, c, to) {
+    size(); kick(); const P = to || party(), F = fromFoe();
+    const hitBurst = (col, n) => { burst(P.x, P.y, n || 50, { color: [col, "#ffffff"], spd: 360, size: 12 }); ring(P.x, P.y, col, U * .3, .45, 10); };
+    switch (type) {
+      case "slash": slash(P.x - U * .45, P.y - U * .3, P.x + U * .45, P.y + U * .2, "#ffffff", 16, .45, .2); burst(P.x, P.y, 40, { color: ["#ff6a5a", "#ffffff"], spd: 360, size: 10 }); break;
+      case "claw": for (let i = 0; i < 3; i++) setTimeout(() => slash(P.x - U * .35 + i * U * .12, P.y - U * .35, P.x - U * .1 + i * U * .12, P.y + U * .25, "#ff5a5a", 12, .45, .08), i * 60);
+        setTimeout(() => burst(P.x, P.y, 40, { color: ["#ff4a4a", "#ffd0c8"], spd: 320, size: 10 }), 200); break;
+      case "whip": slash(P.x - U * .55, P.y - U * .2, P.x + U * .55, P.y + U * .1, c, 9, .4, .45, true);
+        setTimeout(() => slash(P.x + U * .55, P.y - U * .3, P.x - U * .55, P.y + U * .05, c, 9, .4, -.45, true), 150); break;
+      case "ghost": for (let i = 0; i < 2; i++) setTimeout(() => slash(P.x + (i ? 1 : -1) * U * .4, P.y - U * .35, P.x - (i ? 1 : -1) * U * .3, P.y + U * .2, c, 10, .35, .3), 300 + i * 90);
+        for (let i = 0; i < 30; i++) spark(P.x + rand(-U * .5, U * .5), P.y + rand(-U * .2, U * .2), { color: c, vx: rand(-40, 40), vy: rand(-60, -20), life: 1, size: rand(14, 24), drag: 1, shrink: false }); break;
+      case "fire": orbTo(F.x, F.y, P.x, P.y, "#ffb04a", .32, (x, y) => spark(x, y, { color: any(["#ff6a1a", "#ffcf6a"]), vx: rand(-40, 40), vy: rand(-40, 40), life: .3, size: rand(10, 18) }), 16)
+        .then(() => { burst(P.x, P.y, 70, { color: ["#ff5a1a", "#ffb04a", "#ffe39a"], spd: 380, up: -80, grav: 200, size: 14 }); ring(P.x, P.y, "#ffb04a", U * .32, .45, 12); }); break;
+      case "thunder": bolt(P.x + rand(-40, 40), -10, P.x, P.y, "#fff7b0"); setTimeout(() => bolt(P.x + rand(-60, 60), -10, P.x + rand(-30, 30), P.y, "#fff7b0"), 110);
+        burst(P.x, P.y, 40, { color: "#ffe14a", spd: 380, size: 10, life: .5 }); break;
+      case "void": orbs.push({ x: P.x, y: P.y, r: 4, grow: U * .1, t: 0, dur: .6 }); setTimeout(() => { burst(P.x, P.y, 60, { color: [c, "#ff6ad8"], spd: 380, size: 12 }); ring(P.x, P.y, c, U * .35, .5, 12); }, 450); break;
+      case "cosmic": orbTo(W * 1.05, -H * .1, P.x, P.y, "#ffe0b0", .36, (x, y) => spark(x, y, { color: any([c, "#ffffff"]), vx: rand(-50, 50), vy: rand(-50, 50), life: .45, size: rand(12, 22) }), 20)
+        .then(() => { burst(P.x, P.y, 100, { color: [c, "#ffffff", "#ffe08a"], spd: 480, size: 15 }); ring(P.x, P.y, c, U * .45, .55, 16); }); break;
+      case "radiance": pillarAt(P.x, P.y + U * .1, c, U * .28); hitBurst(c, 60); break;
+      case "silence": setTimeout(() => { ring(P.x, P.y, c, U * .55, .9, 8); for (let i = 0; i < 40; i++) spark(P.x + rand(-U * .5, U * .5), P.y + rand(-U * .3, U * .1), { color: c, vx: 0, vy: rand(-30, -10), life: 1.2, size: rand(6, 10), drag: 1 }); }, 500); break;
+      case "magic": default: orbTo(F.x, F.y, P.x, P.y, c, .3, (x, y) => spark(x, y, { color: c, vx: rand(-30, 30), vy: rand(-30, 30), life: .3, size: rand(8, 14) }), 14).then(() => hitBurst(c, 50)); break;
+    }
+  }
+  // CSS の部品の名前で呼ばれたとき（ring・circle・dome・burst・rays・pillar・beam・bigslash）
+  function css(cls, st) {
+    size(); kick();
+    const c = (st && st["--c"]) || "#ffffff", x = st && st.left && String(st.left).endsWith("px") ? parseFloat(st.left) : W / 2, y = H * .45;
+    const s = parseFloat((st && st["--s"]) || 40) / 100 * Math.min(W, H);
+    switch (cls) {
+      case "ring": ring(x, y, c, s * .7, .6, 10); break;
+      case "circle": magicCircle(x, H * .62, c, U * .4, 1.1, .4); break;
+      case "dome": { const P = party(); dome(P.x, P.y, U * .55, c, 1.2); break; }
+      case "burst": burst(x, y, 60, { color: [c, "#ffffff"], spd: 380, size: 12 }); break;
+      case "rays": for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; beam(x, y, x + Math.cos(a) * U * .9, y + Math.sin(a) * U * .9, c, 6, .6); } break;
+      case "pillar": pillarAt(x, H * .8, c, U * .32); break;
+      case "beam": beam(W / 2, H * .9, W / 2, H * .25, c, 22, .5); break;
+      case "bigslash": slash(W * .1, H * .25, W * .9, H * .6, c, 20, .35, .25); break;
+      default: return false;
+    }
+    return true;
+  }
+  function particlesAt(x, y, c, n, spread) { size(); burst(x, y, n * 2, { color: [c, "#ffffff"], spd: (spread || 50) / 100 * U * 1.6, size: 11, life: .7 }); }
+  function risingFx(c, n) { size(); const P = party(); for (let i = 0; i < n * 2; i++) setTimeout(() => spark(P.x + rand(-U * .55, U * .55), P.y + rand(0, 20), { color: any([c, "#ffffff"]), vx: rand(-20, 20), vy: rand(-280, -140), life: 1, size: rand(8, 12), drag: .99 }), i * 25); }
+  function shardsFx(c, n) { size(); shardBurst(W / 2, H * .45, n, c); kick(); }
+  function slashesFx(c, n, delay) { size(); const P = party();
+    for (let i = 0; i < n; i++) setTimeout(() => slash(P.x - U * .4, P.y - U * .3 + i * 8, P.x + U * .4, P.y + U * .15 - i * 8, c, 10, .3, i % 2 ? .25 : -.25), i * (delay || 70)); }
+  // 自分の連打が当たった：当てた敵に金の斬撃
+  function playerHit(spots, n) { size(); for (const p of spots) for (let i = 0; i < n; i++) setTimeout(() => {
+      const a = rand(0, Math.PI), r = U * rand(.16, .3); slash(p.x - Math.cos(a) * r, p.y - Math.sin(a) * r, p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, any(["#ffd36a", "#ffffff"]), 8, .22, rand(-.2, .2));
+      if (i === n - 1) { burst(p.x, p.y, 40, { color: ["#ffb347", "#ffe9a8"], spd: 360, size: 11 }); ring(p.x, p.y, "#ffe9a8", U * .3, .4, 10); } }, i * 55); }
+  // 自分にかかる状態異常のダメージ（毒・火・黒炎）
+  function dotFx(ids) { size(); const P = party();
+    const col = { poison: ["#b46bff", "#7dff8a"], fire: ["#ff6a1a", "#ffcf6a"], black_flame: ["#6a2aff", "#d27bff"] };
+    for (const id of ids) for (let i = 0; i < 26; i++) spark(P.x + rand(-U * .4, U * .4), P.y + rand(-10, 20), { color: any(col[id] || ["#b46bff"]), vx: rand(-20, 20), vy: rand(-220, -90), life: rand(.6, 1), size: rand(10, 16), drag: .98 }); }
+  // 回復・強化（kind ごとに色と形）
+  function support(kind, color) { size(); const P = party();
+    const C = { heal: "#8dffb8", mana: "#8fc8ff", full: "#b8ffd8", cure: "#ffffff", revive: "#ffe9a0", protect: "#7fc8ff", brave: "#ff9a3a", haste: "#9ff0ff", rally: "#ffb070", elemward: "#c8b0ff", item: "#ffd9a0" }[kind] || color || "#ffffff";
+    if (kind === "protect" || kind === "elemward") { dome(P.x, P.y, U * .5, C, 1.1); ring(P.x, P.y, C, U * .5, .7, 8); }
+    else if (kind === "brave" || kind === "rally") { for (let i = 0; i < 40; i++) spark(P.x + rand(-U * .4, U * .4), P.y + rand(0, 20), { color: any([C, "#ffd36a", "#ff6a3a"]), vx: rand(-20, 20), vy: rand(-320, -160), life: .8, size: rand(10, 16), drag: .98 }); ring(P.x, P.y, C, U * .45, .5, 12); }
+    else if (kind === "haste") { for (let i = 0; i < 16; i++) beam(P.x - U * .6, P.y - rand(0, U * .4), P.x + U * .6, P.y - rand(0, U * .4), C, 4, .35); }
+    else if (kind === "revive") { pillarAt(P.x, P.y + U * .1, C, U * .3); risingFx(C, 18); }
+    else { risingFx(C, 16); ring(P.x, P.y, C, U * .4, .6, 8); if (kind === "cure") burst(P.x, P.y - U * .1, 40, { color: ["#ffffff", "#dff6ff"], spd: 260, size: 9 }); }
+  }
+  return { play, kindOf, skill, attack, css, particlesAt, risingFx, shardsFx, slashesFx, playerHit, dotFx, support };
 })();
 // 敵 i の位置（画面の座標）。体のまん中と足もと
 function foeSpot(i) {
@@ -2666,7 +2745,7 @@ async function enemyTurnMulti() {
     const e = G.cfg.enemy, f = G.foes[i];
     if (G.eStatus.thunder > 0) {
       G.eStatus.thunder--;
-      const c = enemyCenter(); EFFECTS.thunder("#ffe96a"); popAt(c.x, c.y, "⚡ しびれて動けない！", "proc");
+      const c = enemyCenter(); MFX.attack("thunder", "#ffe96a", c); popAt(c.x, c.y, "⚡ しびれて動けない！", "proc");
       if (G.eBreak > 0) G.eBreak--;
       foeSave(); updateBadges(); await sleep(1000); continue;
     }
@@ -2961,16 +3040,17 @@ async function dotPhase() {
   const idx = G.party ? aliveMembers() : [null];
   for (const i of idx) {
     if (i !== null) memberLoad(i);
-    let dot = 0;
+    let dot = 0; const hurtBy = [];
     for (const id of DOTS) {
       if (!(G.status[id] > 0)) continue;
+      hurtBy.push(id);
       const st = G.cfg.status[id];
       dot += G.guardTurns > 0 ? st.damage_guard : st.damage;
       G.status[id]--;
     }
     if (dot > 0) {
       const r = $("allyIcon").getBoundingClientRect();
-      fxEl("vignette", { "--c": "rgba(150,60,220,.55)" });
+      fxEl("vignette", { "--c": "rgba(150,60,220,.55)" }); MFX.dotFx(hurtBy);
       hurt(dot, r.left + r.width / 2 + 70, r.top - 10, "dot");
       updateBadges();
       await sleep(700);
@@ -3098,6 +3178,8 @@ async function useItem(it) {
     }
     memberLoad(actor); renderParty();
   }
+  MFX.support(reviveOnly ? "revive" : healAmt > 0 ? "heal" : mpAmt > 0 ? "mana" : it.guard ? "protect" : it.atk_turns || it.crit ? "brave"
+              : it.haste_ms ? "haste" : (it.cure || []).length ? "cure" : "item");
   if (it.crit) { G.critTurns = it.crit_turns; G.critBonus = it.crit; fxEl("flash", { background: "rgba(255,230,90,.25)" }); }
   if (it.mag_mult) { G.magTurns = it.mag_turns; G.magMult = it.mag_mult; fxEl("flash", { background: "rgba(180,110,255,.25)" }); }
   if (it.haste_ms) { G.hasteItemTurns = it.haste_turns; G.hasteItemMs = it.haste_ms; particles("#dff6ff", 14, 40); }
