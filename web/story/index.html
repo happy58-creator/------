@@ -1137,6 +1137,8 @@ const SKILL_FX = {
   gaius:  { color: "#ff6a5a", fx: async () => { slashes("#ffd0c8", 12, 45); await sleep(560); fxEl("flash", { background: "rgba(255,120,100,.35)" }); fxEl("burst", { "--c": "#ff6a5a" }); } },
   reino:  { color: "#6ff0ff", fx: async () => { fxEl("beam", { "--c": "#6ff0ff" }); await sleep(380); EFFECTS.thunder("#9ff6ff"); particles("#cffbff", 20, 50); } },
   garen:  { color: "#e8e8ff", fx: async () => { fxEl("crack"); shards("#e8e8ff", 26); await sleep(300); fxEl("shout", { "--c": "#a8a8ff" }).textContent = "防御崩壊"; fxEl("flash", { background: "rgba(220,220,255,.35)" }); } },
+  riene:  { color: "#c8ff9a", fx: async () => {} }, olga: { color: "#8fe0a0", fx: async () => {} }, gran: { color: "#e0c088", fx: async () => {} },
+  silva:  { color: "#5dffa0", fx: async () => {} }, verde: { color: "#7dd88a", fx: async () => {} }, eld: { color: "#9affc8", fx: async () => {} },
   fiora:  { color: "#a8ffcf", fx: async () => {            // 色とりどりの微精霊が集まって、光になって降りそそぐ
              const cs = ["#ff6a8a", "#ffd36a", "#7dffae", "#7fc8ff", "#c08cff", "#ffffff"];
              for (let i = 0; i < 6; i++) setTimeout(() => particles(cs[i], 14, 70), i * 90);
@@ -1323,19 +1325,26 @@ async function astelAssist(kind) {
   if (foesDown()) { finish("win"); return true; }
   return false;
 }
+// 必殺技の演出（キャラごと・光の粒）。攻撃は敵（範囲なら全員）、回復・守りは自分のまわり
+async function skillFx(s, look) {
+  const me = $("allyIcon").getBoundingClientRect(), P = { x: innerWidth / 2, y: Math.min(innerHeight * .8, me.top - 10) };
+  const T = s.type === "strike" || s.type === "break" ? (s.area && G.multi ? aliveFoes() : [G.multi ? G.cur : 0]).map(foeSpot) : [];
+  const done = await MFX.skill(s.anim, T.length ? T : [foeSpot(G.multi ? G.cur : 0)], P);
+  if (!done) await look.fx();
+}
 async function useSkill() {
   const s = G.cfg.skill, look = SKILL_FX[s.anim] || SKILL_FX.kou;
   G.phase = "skill"; G.skillUsed = true; G.charge = 0;
   setButtons(false); updateSkill(); $("sheet").classList.remove("open");
   if (s.scene && s.scene.grand && G.skillSceneImage) {
     await grandSkill(s, G.skillSceneImage);       // アステル：特別演出
-    await look.fx();
+    await skillFx(s, look);
   } else if (s.scene && G.skillSceneImage) {
     await specialScene(s.name, G.skillSceneImage, s.scene.focus || "50% 45%", look.color);   // 絵のある必殺技
-    await look.fx();
+    await skillFx(s, look);
   } else {
     await cutin(s.name, look.color);
-    await look.fx();
+    await skillFx(s, look);
   }
   await sleep(250);
   const c = enemyCenter(), me = $("allyIcon").getBoundingClientRect();
@@ -2362,10 +2371,120 @@ const MFX = (() => {
       || (all ? "meteor" : "arcane");
   }
   async function play(sp, T, hit) { size(); speed = 1; kick(); await K[kindOf(sp)](T, hit); }
+  // ---- 必殺技（キャラごと）。T = ねらう敵の位置、P = 味方（自分）の位置。ダメージは演出のあとに入る ----
+  const slashes = [], domes = [], crystals = [];
+  const slash = (x1, y1, x2, y2, color, w, dur, bend, thorns) => { slashes.push({ x1, y1, x2, y2, color, w: (w ?? 10) * U / 420, dur: dur ?? .35, t: 0, bend: bend ?? .25, thorns }); kick(); };
+  const beam = (x1, y1, x2, y2, color, w, dur) => slash(x1, y1, x2, y2, color, w, dur, 0);
+  const dome = (x, y, r, color, dur) => { domes.push({ x, y, r, color, t: 0, dur }); kick(); };
+  const crystal = (x, gy, h, color) => { crystals.push({ x, gy, h: h * U / 420, w: rand(14, 26) * U / 420, tilt: rand(-.35, .35), color, t: 0, dur: 1.4 }); kick(); };
+  const pillarAt = (x, gy, color, w) => { pillars.push({ x, gy, w: (w ?? U * .34), t: 0, dur: 1.1, color }); kick(); };
+  const SK = {
+    async kou(T, P) { const c = T[0];                   // 渾身のひと振り：金の大きな斬撃
+      slash(c.x - U * .55, c.y - U * .45, c.x + U * .5, c.y + U * .35, "#ffd36a", 22, .32, .3); await wait(120);
+      doFlash("rgba(255,240,200,.6)", .3); doShake(22); ring(c.x, c.y, "#ffe9a8", U * .5, .5, 14);
+      burst(c.x, c.y, 120, { color: ["#ffcf5a", "#fff3c0", "#ff9a3a"], spd: 520, size: 14, life: .8 }); await wait(400); },
+    async riene(T, P) { const c = T[0];                 // 鹿角の一閃：一直線の突き
+      beam(P.x - U * .2, P.y, c.x, c.y, "#e8ffd8", 12, .35); await wait(180);
+      doFlash("rgba(230,255,220,.5)", .25); doShake(18); ring(c.x, c.y, "#d8ffc8", U * .4, .45, 10);
+      burst(c.x, c.y, 80, { color: ["#c8ff9a", "#ffffff", "#7dd88a"], spd: 460, size: 12 }); await wait(400); },
+    async mari(T, P) { dome(P.x, P.y, U * .55, "#8fd0ff", 1.4);   // 守りの誓い：光の盾が味方を包む
+      for (let i = 0; i < 50; i++) setTimeout(() => spark(P.x + rand(-U * .5, U * .5), P.y, { color: any(["#8dffb8", "#cfefff", "#ffffff"]), vx: 0, vy: rand(-260, -120), life: 1, size: 10, drag: 1 }), rand(0, 900) / speed);
+      ring(P.x, P.y, "#bfe6ff", U * .6, .7, 10); await wait(1100); },
+    async olga(T, P) { dome(P.x, P.y, U * .55, "#8fe0a0", 1.4);   // 森の癒し手：葉と薬草の光が舞い上がる
+      for (let i = 0; i < 60; i++) setTimeout(() => spark(P.x + rand(-U * .5, U * .5), P.y + rand(0, 20), { color: any(["#7dd88a", "#c8ff7a", "#ffe36a", "#ffffff"]), vx: rand(-60, 60), vy: rand(-240, -110), life: 1.2, size: rand(8, 13), drag: .99, shrink: false }), rand(0, 1000) / speed);
+      ring(P.x, P.y, "#b8f0c0", U * .6, .7, 10); await wait(1200); },
+    async alex(T, P) {                                   // 突撃号令：号令の光が立ちのぼる
+      for (let i = 0; i < 14; i++) { const a = -Math.PI / 2 + rand(-.9, .9); beam(P.x, P.y, P.x + Math.cos(a) * U * .9, P.y + Math.sin(a) * U * .9, "#ffb347", 8, .5); }
+      burst(P.x, P.y, 80, { color: ["#ff9a3a", "#ffd36a"], spd: 380, up: -160, size: 12 }); ring(P.x, P.y, "#ffcf8a", U * .55, .6, 14); doShake(10); await wait(800); },
+    async celis(T, P) { dome(P.x, P.y, U * .6, "#7fc8ff", 1.5);   // 魔法障壁：何重もの青い障壁
+      for (let k = 0; k < 3; k++) { ring(P.x, P.y - U * .1, "#9fd8ff", U * (.35 + k * .12), .9, 6); await wait(160); }
+      burst(P.x, P.y - U * .15, 70, { color: ["#9fd8ff", "#ffffff"], spd: 300, size: 10 }); await wait(700); },
+    async arthur(T, P) { const c = T[0];                 // 聖盾撃：聖なる十字と盾の衝撃
+      slash(c.x - U * .35, c.y - U * .35, c.x + U * .35, c.y + U * .35, "#ffe9a8", 16, .25, 0); await wait(90);
+      slash(c.x + U * .35, c.y - U * .35, c.x - U * .35, c.y + U * .35, "#ffe9a8", 16, .25, 0); await wait(140);
+      doFlash("rgba(255,245,210,.6)", .3); doShake(20); ring(c.x, c.y, "#ffd36a", U * .45, .5, 18); ring(c.x, c.y, "#ffffff", U * .3, .4, 8);
+      burst(c.x, c.y, 100, { color: ["#ffe9a8", "#ffffff"], spd: 420, size: 13 }); await wait(400); },
+    async gran(T, P) { const c = T[0];                   // 大樹の一撃：大きな斧が地面ごとたたき割る
+      beam(c.x, -U * .1, c.x, c.gy, "#e0c088", 30, .3); await wait(160);
+      doFlash("rgba(240,220,170,.5)", .3); doShake(30); crack(c.x, c.gy, "#ffd890"); ring(c.x, c.gy, "#e8d0a0", U * .55, .55, 14);
+      for (let i = 0; i < 24; i++) spark(c.x + rand(-60, 60), c.gy, { vx: rand(-200, 200), vy: rand(-620, -300) * U / 420, life: rand(.8, 1.2), size: rand(8, 16), color: any(["#7a5a34", "#9a7848"]), drag: .99, grav: 1100 * U / 420, add: false, shrink: false, rock: true });
+      burst(c.x, c.y, 50, { color: ["#7dd88a", "#c8ff7a"], spd: 380, size: 10 }); await wait(600); },
+    async erina(T, P) {                                  // 古代魔法・崩壊：古代文字が降り、崩れ落ちる
+      for (const c of T) { magicCircle(c.x, c.gy, "#c08cff", U * .3, 1.6);
+        for (let i = 0; i < 26; i++) setTimeout(() => spark(c.x + rand(-U * .2, U * .2), c.y - U * .5, { color: any(["#c08cff", "#e0c8ff"]), vx: 0, vy: rand(260, 420), life: .7, size: rand(8, 12), drag: 1 }), rand(0, 700) / speed); }
+      await wait(800);
+      for (const c of T) orbs.push({ x: c.x, y: c.y, r: 6, grow: U * .09, t: 0, dur: .7 });
+      await wait(650); doFlash("rgba(200,150,255,.5)", .3); doShake(22);
+      for (const c of T) { ring(c.x, c.y, "#c890ff", U * .42, .55, 14); burst(c.x, c.y, 80, { color: ["#b26bff", "#e0c8ff"], spd: 420, size: 13 }); }
+      await wait(300); },
+    async silva(T, P) {                                  // 翠晶の大地震：翠玉の結晶が地面から突き出る
+      doShake(26); for (const c of T) crack(c.x, c.gy, "#a8ffd0");
+      for (let k = 0; k < 3; k++) { for (const c of T) for (let i = 0; i < 3; i++) crystal(c.x + rand(-U * .18, U * .18), c.gy, rand(80, 150), any(["#3fe08a", "#8affc0", "#2fbf78"])); doShake(20); await wait(170); }
+      await wait(250); doFlash("rgba(180,255,210,.45)", .3);
+      for (const c of T) { shardBurst(c.x, c.y, 12, "#9affc8"); burst(c.x, c.y, 60, { color: ["#5dffa0", "#ffffff"], spd: 380, size: 12 }); }
+      await wait(500); },
+    async gaius(T, P) { const c = T[0];                  // 百裂剣：目にも止まらぬ斬撃
+      for (let i = 0; i < 22; i++) { const a = rand(0, Math.PI), r = U * rand(.2, .38);
+        slash(c.x - Math.cos(a) * r, c.y - Math.sin(a) * r, c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, any(["#ffd0c8", "#ffffff", "#ff6a5a"]), 6, .16, rand(-.2, .2));
+        if (i % 4 === 0) { doShake(10); burst(c.x + rand(-30, 30), c.y + rand(-30, 30), 10, { color: "#ff8a7a", spd: 240, size: 8, life: .3 }); } await wait(38); }
+      doFlash("rgba(255,140,120,.4)", .25); ring(c.x, c.y, "#ff8a7a", U * .45, .5, 12); burst(c.x, c.y, 80, { color: ["#ff6a5a", "#ffd0c8"], spd: 440, size: 12 }); await wait(400); },
+    async verde(T, P) { const c = T[0];                  // 茨棘の連撃：茨のつるが何度も打ちすえる
+      for (let i = 0; i < 6; i++) { const s = i % 2 ? 1 : -1;
+        slash(c.x - s * U * .45, c.y - U * rand(.1, .4), c.x + s * U * .4, c.y + U * rand(0, .3), any(["#4fbf5a", "#7dd88a"]), 9, .3, s * .5, true);
+        burst(c.x, c.y, 14, { color: ["#9aff7a", "#ffffff"], spd: 260, size: 8, life: .35 }); doShake(12); await wait(140); }
+      doFlash("rgba(190,255,180,.35)", .25); ring(c.x, c.y, "#a8ffa0", U * .42, .5, 12); burst(c.x, c.y, 70, { color: ["#5dbf5a", "#c8ff7a"], spd: 400, size: 12 }); await wait(400); },
+    async reino(T, P) {                                  // 魔導砲：光線が敵を貫き、雷がはじける
+      ring(P.x, P.y - U * .1, "#6ff0ff", U * .3, .5, 10); await wait(250);
+      for (const c of T) beam(P.x, P.y - U * .1, c.x, c.y, "#6ff0ff", 26, .55);
+      await wait(200); doFlash("rgba(180,250,255,.55)", .3); doShake(24);
+      for (const c of T) { bolt(c.x + rand(-40, 40), c.y - U * .4, c.x, c.y, "#cffbff"); ring(c.x, c.y, "#9ff6ff", U * .4, .45, 12); burst(c.x, c.y, 60, { color: ["#6ff0ff", "#ffffff"], spd: 420, size: 12 }); }
+      await wait(500); },
+    async eld(T, P) {                                    // 古森の大魔法陣：大きな魔法陣と、緑の光の柱
+      magicCircle(W / 2, T[0].gy, "#7dffae", U * .85, 1.8);
+      for (let i = 0; i < 50; i++) setTimeout(() => spark(rand(W * .1, W * .9), T[0].gy, { color: any(["#7dffae", "#d8ffe0"]), vx: 0, vy: rand(-320, -160), life: .9, size: 10, drag: 1 }), rand(0, 700) / speed);
+      await wait(750); for (const c of T) pillarAt(c.x, c.gy, "#9affc8");
+      doFlash("rgba(200,255,220,.55)", .35); doShake(20);
+      for (const c of T) { ring(c.x, c.y, "#c8ffe0", U * .42, .55, 12); burst(c.x, c.y, 70, { color: ["#7dffae", "#ffffff"], spd: 380, size: 13 }); }
+      await wait(500); },
+    async garen(T, P) { const c = T[0];                  // 概念崩し：空間ごとひび割れて砕ける
+      for (let k = 0; k < 2; k++) crack(c.x, c.y, "#e8e8ff"); await wait(350);
+      doFlash("rgba(230,230,255,.6)", .3); doShake(20); shardBurst(c.x, c.y, 22, "#e8e8ff"); ring(c.x, c.y, "#ffffff", U * .45, .5, 12); await wait(600); },
+    async luna(T, P) {                                   // 光帝の裁き：天から光の柱がいくつも
+      for (const c of T) { magicCircle(c.x, c.gy, "#fff3c0", U * .28, 1.6); }
+      await wait(500);
+      for (const c of T) { pillarAt(c.x, c.gy, "#fff4c8", U * .4); await wait(120); }
+      doFlash("rgba(255,255,240,.8)", .5); doShake(18);
+      for (const c of T) { ring(c.x, c.y, "#ffffff", U * .5, .6, 14); burst(c.x, c.y, 90, { color: ["#ffe9a0", "#ffffff"], spd: 420, size: 15 }); }
+      await wait(500); },
+    async astel(T, P) {                                  // 創世の咆哮：銀河が渦を巻き、七色の咆哮が貫く
+      tint = { color: "rgba(10,0,30,.55)", t: 0, dur: 2.4 };
+      const cx = W / 2, cy = T[0].y;
+      for (let i = 0; i < 180; i++) { const a = rand(0, Math.PI * 2), d = rand(U * .5, U * 1.1);
+        spark(cx + Math.cos(a) * d, cy + Math.sin(a) * d, { life: rand(.7, 1.1), size: rand(6, 12), color: any(["#c49bff", "#9fd8ff", "#ffb8e8", "#fff3b0"]), drag: 1, sink: { x: cx, y: cy, spin: 4 } }); }
+      await wait(1000);
+      for (const [col, off] of [["#ff8ad8", -16], ["#ffe08a", -8], ["#8affc0", 0], ["#8ad8ff", 8], ["#c08cff", 16]]) beam(-U * .1, cy + off * U / 420, W + U * .1, cy + off * U / 420, col, 14, .7);
+      beam(-U * .1, cy, W + U * .1, cy, "#ffffff", 30, .6);
+      doFlash("rgba(255,250,255,.8)", .5); doShake(30);
+      for (const c of T) { ring(c.x, c.y, "#ffffff", U * .55, .6, 18); burst(c.x, c.y, 90, { color: ["#c49bff", "#9fd8ff", "#ffb8e8", "#fff3b0"], spd: 500, size: 15 }); }
+      await wait(600); },
+    async fiora(T, P) {                                  // 微精霊の大合唱：色とりどりの微精霊が集まり、光となって降りそそぐ
+      const COL = ["#7dffae", "#ffe36a", "#7fe0ff", "#ff9ad0", "#c8ff7a", "#ffffff"];
+      for (let i = 0; i < 140; i++) setTimeout(() => { const a = rand(0, Math.PI * 2), d = rand(U * .6, U * 1.1);
+        spark(W / 2 + Math.cos(a) * d, H * .3 + Math.sin(a) * d, { life: rand(.9, 1.3), size: rand(8, 13), color: any(COL), drag: 1, shrink: false, sink: { x: W / 2, y: H * .3, spin: 5, slow: 160 } }); }, rand(0, 700) / speed);
+      await wait(1100);
+      for (const c of T) for (let i = 0; i < 10; i++) setTimeout(() => spear(c.x + rand(-U * .2, U * .2), H * .3, c.gy + rand(-10, 10), rand(90, 130), any(COL), rand(1500, 1900)), i * 50 / speed);
+      for (const c of T) for (let i = 0; i < 40; i++) { const a = rand(0, Math.PI * 2), d = rand(U * .14, U * .32);
+        spark(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d * .8, { life: rand(1, 1.3), size: rand(9, 14), color: any(COL), drag: 1, shrink: false, orbit: { x: c.x, y: c.y, w: 6 } }); }
+      await wait(800); doFlash("rgba(230,255,235,.6)", .4); doShake(20);
+      for (const c of T) { ring(c.x, c.y, "#e0ffe8", U * .5, .6, 14); burst(c.x, c.y, 100, { color: COL, spd: 480, size: 13, life: 1 }); }
+      await wait(500); },
+  };
+  async function skill(anim, T, P) { size(); speed = 1; kick(); const f = SK[anim]; if (!f) return false; await f(T, P); return true; }
+
 
   function frame(now) {
-    const dt = Math.min(.05, (now - last) / 1000); last = now;
-    const busy = spears.length || parts.length || rings.length || bolts.length || cracks.length || pillars.length || shards.length || circles.length || orbs.length || flash || tint || shakeA > 0;
+    const dt = Math.max(0, Math.min(.05, (now - last) / 1000)); last = Math.max(last, now);   // kick() の時刻より前のフレームが来ることがある
+    const busy = slashes.length || domes.length || crystals.length || spears.length || parts.length || rings.length || bolts.length || cracks.length || pillars.length || shards.length || circles.length || orbs.length || flash || tint || shakeA > 0;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
     if (!busy) { running = false; return; }
     const app = document.getElementById("app");
@@ -2385,7 +2504,7 @@ const MFX = (() => {
     for (const pl of pillars) { pl.t += dt; const k = Math.min(1, pl.t / .15), fade = Math.max(0, 1 - Math.max(0, pl.t - pl.dur * .5) / (pl.dur * .5));
       ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = fade;
       const w = pl.w * (0.6 + 0.4 * k) * (1 + Math.sin(pl.t * 40) * .04), gr = ctx.createLinearGradient(pl.x - w / 2, 0, pl.x + w / 2, 0);
-      gr.addColorStop(0, "rgba(255,240,200,0)"); gr.addColorStop(.35, "rgba(255,240,190,.75)"); gr.addColorStop(.5, "rgba(255,255,255,1)"); gr.addColorStop(.65, "rgba(255,240,190,.75)"); gr.addColorStop(1, "rgba(255,240,200,0)");
+      const pc = pl.color || "#fff0be"; gr.addColorStop(0, "rgba(0,0,0,0)"); gr.addColorStop(.35, pc); gr.addColorStop(.5, "rgba(255,255,255,1)"); gr.addColorStop(.65, pc); gr.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = gr; ctx.fillRect(pl.x - w / 2, 0, w, pl.gy * k); ctx.restore(); }
     for (const o of orbs) { o.t += dt; const k = Math.min(1, o.t / o.dur);
       if (o.fly) { const e = k * k; o.x = o.x1 + (o.x2 - o.x1) * e; o.y = o.y1 + (o.y2 - o.y1) * e; for (let j = 0; j < 3; j++) o.trail(o.x, o.y);
@@ -2394,6 +2513,24 @@ const MFX = (() => {
       else { const r = o.r + (o.grow - o.r) * Math.sin(k * Math.PI);
         const gr = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, r * 1.6); gr.addColorStop(0, "rgba(0,0,0,1)"); gr.addColorStop(.55, "rgba(10,0,25,.95)"); gr.addColorStop(.7, "rgba(160,90,255,.8)"); gr.addColorStop(1, "rgba(80,0,140,0)");
         ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(o.x, o.y, r * 1.6, 0, 7); ctx.fill(); if (k >= 1) o.dead = true; } }
+    for (const s of slashes) { s.t += dt; const k = Math.min(1, s.t / (s.dur * .45)), fade = Math.max(0, 1 - Math.max(0, s.t - s.dur * .45) / (s.dur * .55));
+      const mx = (s.x1 + s.x2) / 2 - (s.y2 - s.y1) * s.bend, my = (s.y1 + s.y2) / 2 + (s.x2 - s.x1) * s.bend;
+      const qx = (t) => (1 - t) * (1 - t) * s.x1 + 2 * (1 - t) * t * mx + t * t * s.x2, qy = (t) => (1 - t) * (1 - t) * s.y1 + 2 * (1 - t) * t * my + t * t * s.y2;
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = fade; ctx.lineCap = "round"; ctx.shadowColor = s.color; ctx.shadowBlur = 22;
+      for (const [w, c] of [[s.w, s.color], [s.w * .35, "#ffffff"]]) { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.beginPath();
+        for (let i = 0; i <= 20; i++) { const t = i / 20 * k; i ? ctx.lineTo(qx(t), qy(t)) : ctx.moveTo(qx(t), qy(t)); } ctx.stroke(); }
+      if (s.thorns) { ctx.strokeStyle = s.color; ctx.lineWidth = s.w * .4; for (let i = 1; i < 10; i++) { const t = i / 10 * k, x = qx(t), y = qy(t); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (i % 2 ? 1 : -1) * s.w * 1.3, y - s.w * 1.3); ctx.stroke(); } }
+      ctx.restore(); }
+    for (const d of domes) { d.t += dt; const k = Math.min(1, d.t / .4), fade = Math.max(0, 1 - Math.max(0, d.t - d.dur + .5) / .5);
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = fade * .9;
+      const gr = ctx.createRadialGradient(d.x, d.y, d.r * k * .2, d.x, d.y, d.r * k); gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(.75, "rgba(255,255,255,.05)"); gr.addColorStop(.93, d.color); gr.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r * k, d.r * k * .8, 0, Math.PI, 0); ctx.fill();
+      ctx.strokeStyle = d.color; ctx.lineWidth = 3; ctx.shadowColor = d.color; ctx.shadowBlur = 18; ctx.beginPath(); ctx.ellipse(d.x, d.y, d.r * k, d.r * k * .8, 0, Math.PI, 0); ctx.stroke(); ctx.restore(); }
+    for (const c of crystals) { c.t += dt; const k = Math.min(1, c.t / .18), fade = Math.max(0, 1 - Math.max(0, c.t - c.dur + .4) / .4);
+      ctx.save(); ctx.translate(c.x, c.gy); ctx.rotate(c.tilt); ctx.globalAlpha = fade; ctx.shadowColor = c.color; ctx.shadowBlur = 18;
+      const h = c.h * k, gr = ctx.createLinearGradient(0, 0, 0, -h); gr.addColorStop(0, c.color); gr.addColorStop(1, "#eafff4");
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(-c.w / 2, 0); ctx.lineTo(-c.w * .3, -h * .8); ctx.lineTo(0, -h); ctx.lineTo(c.w * .3, -h * .8); ctx.lineTo(c.w / 2, 0); ctx.closePath(); ctx.fill();
+      ctx.globalCompositeOperation = "lighter"; ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -h); ctx.lineTo(0, 0); ctx.stroke(); ctx.restore(); }
     for (const sp of spears) {
       if (!sp.stuck) { sp.y += sp.vy * dt; sp.x += Math.sin(sp.tilt) * sp.vy * dt;
         if (sp.y >= sp.gy) { sp.y = sp.gy; sp.stuck = 1; burst(sp.x, sp.y, 8, { color: sp.color, spd: 160, size: 8, life: .4 }); } }
@@ -2431,10 +2568,11 @@ const MFX = (() => {
     if (flash) { flash.t += dt; ctx.fillStyle = flash.color; ctx.globalAlpha = Math.max(0, 1 - flash.t / flash.dur); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; if (flash.t > flash.dur) flash = null; }
     const keep = (arr, ok) => { for (let i = arr.length - 1; i >= 0; i--) if (!ok(arr[i])) arr.splice(i, 1); };
     keep(circles, (m) => m.t <= m.dur); keep(cracks, (c) => c.t <= c.dur); keep(pillars, (p) => p.t <= p.dur); keep(orbs, (o) => !o.dead);
-    keep(shards, (s) => s.life > 0); keep(spears, (s) => s.life > 0); keep(parts, (p) => p.life > 0); keep(rings, (r) => r.t <= r.dur); keep(bolts, (b) => b.life > 0);
+    keep(shards, (s) => s.life > 0); keep(spears, (s) => s.life > 0);
+    keep(slashes, (s) => s.t <= s.dur); keep(domes, (d) => d.t <= d.dur); keep(crystals, (c) => c.t <= c.dur); keep(parts, (p) => p.life > 0); keep(rings, (r) => r.t <= r.dur); keep(bolts, (b) => b.life > 0);
     requestAnimationFrame(frame);
   }
-  return { play, kindOf };
+  return { play, kindOf, skill };
 })();
 // 敵 i の位置（画面の座標）。体のまん中と足もと
 function foeSpot(i) {
