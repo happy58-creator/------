@@ -1703,11 +1703,13 @@ async function resolveSpell(sp, rate) {
   }
   if (sp.kind === "attack" && G.multi && sp.target === "enemies") {      // 敵全体：生きている敵みんなに
     const keep = G.cur;
-    for (const i of aliveFoes()) { foeLoad(i); await spellHit(sp, rate, cm, el, M, i === aliveFoes()[0]); }
+    const ids = aliveFoes();
+    await MFX.play(sp, ids.map(foeSpot), async (n) => { foeLoad(ids[n]); await spellHit(sp, rate, cm, el, M, false); });
     foeLoad(G.foes[keep].dead ? (aliveFoes()[0] ?? keep) : keep);
   } else if (sp.kind === "attack") {
     const aim = sp.target === "enemy" ? await aimPhase(sp) : 1;     // 敵1体：ねらい
-    await spellHit(sp, rate, cm, el, M, true, aim);
+    const at = G.multi ? G.cur : 0;
+    await MFX.play(sp, [foeSpot(at)], async () => { if (G.multi) foeLoad(at); await spellHit(sp, rate, cm, el, M, false, aim); });
   } else if (false) {
     const elemMult = sp.element !== "none" && sp.element === e.weak ? M.weak : sp.element !== "none" && sp.element === e.resist_elem ? M.resist : 1;
     const raw = curMag() * sp.power * (sp.target === "enemies" ? M.all_rate : 1) * rate * cm * elemMult;
@@ -2179,7 +2181,268 @@ async function applySupport(sp, k, rate, cm) {
   updateBars(); updateBadges();
 }
 
-// 魔法の演出（属性ごと。強い魔法・全体の魔法ほど派手に）
+
+// ---------------------------------------------------------------------------
+// 魔法のエフェクト（光の粒）：画面いっぱいのキャンバスに描く。MFX.play(種類, 当てる敵の位置, 当たるたびに呼ぶ関数)
+// ---------------------------------------------------------------------------
+const MFX = (() => {
+  const cv = document.createElement("canvas"); cv.id = "mfx";
+  cv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;z-index:36;pointer-events:none";
+  const ctx = cv.getContext("2d");
+  let W = 0, H = 0, U = 400, DPR = 1, running = false, last = 0, speed = 1;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const rand = (a, b) => a + Math.random() * (b - a), any = (a) => a[Math.floor(Math.random() * a.length)];
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms / speed));
+  const cache = {};
+  function glow(color) {
+    if (cache[color]) return cache[color];
+    const c = document.createElement("canvas"); c.width = c.height = 64;
+    const g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.25, color); gr.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return (cache[color] = c);
+  }
+  const parts = [], rings = [], bolts = [], cracks = [], pillars = [], shards = [], circles = [], orbs = [], spears = [];
+  let flash = null, tint = null, shakeA = 0;
+  function size() {
+    const app = document.getElementById("app"); if (!cv.isConnected) app.appendChild(cv);
+    const r = app.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+    if (r.width !== W || r.height !== H) { W = r.width; H = r.height; cv.width = W * DPR; cv.height = H * DPR; }
+    U = Math.min(W, H * 0.62);
+  }
+  function kick() { if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } }
+  const spark = (x, y, o) => { const life = o.life ?? rand(.4, .9);
+    parts.push({ x, y, vx: o.vx ?? 0, vy: o.vy ?? 0, life, max: life, size: (o.size ?? rand(8, 22)) * U / 420, color: o.color,
+                 drag: o.drag ?? 0.9, grav: o.grav ?? 0, add: o.add ?? true, shrink: o.shrink ?? true, sink: o.sink, rock: o.rock, grow: o.grow, orbit: o.orbit }); kick(); };
+  const burst = (x, y, n, o) => { for (let i = 0; i < n; i++) { const a = rand(0, Math.PI * 2), s = rand(.2, 1) * (o.spd ?? 300) * U / 420;
+    spark(x, y, { ...o, color: Array.isArray(o.color) ? any(o.color) : o.color, vx: Math.cos(a) * s, vy: Math.sin(a) * s + (o.up ?? 0) }); } };
+  const smoke = (x, y, n, color) => { for (let i = 0; i < n; i++) spark(x + rand(-30, 30), y + rand(-20, 20), { vx: rand(-60, 60), vy: rand(-90, -30), life: rand(.7, 1.3), size: rand(16, 32), color, drag: .96, add: false, shrink: false, grow: true }); };
+  const ring = (x, y, color, r1, dur, w) => rings.push({ x, y, color, r1, t: 0, dur, w: w ?? 10 });
+  const doFlash = (color, dur) => { flash = { color, t: 0, dur }; };
+  const doShake = (a) => { shakeA = Math.max(shakeA, reduce ? a * .2 : a); };
+  function bolt(x1, y1, x2, y2, color, sub) {
+    const pts = [[x1, y1]], n = 12;
+    for (let i = 1; i < n; i++) { const t = i / n; pts.push([x1 + (x2 - x1) * t + rand(-1, 1) * 40 * (1 - t * .5), y1 + (y2 - y1) * t + rand(-8, 8)]); }
+    pts.push([x2, y2]); bolts.push({ pts, color, life: .32, max: .32, w: sub ? 2 : 5 });
+    if (!sub) for (let k = 0; k < 3; k++) { const [bx, by] = pts[3 + Math.floor(rand(0, 6))]; bolt(bx, by, bx + rand(-90, 90), by + rand(40, 120), color, 1); }
+  }
+  function crack(x, y, color) {
+    for (let k = 0; k < 7; k++) { let a = (Math.random() < .5 ? 0 : Math.PI) + rand(-.35, .35), px = x, py = y; const pts = [[px, py]];
+      for (let i = 0; i < 7; i++) { a += rand(-.5, .5); px += Math.cos(a) * rand(14, 30) * U / 420; py += Math.sin(a) * rand(4, 10) * U / 420; pts.push([px, py]); }
+      cracks.push({ pts, color, t: 0, dur: 1.6 }); }
+  }
+  const magicCircle = (x, y, color, r, dur, flat) => circles.push({ x, y, color, r, t: 0, dur, flat: flat ?? .32 });
+  // 光の槍：上から落ちて地面（gy）に刺さる。刺さると光の粒が散り、少しして消える
+  const spear = (x, y, gy, len, color, spd, tilt) => spears.push({ x, y, gy, len: len * U / 420, color, vy: (spd ?? 1600) * U / 420, tilt: tilt ?? rand(-.08, .08), stuck: 0, life: .7 }) && kick();
+  const shardBurst = (x, y, n, color) => { for (let i = 0; i < n; i++) { const a = rand(-Math.PI, 0), s = rand(200, 520) * U / 420;
+    shards.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, r: rand(0, 6), vr: rand(-8, 8), size: rand(8, 18) * U / 420, color, life: rand(.6, 1.1), max: 1.1 }); } };
+  const orbTo = (x1, y1, x2, y2, color, dur, trail, r) => new Promise((res) => orbs.push({ fly: true, x: x1, y: y1, x1, y1, x2, y2, color, t: 0, dur, trail, r: (r || 18) * U / 420, done: res }));
+
+  // ---- 魔法ごとの流れ。T = 敵の位置 [{x, y（体のまん中）, gy（足もと）}]。hit(i) で i 番目の敵にダメージ ----
+  const K = {
+    async fire(T, hit) {
+      const c = T[0]; magicCircle(W / 2, H * .9, "#ff8a3a", U * .3, .9); await wait(380);
+      await orbTo(W / 2, H * .95, c.x, c.y, "#ffb04a", .42, (x, y) => spark(x, y, { color: any(["#ff7a2a", "#ffcf6a"]), vx: rand(-40, 40), vy: rand(-40, 40), life: .35, size: rand(10, 20) }));
+      doFlash("rgba(255,150,60,.5)", .35); doShake(14); ring(c.x, c.y, "#ffb04a", U * .35, .45, 12);
+      burst(c.x, c.y, 90, { color: "#ff6a1a", spd: 380, up: -80, grav: 260, size: 16 }); burst(c.x, c.y, 50, { color: "#ffe39a", spd: 220, size: 12 });
+      smoke(c.x, c.y, 6, "rgba(60,40,30,.55)"); await hit(0);
+    },
+    async explosion(T, hit) {
+      magicCircle(W / 2, H * .62, "#ff6a2a", U * .75, 1.5);
+      for (let i = 0; i < 40; i++) setTimeout(() => spark(rand(0, W), H * .85, { color: "#ff8a3a", vx: rand(-20, 20), vy: rand(-260, -120), life: .9, size: 12, drag: .98 }), rand(0, 700) / speed);
+      await wait(800);
+      for (let i = 0; i < T.length; i++) { const c = T[i]; doFlash("rgba(255,240,200,.7)", .3); doShake(22);
+        ring(c.x, c.y, "#ffe0a0", U * .5, .5, 18); ring(c.x, c.y, "#ff5a1a", U * .38, .7, 8);
+        burst(c.x, c.y, 130, { color: ["#ff5a1a", "#ff8a2a"], spd: 520, grav: 220, size: 20, life: .9 }); burst(c.x, c.y, 60, { color: "#fff0b0", spd: 260, size: 14 });
+        smoke(c.x, c.y - 20, 6, "rgba(50,30,25,.6)"); await hit(i); await wait(120); }
+    },
+    async ice(T, hit) {
+      tint = { color: "rgba(150,210,255,.22)", t: 0, dur: 1.6 };
+      for (const c of T) magicCircle(c.x, c.gy, "#9fe0ff", U * .32, 1.4);
+      for (let i = 0; i < 70; i++) setTimeout(() => spark(rand(-W * .2, W * .7), rand(-H * .05, H * .45), { color: any(["#dff4ff", "#9fdcff"]), vx: rand(280, 460), vy: rand(160, 260), life: 1, size: rand(5, 11), drag: 1 }), rand(0, 900) / speed);
+      await wait(700);
+      for (let k = 0; k < 3; k++) { for (const c of T) shardBurst(c.x + rand(-30, 30), c.y + rand(-30, 30), 9, "#bfe9ff"); doShake(8); await wait(140); }
+      doFlash("rgba(200,240,255,.65)", .4);
+      for (let i = 0; i < T.length; i++) { const c = T[i]; ring(c.x, c.y, "#dff6ff", U * .36, .5, 10); burst(c.x, c.y, 70, { color: "#a8e4ff", spd: 300, size: 14 }); await hit(i); }
+    },
+    async thunder(T, hit) {
+      doFlash("rgba(20,20,60,.5)", .9); await wait(250);
+      for (let k = 0; k < (T.length > 1 ? 3 : 2); k++) { for (const c of T) bolt(c.x + rand(-60, 60), -10, c.x, c.y, "#fff7b0");
+        doFlash("rgba(255,250,210,.75)", .14); doShake(16); await wait(110); }
+      for (let i = 0; i < T.length; i++) { const c = T[i]; ring(c.x, c.y, "#fff2a0", U * .3, .4, 8); burst(c.x, c.y, 50, { color: "#ffe14a", spd: 420, size: 10, life: .5 }); await hit(i); }
+    },
+    async earth(T, hit) {
+      const all = T.length > 1;
+      if (all) magicCircle(W / 2, T[0].gy, "#e0b878", U * .8, 1.4); else magicCircle(T[0].x, T[0].gy, "#e0b878", U * .3, 1.2);
+      await wait(500); doShake(all ? 30 : 18);
+      for (const c of T) crack(c.x, c.gy, "#ffd890");
+      for (let k = 0; k < (all ? 4 : 3); k++) {
+        for (const c of T) { for (let i = 0; i < 8; i++) spark(c.x + rand(-60, 60) * U / 420, c.gy, { vx: rand(-120, 120), vy: rand(-620, -320) * U / 420, life: rand(.8, 1.3), size: rand(8, 18), color: any(["#7a5a34", "#9a7848", "#5a4428"]), drag: .99, grav: 1100 * U / 420, add: false, shrink: false, rock: true });
+          smoke(c.x, c.gy - 10, 3, "rgba(150,120,80,.5)"); }
+        doShake(all ? 24 : 14); await wait(170);
+      }
+      doFlash("rgba(255,230,170,.3)", .25); for (let i = 0; i < T.length; i++) await hit(i);
+    },
+    async holy(T, hit) {
+      for (const c of T) { magicCircle(c.x, c.gy, "#fff3c0", U * .3, 1.6);
+        for (let i = 0; i < 30; i++) setTimeout(() => spark(c.x + rand(-60, 60), c.gy, { color: "#fff6d0", vx: rand(-10, 10), vy: rand(-320, -160), life: .9, size: 10, drag: 1 }), rand(0, 600) / speed); }
+      await wait(650);
+      for (const c of T) pillars.push({ x: c.x, gy: c.gy, w: U * .36, t: 0, dur: 1.1 });
+      doFlash("rgba(255,255,240,.8)", .5); doShake(12);
+      for (let i = 0; i < T.length; i++) { const c = T[i]; burst(c.x, c.y, 90, { color: "#ffe9a0", spd: 340, size: 16, life: 1 }); ring(c.x, c.y, "#ffffff", U * .45, .6, 14); await hit(i); }
+    },
+    async dark(T, hit) {
+      tint = { color: "rgba(20,0,40,.5)", t: 0, dur: 1.8 };
+      for (const c of T) { for (let i = 0; i < 140 / T.length + 30; i++) { const a = rand(0, Math.PI * 2), d = rand(U * .4, U * .9);
+          spark(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d, { life: rand(.6, 1.1), size: rand(6, 14), color: any(["#b07bff", "#6a2aff", "#ff5ad0"]), drag: 1, sink: { x: c.x, y: c.y, spin: 3.2 } }); }
+        orbs.push({ x: c.x, y: c.y, r: 6, grow: U * .2, t: 0, dur: 1.0 }); }
+      await wait(950); doFlash("rgba(180,120,255,.55)", .35); doShake(18);
+      for (let i = 0; i < T.length; i++) { const c = T[i]; ring(c.x, c.y, "#c890ff", U * .5, .6, 16); ring(c.x, c.y, "#2a0050", U * .36, .8, 24);
+        burst(c.x, c.y, 100, { color: ["#c08cff", "#ff6ad8"], spd: 460, size: 14 }); await hit(i); }
+    },
+    async arcane(T, hit) {                        // 無属性の単体（ルーンボルト・星墜とし・微精霊の光槍）
+      const c = T[0]; magicCircle(W / 2, H * .9, "#9fc0ff", U * .3, 1); await wait(380);
+      for (let k = 0; k < 3; k++) { orbTo(W / 2 + (k - 1) * U * .25, H * .92, c.x, c.y, "#a8c8ff", .42 + k * .06, (x, y) => spark(x, y, { color: any(["#9fc0ff", "#d8c8ff"]), vx: rand(-30, 30), vy: rand(-30, 30), life: .35, size: rand(8, 16) }), 14); await wait(70); }
+      await wait(420); doFlash("rgba(190,210,255,.55)", .35); doShake(16);
+      ring(c.x, c.y, "#cfe0ff", U * .42, .5, 12); ring(c.x, c.y, "#9a7bff", U * .3, .7, 6);
+      burst(c.x, c.y, 110, { color: ["#9fc0ff", "#c8b0ff", "#ffffff"], spd: 420, size: 14 }); await hit(0);
+    },
+    async lance(T, hit) {                         // 微精霊の光槍：空の魔法陣から光の槍が十数本、地面に刺さる
+      const c = T[0], top = Math.max(H * .08, c.y - U * .62);
+      magicCircle(c.x, top, "#c8ffe0", U * .38, 2.2, .45); burst(c.x, top, 30, { color: ["#c8ffe0", "#fff6c0"], spd: 120, size: 10, life: .8 });
+      await wait(550);
+      for (let i = 0; i < 15; i++) {
+        const x = c.x + rand(-1, 1) * U * (i < 5 ? .12 : .28);
+        setTimeout(() => spear(x, top, c.gy + rand(-10, 14), rand(150, 190), any(["#e8fff0", "#fff6c8", "#c8f0ff"]), rand(1500, 1900)), i * 55 / speed);
+      }
+      await wait(15 * 55 + 260);
+      doFlash("rgba(230,255,240,.55)", .35); doShake(16); ring(c.x, c.gy, "#e8fff0", U * .45, .5, 10);
+      burst(c.x, c.y, 90, { color: ["#e8fff0", "#fff3b0", "#a8ffd0"], spd: 360, size: 14 }); await hit(0);
+    },
+    async rain(T, hit) {                          // 創星の光雨：短い光の槍が数十本、1.5秒ほど降りそそぐ（魔法陣なし）
+      const xs = T.map((c) => c.x), left = Math.min(...xs) - U * .3, right = Math.max(...xs) + U * .3, gy = Math.max(...T.map((c) => c.gy));
+      tint = { color: "rgba(40,30,80,.3)", t: 0, dur: 2.2 };
+      for (let i = 0; i < 46; i++) {
+        setTimeout(() => { const x = rand(left, right), g2 = gy + rand(-30, 20);
+          spear(x + Math.tan(.38) * (g2 + U * .1), -U * .1, g2, rand(70, 95), any(["#ffffff", "#e8d8ff", "#fff3c0", "#c8e8ff"]), rand(1900, 2400), -.38); }, rand(0, 1500) / speed);
+      }
+      await wait(700); doShake(10); await wait(500); doShake(14);
+      await wait(450); doFlash("rgba(240,235,255,.55)", .35); doShake(18);
+      for (let i = 0; i < T.length; i++) { const c = T[i]; ring(c.x, c.y, "#efe6ff", U * .4, .5, 10); burst(c.x, c.y, 60, { color: ["#ffffff", "#d8c8ff", "#fff0b0"], spd: 360, size: 12 }); await hit(i); }
+    },
+    async spirits(T, hit) {                       // 微精霊の嵐：色とりどりの微精霊が集まって、敵のまわりで渦を巻き、はじける
+      const COL = ["#7dffae", "#ffe36a", "#7fe0ff", "#ff9ad0", "#c8ff7a", "#ffffff"];
+      for (let i = 0; i < 120; i++) setTimeout(() => {      // 画面のあちこちから微精霊が集まってくる
+        const c = any(T), a = rand(0, Math.PI * 2), d = rand(U * .7, U * 1.2);
+        spark(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d, { life: rand(.9, 1.4), size: rand(7, 12), color: any(COL), drag: 1, shrink: false, sink: { x: c.x, y: c.y, spin: 5, slow: 150 } });
+      }, rand(0, 900) / speed);
+      await wait(900);
+      for (const c of T) for (let i = 0; i < 60; i++) {     // 敵のまわりを回る
+        const a = rand(0, Math.PI * 2), d = rand(U * .14, U * .34);
+        spark(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d * .8, { life: rand(1.0, 1.4), size: rand(9, 15), color: any(COL), drag: 1, shrink: false, orbit: { x: c.x, y: c.y, w: rand(5, 8) } });
+      }
+      await wait(900); doFlash("rgba(230,255,235,.5)", .35); doShake(18);
+      for (let i = 0; i < T.length; i++) { const c = T[i]; ring(c.x, c.y, "#c8ffe0", U * .45, .55, 12);
+        burst(c.x, c.y, 110, { color: COL, spd: 460, size: 12, life: 1 }); await hit(i); }
+    },
+    async meteor(T, hit) {                        // 無属性の全体（メテオ・創星の光雨・微精霊の嵐）
+      tint = { color: "rgba(80,20,10,.3)", t: 0, dur: 2.2 + T.length * .3 }; await wait(250);
+      for (let i = 0; i < T.length; i++) { const c = T[i];
+        await orbTo(W * 1.1 + rand(0, 80), -H * .15, c.x, c.y, "#ffcf7a", .38, (x, y) => { spark(x, y, { color: any(["#ff6a1a", "#ffb04a"]), vx: rand(-60, 60), vy: rand(-60, 60), life: .5, size: rand(16, 30) }); if (Math.random() < .25) smoke(x, y, 1, "rgba(60,30,20,.5)"); }, 26);
+        doFlash("rgba(255,230,180,.6)", .3); doShake(30); ring(c.x, c.y, "#ffe8b0", U * .55, .55, 20);
+        burst(c.x, c.y, 140, { color: ["#ff5a1a", "#ff9a3a", "#ffe08a"], spd: 560, grav: 300, size: 20, life: 1 }); smoke(c.x, c.y, 6, "rgba(40,25,20,.6)");
+        shardBurst(c.x, c.y + 30, 8, "#6a4a30"); await hit(i); }
+    },
+  };
+  // どの魔法がどの演出か
+  function kindOf(sp) {
+    const all = sp.target === "enemies";
+    const own = { fiora_lance: "lance", astel_rain: "rain", fiora_storm: "spirits" }[sp.id];   // 専用の演出
+    if (own) return own;
+    return { fire: all ? "explosion" : "fire", ice: "ice", thunder: "thunder", earth: "earth", light: "holy", dark: "dark", wind: "ice" }[sp.element]
+      || (all ? "meteor" : "arcane");
+  }
+  async function play(sp, T, hit) { size(); speed = 1; kick(); await K[kindOf(sp)](T, hit); }
+
+  function frame(now) {
+    const dt = Math.min(.05, (now - last) / 1000); last = now;
+    const busy = spears.length || parts.length || rings.length || bolts.length || cracks.length || pillars.length || shards.length || circles.length || orbs.length || flash || tint || shakeA > 0;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
+    if (!busy) { running = false; return; }
+    const app = document.getElementById("app");
+    if (shakeA > 0) { app.style.transform = `translate(${rand(-shakeA, shakeA) * .5}px,${rand(-shakeA, shakeA) * .5}px)`; shakeA = Math.max(0, shakeA - 60 * dt); if (!shakeA) app.style.transform = ""; }
+    if (tint) { tint.t += dt; ctx.fillStyle = tint.color; ctx.globalAlpha = Math.max(0, 1 - Math.max(0, tint.t - tint.dur * .7) / (tint.dur * .3)); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; if (tint.t > tint.dur) tint = null; }
+    for (const m of circles) { m.t += dt; const k = Math.min(1, m.t / .35), fade = Math.max(0, 1 - Math.max(0, m.t - m.dur + .4) / .4);
+      ctx.save(); ctx.translate(m.x, m.y); ctx.scale(1, m.flat); ctx.rotate(m.t * 1.2); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = fade;
+      ctx.strokeStyle = m.color; ctx.shadowColor = m.color; ctx.shadowBlur = 18; ctx.lineWidth = 3;
+      for (const rr of [1, .82, .5]) { ctx.beginPath(); ctx.arc(0, 0, m.r * k * rr, 0, Math.PI * 2 * k); ctx.stroke(); }
+      ctx.beginPath(); for (let i = 0; i <= 6; i++) { const a = i * Math.PI * 4 / 6 - Math.PI / 2, px = Math.cos(a) * m.r * .82 * k, py = Math.sin(a) * m.r * .82 * k; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.stroke();
+      ctx.font = `${Math.max(10, m.r * .09)}px serif`; ctx.fillStyle = m.color;
+      for (let i = 0; i < 16; i++) { ctx.save(); ctx.rotate(i / 16 * Math.PI * 2); ctx.fillText("ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊ"[i], -4, -m.r * .9 * k); ctx.restore(); }
+      ctx.restore(); }
+    for (const c of cracks) { c.t += dt; const k = Math.min(1, c.t / .25), fade = Math.max(0, 1 - Math.max(0, c.t - c.dur + .5) / .5);
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = fade; ctx.strokeStyle = c.color; ctx.shadowColor = "#ff9a3a"; ctx.shadowBlur = 14; ctx.lineWidth = 3;
+      ctx.beginPath(); c.pts.slice(0, Math.max(2, Math.ceil(c.pts.length * k))).forEach(([x, y], j) => j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); ctx.restore(); }
+    for (const pl of pillars) { pl.t += dt; const k = Math.min(1, pl.t / .15), fade = Math.max(0, 1 - Math.max(0, pl.t - pl.dur * .5) / (pl.dur * .5));
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = fade;
+      const w = pl.w * (0.6 + 0.4 * k) * (1 + Math.sin(pl.t * 40) * .04), gr = ctx.createLinearGradient(pl.x - w / 2, 0, pl.x + w / 2, 0);
+      gr.addColorStop(0, "rgba(255,240,200,0)"); gr.addColorStop(.35, "rgba(255,240,190,.75)"); gr.addColorStop(.5, "rgba(255,255,255,1)"); gr.addColorStop(.65, "rgba(255,240,190,.75)"); gr.addColorStop(1, "rgba(255,240,200,0)");
+      ctx.fillStyle = gr; ctx.fillRect(pl.x - w / 2, 0, w, pl.gy * k); ctx.restore(); }
+    for (const o of orbs) { o.t += dt; const k = Math.min(1, o.t / o.dur);
+      if (o.fly) { const e = k * k; o.x = o.x1 + (o.x2 - o.x1) * e; o.y = o.y1 + (o.y2 - o.y1) * e; for (let j = 0; j < 3; j++) o.trail(o.x, o.y);
+        ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.drawImage(glow(o.color), o.x - o.r * 2, o.y - o.r * 2, o.r * 4, o.r * 4); ctx.drawImage(glow("#ffffff"), o.x - o.r, o.y - o.r, o.r * 2, o.r * 2); ctx.restore();
+        if (k >= 1) { o.dead = true; if (o.done) { o.done(); o.done = null; } } }
+      else { const r = o.r + (o.grow - o.r) * Math.sin(k * Math.PI);
+        const gr = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, r * 1.6); gr.addColorStop(0, "rgba(0,0,0,1)"); gr.addColorStop(.55, "rgba(10,0,25,.95)"); gr.addColorStop(.7, "rgba(160,90,255,.8)"); gr.addColorStop(1, "rgba(80,0,140,0)");
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(o.x, o.y, r * 1.6, 0, 7); ctx.fill(); if (k >= 1) o.dead = true; } }
+    for (const sp of spears) {
+      if (!sp.stuck) { sp.y += sp.vy * dt; sp.x += Math.sin(sp.tilt) * sp.vy * dt;
+        if (sp.y >= sp.gy) { sp.y = sp.gy; sp.stuck = 1; burst(sp.x, sp.y, 8, { color: sp.color, spd: 160, size: 8, life: .4 }); } }
+      else sp.life -= dt;
+      const a = Math.max(0, Math.min(1, sp.life / .35)), tx = sp.x - Math.sin(sp.tilt) * sp.len, ty = sp.y - Math.cos(sp.tilt) * sp.len;
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = a; ctx.lineCap = "round"; ctx.shadowColor = sp.color; ctx.shadowBlur = 16;
+      const gr = ctx.createLinearGradient(tx, ty, sp.x, sp.y); gr.addColorStop(0, "rgba(255,255,255,0)"); gr.addColorStop(.6, sp.color); gr.addColorStop(1, "#ffffff");
+      ctx.strokeStyle = gr; ctx.lineWidth = 7 * U / 420; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(sp.x, sp.y); ctx.stroke();
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2.2 * U / 420; ctx.beginPath(); ctx.moveTo(tx + (sp.x - tx) * .4, ty + (sp.y - ty) * .4); ctx.lineTo(sp.x, sp.y); ctx.stroke();
+      if (sp.stuck) { ctx.drawImage(glow(sp.color), sp.x - 14, sp.y - 8, 28, 16); }
+      ctx.restore();
+    }
+    for (const s of shards) { s.life -= dt; s.vy += 900 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.r += s.vr * dt;
+      ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.r); ctx.globalAlpha = Math.max(0, s.life / s.max); ctx.fillStyle = s.color; ctx.shadowColor = "#bfe9ff"; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.moveTo(0, -s.size); ctx.lineTo(s.size * .45, 0); ctx.lineTo(0, s.size * .8); ctx.lineTo(-s.size * .45, 0); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    for (const p of parts) { p.life -= dt;
+      if (p.sink) { const dx = p.sink.x - p.x, dy = p.sink.y - p.y, d = Math.hypot(dx, dy) || 1, v = p.sink.slow ?? 380;
+        p.vx = dx / d * v - dy / d * p.sink.spin * 60; p.vy = dy / d * v + dx / d * p.sink.spin * 60; if (d < 14) p.life = 0; }
+      if (p.orbit) { const dx = p.x - p.orbit.x, dy = (p.y - p.orbit.y) / .8, a = Math.atan2(dy, dx) + p.orbit.w * dt, r = Math.hypot(dx, dy) * (1 - .25 * dt);
+        p.x = p.orbit.x + Math.cos(a) * r; p.y = p.orbit.y + Math.sin(a) * r * .8; p.vx = p.vy = 0; }
+      p.vx *= Math.pow(p.drag, dt * 60); p.vy = p.vy * Math.pow(p.drag, dt * 60) + p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      const k = Math.max(0, p.life / p.max), s = p.grow ? p.size * (1.6 - k * .6) : p.shrink ? p.size * k : p.size;
+      if (p.add) { ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, k * 1.4); ctx.drawImage(glow(p.color), p.x - s, p.y - s, s * 2, s * 2); }
+      else { ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = p.rock ? Math.min(1, k * 2) : k * .45; ctx.fillStyle = p.color; ctx.beginPath();
+        if (p.rock) { ctx.moveTo(p.x - s * .5, p.y); ctx.lineTo(p.x - s * .1, p.y - s * .55); ctx.lineTo(p.x + s * .5, p.y - s * .2); ctx.lineTo(p.x + s * .3, p.y + s * .4); ctx.closePath(); }
+        else ctx.arc(p.x, p.y, s, 0, 7);
+        ctx.fill(); } }
+    ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+    for (const r of rings) { r.t += dt; const k = Math.min(1, r.t / r.dur), e = 1 - Math.pow(1 - k, 3), rr = 4 + (r.r1 - 4) * e;
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 1 - k; ctx.strokeStyle = r.color; ctx.lineWidth = r.w * (1 - k) + 1; ctx.shadowColor = r.color; ctx.shadowBlur = 20;
+      ctx.beginPath(); ctx.ellipse(r.x, r.y, rr, rr * .62, 0, 0, 7); ctx.stroke(); ctx.restore(); }
+    for (const b of bolts) { b.life -= dt; ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.max(0, b.life / b.max) * (Math.random() < .2 ? .4 : 1);
+      for (const [w, c] of [[b.w * 4, b.color], [b.w, "#ffffff"]]) { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.shadowColor = b.color; ctx.shadowBlur = 24; ctx.lineJoin = "round";
+        ctx.beginPath(); b.pts.forEach(([x, y], j) => j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); } ctx.restore(); }
+    if (flash) { flash.t += dt; ctx.fillStyle = flash.color; ctx.globalAlpha = Math.max(0, 1 - flash.t / flash.dur); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; if (flash.t > flash.dur) flash = null; }
+    const keep = (arr, ok) => { for (let i = arr.length - 1; i >= 0; i--) if (!ok(arr[i])) arr.splice(i, 1); };
+    keep(circles, (m) => m.t <= m.dur); keep(cracks, (c) => c.t <= c.dur); keep(pillars, (p) => p.t <= p.dur); keep(orbs, (o) => !o.dead);
+    keep(shards, (s) => s.life > 0); keep(spears, (s) => s.life > 0); keep(parts, (p) => p.life > 0); keep(rings, (r) => r.t <= r.dur); keep(bolts, (b) => b.life > 0);
+    requestAnimationFrame(frame);
+  }
+  return { play, kindOf };
+})();
+// 敵 i の位置（画面の座標）。体のまん中と足もと
+function foeSpot(i) {
+  const el = G.multi ? foeEl(i) : curTarget(); const r = el ? el.getBoundingClientRect() : { left: innerWidth * .3, top: innerHeight * .2, width: innerWidth * .4, height: innerHeight * .4 };
+  return { x: r.left + r.width / 2, y: r.top + r.height * .45, gy: Math.min(innerHeight * .78, r.top + r.height * .92) };
+}
+
+// 魔法の演出（古い版。いまは MFX を使う）
 async function magicFx(sp, el) {
   const big = sp.target === "enemies" || sp.power >= 90, c = el.color;
   fxEl("flash", { background: `color-mix(in srgb, ${c} 45%, transparent)` });
