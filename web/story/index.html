@@ -336,11 +336,30 @@
     background:radial-gradient(ellipse 60% 50% at 0% 50%, #fff 0%, #fff8e0 30%, rgba(255,215,140,.85) 55%, rgba(170,130,255,.35) 75%, transparent 100%);
     transform:skewY(-4deg); mix-blend-mode:screen; }
   #grand.p4 .g-beam { animation:gBeam .55s cubic-bezier(.5,0,.2,1) forwards; }
+  /* フィオラ（theme: spirit）：微精霊の合唱。虹色の光の粒・音符・緑の魔法陣、最後は光のリボンが渦を巻いて昇る */
+  #grand.spirit .g-black { background:radial-gradient(ellipse at 50% 55%, #0c2a24 0%, #02100c 70%); }
+  #grand.spirit svg.g-circle .d { stroke:#b8ffd8; }
+  #grand.spirit.p2 img.g-img { animation:gPanV 3.2s cubic-bezier(.2,.6,.3,1) forwards; }
+  @keyframes gPanV { 0%{transform:scale(1.4); object-position:50% 20%; filter:brightness(2.2) saturate(.6)}
+                     18%{filter:brightness(1.05) saturate(1.1)} 100%{transform:scale(1.04); object-position:50% 38%; filter:brightness(.92) saturate(1.15)} }
+  #grand.spirit .g-reading { color:#efffe8; text-shadow:0 0 8px #49d68a; }
+  #grand.spirit .g-name span { background:linear-gradient(180deg,#ffffff 0%,#e4ffe9 40%,#8ff0b8 70%,#fff6c8 100%); -webkit-background-clip:text; background-clip:text; }
+  #grand.spirit .g-sub { color:#dcffe8; text-shadow:0 0 10px #3fd48a; }
+  #grand.spirit .g-beam { left:0; top:0; height:100%; width:100%; filter:blur(6px); transform:none; opacity:0;
+    background:conic-gradient(from 0deg at 50% 60%, rgba(255,120,160,.0), rgba(255,210,120,.55), rgba(140,255,190,.6), rgba(130,200,255,.55), rgba(200,150,255,.55), rgba(255,120,160,.0)); }
+  #grand.spirit.p4 .g-beam { animation:gSwirl .9s ease-in forwards; }
+  @keyframes gSwirl { 0%{opacity:0; transform:scale(.3) rotate(0deg)} 40%{opacity:1} 100%{opacity:1; transform:scale(2.6) rotate(220deg)} }
+  #grand .g-note { position:absolute; font:700 22px/1 serif; color:var(--c); text-shadow:0 0 8px var(--c); opacity:0; animation:gNote var(--d) ease-out forwards; }
+  @keyframes gNote { 0%{opacity:0; transform:translate(0,0) scale(.6)} 20%{opacity:1} 100%{opacity:0; transform:translate(var(--dx),var(--dy)) scale(1.3) rotate(20deg)} }
+  #grand .g-fairy { position:absolute; width:8px; height:8px; border-radius:50%; background:var(--c); box-shadow:0 0 10px 4px var(--c);
+    opacity:0; animation:gFairy var(--d) ease-in-out forwards; }
+  @keyframes gFairy { 0%{opacity:0; transform:translate(0,0)} 15%{opacity:1} 50%{transform:translate(calc(var(--dx) * .5), calc(var(--dy) * .5 - 30px))} 100%{opacity:0; transform:translate(var(--dx),var(--dy))} }
+
   @keyframes gBeam { 0%{width:0; opacity:1} 100%{width:260%; opacity:1} }
   #grand.p4 { animation:gShake .08s linear infinite; }
   @keyframes gShake { 0%{transform:translate(0,0)} 50%{transform:translate(-8px,5px)} 100%{transform:translate(7px,-6px)} }
   #grand .g-white { position:absolute; inset:0; background:#fff; opacity:0; }
-  #grand.flash .g-white { animation:gWhite .45s ease-out forwards; }
+  #grand.gflash .g-white { animation:gWhite .45s ease-out forwards; }
   #grand.whiteout .g-white { opacity:1; transition:opacity .25s ease-in; }
   @keyframes gWhite { 0%{opacity:1} 100%{opacity:0} }
 
@@ -700,7 +719,7 @@ function start(args) {
   $("stage").innerHTML = args.scene_html;
   G = {
     round: c.round, cfg: c, enemyHp: c.enemy.max_hp, allyHp: c.ally.hp,
-    phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0, defDown: 0, regenTurns: 0, regenMp: 0, elemWard: 0,
+    phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0, defDown: 0, regenTurns: 0, regenMp: 0, elemWard: 0, spiritTurns: 0, spiritHp: 0, spiritMp: 0, spiritMs: 0,
     bag: Object.fromEntries(c.items.map((i) => [i.id, i.count])), used: {},
     taps: 0, hits: 0, misses: 0, dealt: 0, taken: 0, startAt: performance.now(), hitMask: null,
     tapHits: 0, tapDamage: 0, icons: args.item_icons || {}, statusIcons: args.status_icons || {}, equipIcons: args.equip_icons || {},
@@ -857,6 +876,7 @@ function updateBadges() {
   if (G.eBreak > 0) html.push(`<span class="badge skill" data-tip="break">💥 敵の防御0 あと${G.eBreak}</span>`);
   if (G.ward > 0) html.push(`<span class="badge skill" data-tip="ward">📜 封炎 あと${G.ward}</span>`);
   if (G.regenTurns > 0) html.push(`<span class="badge skill" data-tip="regen">💧 MP回復 あと${G.regenTurns}</span>`);
+  if (G.spiritTurns > 0) html.push(`<span class="badge skill" data-tip="spirit">✨ 微精霊の援護 あと${G.spiritTurns}</span>`);
   if (G.elemWard > 0) html.push(`<span class="badge skill" data-tip="elemward">🌌 属性無効 あと${G.elemWard}</span>`);
   if (G.defDown > 0) html.push(`<span class="badge" style="background:#5a1a1a" data-tip="defdown">🛡️⬇ 防御ダウン あと${G.defDown}</span>`);
   if (G.blessing) html.push(`<span class="badge skill" data-tip="blessing">✨ 精霊の加護</span>`);
@@ -1077,7 +1097,7 @@ function attackMs() {
   const M = G.cfg.magic || {};
   const extra = Math.min(M.haste_max_ms || 3000, (G.hasteItemTurns > 0 ? G.hasteItemMs : 0) + (G.hasteSpellTurns > 0 ? G.hasteSpellMs : 0));
   const slow = G.status.freeze > 0 ? ((G.cfg.status.freeze || {}).slow_ms || 0) : 0;
-  return Math.max(1000, G.cfg.attack_ms + extra - slow);
+  return Math.max(1000, G.cfg.attack_ms + extra - slow + (G.spiritTurns > 0 ? G.spiritMs : 0));
 }
 function currentCrit() { return (G.cfg.ally.crit || 0) + (G.critTurns > 0 ? G.critBonus : 0); }
 
@@ -1144,7 +1164,11 @@ async function cutin(name, color) {
 async function grandSkill(s, src, who) {
   const g = $("grand"), sc = s.scene || {}, fx = g.querySelector(".g-fx");
   fx.innerHTML = ""; g.className = "on";
-  g.querySelector(".g-img").src = src;
+  const spirit = sc.theme === "spirit";            // フィオラ：微精霊の色
+  if (spirit) g.classList.add("spirit");
+  const PAL = spirit ? ["#ff7aa2", "#ffd36a", "#7dffae", "#7fc8ff", "#c08cff", "#ffffff"] : ["#ffe7a8", "#b48cff", "#9fd8ff"];
+  const gimg = g.querySelector(".g-img"); gimg.src = src;
+  try { await gimg.decode(); } catch (e) { /* 読めなくても演出は続ける */ }
   g.querySelector(".g-who").textContent = who || G.cfg.ally.name;
   g.querySelector(".g-reading").textContent = sc.reading || "";
   g.querySelector(".g-sub").textContent = sc.sub || "";
@@ -1155,28 +1179,44 @@ async function grandSkill(s, src, who) {
     const st = document.createElement("div"); st.className = "g-star";
     const a = Math.random() * Math.PI * 2, r = 55 + Math.random() * 30;
     st.style.setProperty("--x", (50 + Math.cos(a) * r) + "%"); st.style.setProperty("--y", (50 + Math.sin(a) * r) + "%");
-    st.style.setProperty("--d", (0.7 + Math.random() * 0.6) + "s"); st.style.setProperty("--c", ["#ffe7a8", "#b48cff", "#9fd8ff"][i % 3]);
+    st.style.setProperty("--d", (0.7 + Math.random() * 0.6) + "s"); st.style.setProperty("--c", PAL[i % PAL.length]);
     st.style.animationDelay = (Math.random() * 0.35) + "s"; fx.appendChild(st);
   }
   await sleep(150); g.classList.add("p1");
   await sleep(1250);
   // 2. 白く光って、一枚絵
-  g.classList.add("flash"); g.classList.add("p2");
+  g.classList.add("gflash"); g.classList.add("p2");     // 「flash」はエフェクトの .flash と名前がぶつかるので gflash
   for (let i = 0; i < 34; i++) setTimeout(() => {
     const sp = document.createElement("div"); sp.className = "g-spark";
     sp.style.setProperty("--x", Math.random() * 100 + "%"); sp.style.setProperty("--y", Math.random() * 100 + "%");
     sp.style.setProperty("--dx", (Math.random() * 80 - 40) + "px"); sp.style.setProperty("--dy", (-30 - Math.random() * 60) + "px");
     sp.style.setProperty("--d", (0.8 + Math.random() * 0.8) + "s"); fx.appendChild(sp); setTimeout(() => sp.remove(), 1700);
   }, Math.random() * 2600);
+  if (spirit) {                                    // 微精霊が飛びまわり、音符が舞い上がる
+    for (let i = 0; i < 40; i++) setTimeout(() => {
+      const f = document.createElement("div"); f.className = "g-fairy";
+      f.style.setProperty("--x", 0); f.style.left = Math.random() * 100 + "%"; f.style.top = (40 + Math.random() * 60) + "%";
+      f.style.setProperty("--c", PAL[i % PAL.length]); f.style.setProperty("--dx", (Math.random() * 160 - 80) + "px");
+      f.style.setProperty("--dy", (-80 - Math.random() * 220) + "px"); f.style.setProperty("--d", (1.4 + Math.random() * 1.2) + "s");
+      fx.appendChild(f); setTimeout(() => f.remove(), 2800);
+    }, Math.random() * 3000);
+    for (let i = 0; i < 16; i++) setTimeout(() => {
+      const n = document.createElement("div"); n.className = "g-note"; n.textContent = ["♪", "♫", "♬"][i % 3];
+      n.style.left = (5 + Math.random() * 90) + "%"; n.style.top = (55 + Math.random() * 40) + "%";
+      n.style.setProperty("--c", PAL[(i + 2) % PAL.length]); n.style.setProperty("--dx", (Math.random() * 120 - 60) + "px");
+      n.style.setProperty("--dy", (-120 - Math.random() * 160) + "px"); n.style.setProperty("--d", (1.6 + Math.random() * 1) + "s");
+      fx.appendChild(n); setTimeout(() => n.remove(), 2800);
+    }, 300 + Math.random() * 2800);
+  }
   await sleep(500);
-  g.classList.remove("flash");
+  g.classList.remove("gflash");
   // 3. 技名（1文字ずつ）
   g.classList.add("p3");
   await sleep(2100);
   // 4. 光の咆哮が画面を横切り、真っ白に
   if (navigator.vibrate) navigator.vibrate([400]);
   g.classList.add("p4");
-  await sleep(520);
+  await sleep(spirit ? 860 : 520);
   g.classList.add("whiteout");
   await sleep(380);
   g.className = "";
@@ -1347,6 +1387,18 @@ async function useSkill() {
     if (G.party) memberLoad(caster);
   } else if (s.type === "boost") {
     G.boost = s.mult;
+  }
+  if (s.spirit) {                                  // 微精霊の援護（フィオラ）：味方全員にHP・MP回復と、連打・詠唱の時間+1秒
+    const caster = G.mi, sp = s.spirit;
+    for (const i of (G.party ? aliveMembers() : [null])) {
+      if (i !== null) memberLoad(i);
+      G.spiritTurns = sp.turns; G.spiritHp = G.cfg.ally.max_hp * sp.hp; G.spiritMp = (G.cfg.ally.max_mp || 0) * sp.mp; G.spiritMs = Math.round(sp.plus * 1000);
+    }
+    if (G.party) memberLoad(caster);
+    const cs = ["#ff6a8a", "#ffd36a", "#7dffae", "#7fc8ff", "#c08cff"];
+    cs.forEach((c, k) => setTimeout(() => rising(c, 10), k * 80));
+    popAt(window.innerWidth / 2, window.innerHeight * 0.5, `✨ 微精霊の援護（${sp.turns}ターン）`, "heal");
+    if (G.party) renderParty();
   } else if (s.type === "break") {
     G.eBreak = s.turns;
   }
@@ -1565,7 +1617,7 @@ async function castSpell(sp) {
   G.phase = "chant"; setButtons(false); updateSkill();
   G.mp -= cost; G.usedMp += cost; G.casts++; updateBars();
   const isAtk = sp.kind === "attack", M0 = G.cfg.magic;
-  const el = elemOf(sp), need = chantNeed(), ms = isAtk ? (M0.chant_attack_ms || 4000) : Math.round(need / M0.chant_tps * 1000);
+  const el = elemOf(sp), need = chantNeed(), ms = (isAtk ? (M0.chant_attack_ms || 4000) : Math.round(need / M0.chant_tps * 1000)) + (G.spiritTurns > 0 ? G.spiritMs : 0);
   const perTap = isAtk ? curMag() * sp.power * (sp.target === "enemies" ? M0.all_rate : M0.single_mult || 1) : 0;
   const ch = $("chant"), ring = ch.querySelector(".ring");
   const size = Math.min(sp.circle, window.innerWidth * 0.9, window.innerHeight * 0.5);
@@ -2069,7 +2121,7 @@ async function autoCast(sp, target) {
   $("magicSheet").classList.remove("open"); $("sheet").classList.remove("open");
   G.phase = "chant"; setButtons(false); updateSkill();
   const cost = spellCost(sp); G.mp -= cost; G.usedMp += cost; G.casts++; updateBars();
-  const M = G.cfg.magic, need = chantNeed(), ms = sp.kind === "attack" ? (M.chant_attack_ms || 4000) : need / M.chant_tps * 1000;
+  const M = G.cfg.magic, need = chantNeed(), ms = (sp.kind === "attack" ? (M.chant_attack_ms || 4000) : need / M.chant_tps * 1000) + (G.spiritTurns > 0 ? G.spiritMs : 0);
   const inside = Math.round(autoTaps() * ms / (G.cfg.attack_ms || 3000));
   if (G.cfg.skill) { G.charge = Math.min(G.cfg.skill.charge, G.charge + inside); updateSkill(); }
   const el = elemOf(sp); fxEl("ring", { "--c": el.color, "--s": 50 }); particles(el.color, 16, 40);
@@ -2248,6 +2300,9 @@ async function enemyTurnMulti() {
   if (!G.party && G.defDown > 0) G.defDown--;
   if (!G.party && G.elemWard > 0) G.elemWard--;
   if (!G.party && G.regenTurns > 0) { G.mp = Math.min(G.cfg.ally.max_mp || 0, G.mp + G.regenMp); G.regenTurns--; }
+  if (!G.party && G.spiritTurns > 0) {
+    G.allyHp = Math.min(G.cfg.ally.max_hp, G.allyHp + G.spiritHp); G.mp = Math.min(G.cfg.ally.max_mp || 0, G.mp + G.spiritMp); G.spiritTurns--;
+  }
   foeLoad(G.foes[keep] && !G.foes[keep].dead ? keep : G.sel);
   markSel(); updateBars(); updateBadges();
   const as = G.cfg.assist;
@@ -2385,7 +2440,7 @@ async function foeAttack(i) {
 // ほかの人の数字は G.members[i].st にしまっておく（memberLoad で入れかえる）
 // ---------------------------------------------------------------------------
 const MKEYS = ["allyHp", "mp", "status", "charge", "skillUsed", "usedItem", "atkTurns", "guardTurns", "critTurns", "critBonus", "magTurns", "magMult",
-               "hasteItemTurns", "hasteItemMs", "hasteSpellTurns", "hasteSpellMs", "braveTurns", "braveMult", "boost", "barrier", "ward", "blessing", "defDown", "regenTurns", "regenMp", "elemWard"];
+               "hasteItemTurns", "hasteItemMs", "hasteSpellTurns", "hasteSpellMs", "braveTurns", "braveMult", "boost", "barrier", "ward", "blessing", "defDown", "regenTurns", "regenMp", "elemWard", "spiritTurns", "spiritHp", "spiritMp", "spiritMs"];
 function initParty(c, args) {
   G.party = !!(c.party && c.party.length);
   G.mi = 0; G.actQ = [];
@@ -2406,7 +2461,7 @@ function initParty(c, args) {
              status: { poison: 0, fire: 0, black_flame: 0, thunder: 0, darkness: 0, shadow: 0, freeze: 0, wind: 0 },
              charge: (m.skill && m.skill.start) || 0, skillUsed: false, usedItem: false, atkTurns: 0, guardTurns: 0, critTurns: 0, critBonus: 0,
              magTurns: 0, magMult: 1, hasteItemTurns: 0, hasteItemMs: 0, hasteSpellTurns: 0, hasteSpellMs: 0, braveTurns: 0, braveMult: 1,
-             boost: 1, barrier: 0, ward: 0, blessing: false, defDown: 0, regenTurns: 0, regenMp: 0, elemWard: 0 };
+             boost: 1, barrier: 0, ward: 0, blessing: false, defDown: 0, regenTurns: 0, regenMp: 0, elemWard: 0, spiritTurns: 0, spiritHp: 0, spiritMp: 0, spiritMs: 0 };
   }
   $("party").classList.add("on");
   G.autoSub = loadAuto();
@@ -2463,7 +2518,10 @@ function partyTurn() {
     // 新しいターン：防御アップ・封炎は全員ぶん1減らす
     memberSave();
     for (const m of G.members) { if (m.st.guardTurns > 0 && G.turn > 0) m.st.guardTurns--; if (m.st.ward > 0 && G.turn > 0) m.st.ward--; if (m.st.defDown > 0 && G.turn > 0) m.st.defDown--; if (m.st.elemWard > 0 && G.turn > 0) m.st.elemWard--;
-      if (m.st.regenTurns > 0 && G.turn > 0 && !m.dead) { m.st.mp = Math.min(m.ally.max_mp || 0, m.st.mp + m.st.regenMp); m.st.regenTurns--; } }
+      if (m.st.regenTurns > 0 && G.turn > 0 && !m.dead) { m.st.mp = Math.min(m.ally.max_mp || 0, m.st.mp + m.st.regenMp); m.st.regenTurns--; }
+      if (m.st.spiritTurns > 0 && G.turn > 0 && !m.dead) {          // 微精霊の援護：HP・MPが少しずつ回復
+        m.st.allyHp = Math.min(m.ally.max_hp, m.st.allyHp + m.st.spiritHp); m.st.mp = Math.min(m.ally.max_mp || 0, m.st.mp + m.st.spiritMp); m.st.spiritTurns--;
+      } }
     Object.assign(G, G.members[G.mi].st);
     G.actQ = aliveMembers(); G.turn++;
   }

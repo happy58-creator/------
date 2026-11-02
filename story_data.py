@@ -265,8 +265,12 @@ ALLIES = [
      "unlock": {"kz_extra": True, "chance": 1.0},
      "abilities": [{"stat": "atk", "value": 4}, {"stat": "def", "value": 4},
                    {"stat": "hp", "value": 40, "name": "微精霊の加護", "immune": ["black_flame", "wind", "freeze"]}],
-     "skill": {"name": "微精霊の大合唱", "area": True, "type": "strike", "charge": 520, "power": 130, "pierce": True, "anim": "fiora",
-               "text": "森じゅうの微精霊が集まり、光となって降りそそぐ。攻撃力×130 の防御無視ダメージ"}},
+     "skill": {"name": "微精霊の大合唱", "area": True, "type": "strike", "charge": 520, "power": 110, "pierce": True, "anim": "fiora",
+               # 必殺技の特別演出（grand・theme spirit）：微精霊が集まる → 絵 → 技名 → 光のリボンが渦を巻く
+               "scene": {"image": "skill_fiora.webp", "grand": True, "theme": "spirit", "reading": "びせいれいのだいがっしょう", "sub": "SPIRIT CHORUS"},
+               # 微精霊の援護：味方全員、turns ターンのあいだ毎ターン最大HP・MPの hp/mp を回復し、連打と詠唱の時間が plus 秒のびる
+               "spirit": {"turns": 4, "hp": 0.06, "mp": 0.05, "plus": 1.0}, "floor_rate": 1.0,
+               "text": "森じゅうの微精霊が集まり、光となって降りそそぐ。攻撃力×110 の防御無視ダメージ。さらに微精霊の援護：味方全員が4ターン、毎ターンHP・MPが少しずつ回復し、連打と詠唱の時間が1秒のびる"}},
 ]
 
 # ---------------------------------------------------------------------------

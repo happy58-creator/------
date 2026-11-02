@@ -1484,6 +1484,7 @@ def skill_config(ally_lv, ally, enemy, max_hp, charge=0):
     if skill["type"] == "strike":
         raw = ally["atk"] * skill["power"] * (story_data.SKILL_AREA_RATE if skill["area"] else 1.0)
         floor = skill_magic_floor(ally_lv, ally.get("mag", 0))      # 魔法の攻撃を下回らない（魔法は敵の防御が半分だけ効く）
+        floor *= skill.get("floor_rate", story_data.SKILL_MAGIC_FLOOR) / story_data.SKILL_MAGIC_FLOOR   # 援護つきの技は下限を少し下げる
         skill["floor_raw"] = floor
         skill["break_turns"] = skill.get("break", 0)       # 敵の防御を0にするターン数（創世の咆哮）
         skill["damage"] = max(raw if skill.get("pierce") else damage(raw, enemy["def"]),
