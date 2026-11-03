@@ -405,10 +405,10 @@ def item_effect_text(item):
     return "　".join(out)
 
 
-def roll_charm_value(roll, stage, count, rng=random):
-    """ランダムのアクセサリの数値。範囲 min〜max の中で、ステージの後半ほど高めに出る"""
+def roll_charm_value(roll, stage, count, rng=random, bonus=0.0):
+    """ランダムのアクセサリの数値。範囲 min〜max の中で、ステージの後半ほど高めに出る（bonus：風哭きの森は少し高め）"""
     t = (stage - 1) / max(1, count - 1)
-    u = 0.6 * min(1.0, max(0.0, t)) + 0.4 * rng.random()
+    u = min(1.0, 0.6 * min(1.0, max(0.0, t)) + 0.4 * rng.random() + bonus)
     return roll["min"] + round((roll["max"] - roll["min"]) * u)
 
 
@@ -622,12 +622,12 @@ def weapon_attr_chance(difficulty_id, stage=None):
     return lo + (hi - lo) * attr_curve_t(stage, difficulty_id)
 
 
-def roll_weapon_attrs(equip_id, difficulty_id, rng=random, stage=None):
+def roll_weapon_attrs(equip_id, difficulty_id, rng=random, stage=None, chance_mult=1.0):
     """宝箱から出た装備に付く属性 {属性ID: 発動率}。剣でなければ、または付かなければ None。
     stage はそのステージ番号（後半ほど付きやすく、発動率も高めに出る）。None なら最後のステージとして扱う"""
     if equip_id not in story_data.SWORDS and equip_id not in story_data.ULTRA_ATTR_SWORDS:
         return None
-    if rng.random() >= weapon_attr_chance(difficulty_id, stage):
+    if rng.random() >= weapon_attr_chance(difficulty_id, stage) * chance_mult:
         return None
     t = attr_curve_t(stage, difficulty_id)
 
@@ -1134,25 +1134,30 @@ def skip_extra(profile):
     profile["run"]["extra"] = False
 
 
-def roll_treasure(stage, difficulty_id, rng=random):
-    """宝箱の中身。[("item", id) / ("equip", id), ...]（宝箱が出なければ空）"""
-    if rng.random() >= story_data.TREASURE_CHANCE:
+def roll_treasure(stage, difficulty_id, rng=random, quest="main"):
+    """宝箱の中身。[("item", id) / ("equip", id), ...]（宝箱が出なければ空）。
+    風哭きの森（quest=kz）は KZ_LOOT のぶん、ほんの少し良い物が出る"""
+    loot = story_data.KZ_LOOT if quest == KZ else None
+    if rng.random() >= (loot["treasure_chance"] if loot else story_data.TREASURE_CHANCE):
         return []
     found = []
     for _ in range(rng.randint(*story_data.TREASURE_COUNT)):
         if rng.random() < story_data.TREASURE_ITEM_RATE:
             items = [i for i in story_data.ITEMS if item_available(i, stage, difficulty_id)]
-            found.append(("item", rng.choices([i["id"] for i in items], [i["weight"] for i in items])[0]))
+            weights = [i["weight"] ** loot["item_weight_power"] if loot else i["weight"] for i in items]
+            found.append(("item", rng.choices([i["id"] for i in items], weights)[0]))
         else:
             ranks = [
                 rank for rank, cond in story_data.EQUIP_RANKS.items()
                 if stage >= cond["min_stage"] and at_least(difficulty_id, cond["min_difficulty"])
             ]
-            rank = rng.choices(ranks, [story_data.EQUIP_RANKS[r]["weight"] for r in ranks])[0]
+            rank = rng.choices(ranks, [story_data.EQUIP_RANKS[r]["weight"] * (loot["rank_mult"].get(r, 1.0) if loot else 1.0)
+                                       for r in ranks])[0]
             if rank == "charm":     # 強さがランダムなアクセサリ：その難易度の3種類から1つ
                 choices = [e for e in story_data.EQUIPMENT if e["rank"] == "charm" and e["roll"]["difficulty"] == difficulty_id]
                 equip = rng.choice(choices)
-                value = roll_charm_value(equip["roll"], stage, stage_count(difficulty_id), rng)
+                value = roll_charm_value(equip["roll"], stage, stage_count(difficulty_id, quest), rng,
+                                         loot["charm_bonus"] if loot else 0.0)
                 found.append(("equip", equip["id"], {equip["roll"]["stat"]: value}))
                 continue
             found.append(("equip", rng.choice([
@@ -1247,14 +1252,15 @@ def clear_stage(profile, rng=random):
         drop = rng.choice(story_data.ASSIST["drops"])
         rewards["assist_drop"] = drop
         rewards["assist_where"] = "pack" if put_picked(profile, run["bag"], drop) else "store"
-    treasure = roll_treasure(stage, run["difficulty"], rng)
+    treasure = roll_treasure(stage, run["difficulty"], rng, quest=quest)
     rewards["chests"] = len(treasure)
     for kind, thing_id, *extra in treasure:
         if kind == "item":
             (rewards["items"] if put_picked(profile, run["bag"], thing_id) else rewards["sent_home"]).append(thing_id)
         else:
             bonus = extra[0] if extra else None
-            uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng, stage), bonus)
+            uid = add_equipment(profile, thing_id, roll_weapon_attrs(thing_id, run["difficulty"], rng, stage,
+                                                                     story_data.KZ_LOOT["attr_chance_mult"] if quest == KZ else 1.0), bonus)
             rewards["equipment"].append(thing_id)
             rewards["equipment_uids"].append(uid)
     for lv in roll_unlocks(profile, stage, run["difficulty"], rng, quest=quest):

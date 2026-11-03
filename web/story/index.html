@@ -526,6 +526,10 @@
   #party #autoBtn.on { background:linear-gradient(#ffd56a,#e09a2a); color:#2a1a00; border-color:#ffe9a8; box-shadow:0 0 10px rgba(255,210,100,.6); }
   #party .pm.act { border-color:#ffe28a; box-shadow:0 0 10px rgba(255,220,120,.5); }
   #party .pm.dead { opacity:.45; filter:grayscale(1); }
+  #party .pm { cursor:pointer; }
+  #party .pm.peek { border-color:#9fd8ff; box-shadow:0 0 10px rgba(140,200,255,.65); }
+  #app.peeking .hud.bottom .aname { color:#bfe4ff; }
+  #app.prep .hud.bottom { visibility:hidden; }   /* 攻撃を押したら「よーい」の前に、下の表示を消しておく */
   #party .pm img { width:26px; height:26px; border-radius:50%; object-fit:cover; flex:none; }
   #party .pm .nm { font:700 11px/1.1 sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   #party .pm .bars { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
@@ -901,6 +905,7 @@ function updateBadges() {
 }
 // 雷のあいだは攻撃できない（アイテムは使える）。代わりに「ターンを終える」を出す
 function setButtons(on) {
+  if (!on && G.peek != null) endPeek();      // 何か始まるときは、行動中の人の表示にもどす
   const stunned = G.status.thunder > 0;
   $("btnAttack").disabled = !on || stunned;
   $("btnAttack").style.display = on && stunned ? "none" : "";
@@ -1008,7 +1013,7 @@ $("sheetClose").onclick = () => $("sheet").classList.remove("open");
 let perTapMult = 1;
 async function attack() {
   if (G.multi) return attackMulti();
-  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
+  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open"); $("app").classList.add("prep");
   await banner("よーい……", G.status.freeze > 0 ? "❄️ 凍えて 連打の時間が短い！" : "", 700);
   await banner("スタート！", "", 450);
   // 連打の受付
@@ -1048,7 +1053,7 @@ async function attack() {
     requestAnimationFrame(tick);
   });
   G.phase = "strike";
-  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping"); $("timer").style.display = "none";
+  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping", "prep"); $("timer").style.display = "none";
   // 合計ダメージで一気に攻撃
   const boost = G.boost; G.boost = 1;                     // 突撃号令：次の攻撃1回だけ
   if (boost > 1) G.tapDamage *= boost;
@@ -1121,6 +1126,7 @@ function updateSkill() {
   w.title = `${s.name}（${Math.min(G.charge, s.charge)} / ${s.charge}）`;
 }
 $("skillWrap").onclick = () => {
+  if (G && G.peek != null) { endPeek(); return; }
   if (!G || !G.cfg.skill || G.phase !== "player" || G.skillUsed || G.charge < G.cfg.skill.charge) return;
   useSkill();
 };
@@ -1895,7 +1901,7 @@ $("app").addEventListener("pointerdown", (ev) => {
 });
 
 async function attackMulti(auto) {
-  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open");
+  G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open"); $("app").classList.add("prep");
   if (auto) await banner("オート", `${G.cfg.ally.name.split("、").pop()}の攻撃`, 650);
   else {
     await banner("よーい……", G.status.freeze > 0 ? "❄️ 凍えて 連打の時間が短い！" : G.status.wind > 0 ? "🌪️ 突風で 敵がゆれている！"
@@ -1955,7 +1961,7 @@ async function attackMulti(auto) {
   });
   G.phase = "strike";
   for (const i of aliveFoes()) foeEl(i)?.classList.remove("gust");
-  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping"); $("timer").style.display = "none";
+  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping", "prep"); $("timer").style.display = "none";
   const boost = G.boost; G.boost = 1;
   await sleep(150);
   $("combo").style.display = "none";
@@ -2946,6 +2952,13 @@ function initParty(c, args) {
   $("party").classList.add("on");
   G.autoSub = loadAuto();
   $("party").onclick = (ev) => {
+    const pm = ev.target.closest(".pm[data-i]");
+    if (pm) {                                    // 仲間のアイコン：その人の状況を下に出す（もう一度押すと、もどる）
+      if (G.phase !== "player") return;            // 自分のターンのあいだだけ
+      const i = +pm.dataset.i;
+      if (G.peek === i || i === G.mi) endPeek(); else showPeek(i);
+      return;
+    }
     if (!ev.target.closest("#autoBtn")) return;
     G.autoSub = !G.autoSub; saveAuto(G.autoSub); renderParty();
     if (G.autoSub && G.phase === "player" && G.mi !== 0) setTimeout(autoAct, 300);
@@ -2967,6 +2980,7 @@ function crossRefresh() {
   }
 }
 function memberLoad(i) {
+  if (G && G.peek != null && i != null && i !== G.mi) { clearTimeout(G.peekTimer); G.peek = null; $("app").classList.remove("peeking"); }
   if (!G.party || i == null || i === G.mi) return;
   memberSave();
   G.mi = i;
@@ -2980,13 +2994,46 @@ function memberLoad(i) {
   crossRefresh();
   updateBars(); updateBadges(); updateSkill(); renderParty();
 }
+// 仲間のアイコンを押したとき：その人のHP・MP・状態・必殺技のたまり具合を、下の欄に出す（見るだけ）。
+//   G の中身は変えず、見る人の状態を重ねた「写し」で表示の関数を呼ぶ。6秒たつか、もう一度押すと、行動中の人の表示にもどる
+function showPeek(i) {
+  const m = G.members[i];
+  if (!m || !m.st) return;
+  memberSave();
+  clearTimeout(G.peekTimer);
+  if (G.peek == null) G.peekHint = $("hint").textContent;
+  G.peek = i;
+  const real = G;
+  G = Object.assign({}, real, m.st, { cfg: { ...real.cfg, ally: m.ally, skill: m.skill, spells: m.spells, status: m.status },
+                                      party: false, members: null, multi: false, phase: "peek", shownStatus: {} });
+  try { updateBars(); updateBadges(); updateSkill(); } finally { G = real; }
+  if (m.icon) $("allyIcon").src = m.icon;
+  $("allyName").textContent = "👀 " + m.ally.name.split("、").pop();
+  $("allyIcon").classList.toggle("down", !!m.dead);
+  $("app").classList.add("peeking");
+  $("hint").textContent = `👀 ${m.ally.name.split("、").pop()}の状況（見るだけ）。もう一度押すと、もどるよ`;
+  renderParty();
+  G.peekTimer = setTimeout(endPeek, 6000);
+}
+function endPeek() {
+  if (!G || G.peek == null) return;
+  clearTimeout(G.peekTimer);
+  G.peek = null;
+  $("app").classList.remove("peeking");
+  const m = G.members[G.mi];
+  if (m.icon) $("allyIcon").src = m.icon;
+  $("allyName").textContent = m.ally.name.split("、").pop();
+  $("allyIcon").classList.toggle("down", !!m.dead);
+  $("hint").textContent = G.peekHint || "";
+  updateBars(); updateBadges(); updateSkill(); renderParty();
+}
 function aliveMembers() { return G.members.map((m, i) => i).filter((i) => !G.members[i].dead); }
 function renderParty() {
   if (!G.party) return;
   memberSave();
   $("party").innerHTML = G.members.map((m, i) => {
     const st = m.st, hp = Math.max(0, st.allyHp) / m.ally.max_hp * 100, mp = m.ally.max_mp ? Math.max(0, st.mp) / m.ally.max_mp * 100 : 0;
-    return `<div class="pm${i === G.mi ? " act" : ""}${m.dead ? " dead" : ""}"><img src="${m.icon || ""}" alt="">` +
+    return `<div class="pm${i === G.mi ? " act" : ""}${G.peek === i ? " peek" : ""}${m.dead ? " dead" : ""}" data-i="${i}"><img src="${m.icon || ""}" alt="">` +
       `<div class="bars"><div class="nm">${esc(m.ally.name.split("、").pop())}</div>` +
       (m.dead ? `<div class="dl">戦闘不能</div>` : `<div class="hb"><div style="width:${hp}%"></div></div><div class="mb"><div style="width:${mp}%"></div></div>`) + `</div></div>`;
   }).join("") + `<button type="button" id="autoBtn" class="${G.autoSub ? "on" : ""}" title="リーダー以外を自動で動かす">サブ<br>${G.autoSub ? "オート" : "手動"}</button>`;
@@ -3522,7 +3569,7 @@ async function finish(result) {
   if (G.phase === "end") return;
   G.phase = "end"; setButtons(false); $("sheet").classList.remove("open"); $("magicSheet").classList.remove("open");
   $("chant").classList.remove("on"); $("app").classList.remove("chanting");
-  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping"); $("timer").style.display = "none"; $("combo").style.display = "none"; $("bubble").style.display = "none";
+  $("tapzone").classList.remove("on"); $("gearBtn").style.visibility = ""; $("app").classList.remove("tapping", "prep"); $("timer").style.display = "none"; $("combo").style.display = "none"; $("bubble").style.display = "none";
   $("warn").classList.remove("on"); $("stun").classList.remove("on"); $("dark").classList.remove("on"); $("btnEnd").classList.remove("on");
   $("hint").textContent = "";
   if (result === "lose") $("allyIcon").classList.add("down");
