@@ -126,12 +126,12 @@ ENEMIES = [
 #   ステージをクリアするたびに EXTRA_CHANCE の確率で、次のステージの前に現れる（1回の挑戦で1度まで）
 #   「にげる」で戦わずに先へ進める（負けにならない）。倒すと超激レア装備（ULTRA_REWARDS）
 #   強さは難易度に関係なく固定（ベリーハードのステージ6と同じ：Lv.6 の HP1034・攻撃4.1 × 5.184、防御8.4 × 3.456）
-#   fit / focus : 横長の絵なので、画面を埋めるように拡大し（cover）、focus の位置を中心に見せる
 # ---------------------------------------------------------------------------
 EXTRA_CHANCE = 0.01
 EXTRA_ENEMY = {
     "lv": "???", "role": "extra", "name": "極点の宇宙龍", "weak": "ice", "resist_elem": "fire", "title": "災厄と創造の統合者", "hp": 5360, "atk": 21.3, "def": 29.0, "fixed_stats": True,
-    "image": "enemy_extra.webp", "cutout": False, "scene": "image", "floating": False, "fit": "cover", "focus": "64% 50%",
+    "image": "enemy_extra.webp", "cutout": True, "scene": "cosmos", "floating": True,   # 切り抜いた龍を、星の神殿の背景（bg_cosmos）の上に出す
+    "stage_style": "bottom:40% !important",   # 横長の龍なので、画面の下の表示に隠れないよう高めに浮かべる
     "immune": ["thunder"], "gimmicks": ["black_flame", "shadow", "darkness"], "difficulties": None,
     "lines": ["……見つけたぞ、小さき者", "我が主の領域を荒らすか", "星ごと呑み込んでくれよう"],
     "effect": {"type": "cosmic", "color": "#c49bff"},
@@ -144,10 +144,10 @@ EXTRA_ENEMY = {
     "awaken": {
         "hp_rate": 0.5, "heal_rate": 0.3, "heal_to": 0.8, "stat_rate": 1.3,
         "name": "極点の宇宙龍・覚醒", "title": "星を喰らう終焉",
-        "image": "enemy_extra_awake.webp", "focus": "45% 45%",
+        "image": "enemy_extra_awake.webp", "cutout": True, "bg": "bg_cosmos_awake.webp",   # 覚醒後：切り抜いた龍と、覚醒後の背景
         "lines": ["……目覚めの時だ", "星々よ、我が糧となれ", "終わりを見せてやろう"],
         "effect": {"type": "cosmic", "color": "#ff7a3a"},
-        "special": {"name": "破術・終焉の黒き業火", "chance": 0.07, "damage_rate": 0.2, "image": "extra_awake_attack.webp",
+        "special": {"name": "破術・終焉の黒き業火", "chance": 0.07, "damage_rate": 0.2, "image": "extra_awake_attack.webp", "focus": "58% 33%",
                     "def_down": 0.5, "def_down_turns": 3,
                     "line": "……小賢しい術ごと、黒き炎に還れ"},
     },

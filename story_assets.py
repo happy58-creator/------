@@ -259,6 +259,7 @@ _SCENE_LAYERS = {
     "catacomb": ["candle", "fog"],
     "altar": ["rune", "sparks"],
     "nebula": ["twinkle"],
+    "cosmos": ["twinkle"],      # 星の神殿（極点の宇宙龍）
     "image": [],
 }
 
@@ -294,8 +295,11 @@ def kz_stage_html(foes, area, bg_file=None, scene=None):
     if len(foes) == 1 and not foes[0].get("cutout", True):
         e = foes[0]
         uri = image_uri(f"enemies/{e['image']}")
+        fit = ""
+        if e.get("fit") == "cover":   # 横長の1枚絵は、画面を埋めるように拡大して focus の位置を見せる
+            fit = f' style="object-fit:cover;object-position:{e.get("focus", "50% 50%")}"'
         return (f'<div class="st-scene image" data-enemy="{Path(e["image"]).stem}"><img class="st-photo-bg" src="{uri}" alt="" draggable="false">'
-                f'<img class="st-photo st-target" data-idx="0" src="{uri}" alt="{e["name"]}" draggable="false"></div>')
+                f'<img class="st-photo st-target" data-idx="0" src="{uri}" alt="{e["name"]}" draggable="false"{fit}></div>')
     if not bg_file and area not in story_data.KZ_AREAS:      # 闇の回廊の1体だけのステージ：その敵の背景
         if foes[0].get("scene", "image") == "image":
             return stage_html(foes[0])
@@ -308,7 +312,7 @@ def kz_stage_html(foes, area, bg_file=None, scene=None):
         z = 4 if len(foes) == 3 and i == 1 else 3
         src = image_uri("enemies/" + e["image"])
         body.append(f'<img class="st-enemy st-target kz-foe{floating}" data-idx="{i}" src="{src}" '
-                    f'alt="{e["name"]}" draggable="false" style="left:{left}%;height:{height}%;max-width:{maxw}%;z-index:{z}">')
+                    f'alt="{e["name"]}" draggable="false" style="left:{left}%;height:{height}%;max-width:{maxw}%;z-index:{z};{e.get("stage_style", "")}">')
     return (f'<div class="st-scene kz {area}" data-enemy="{Path(foes[0]["image"]).stem}">'
             f'<img class="st-bg" src="{bg}" alt="" draggable="false">{layers}{"".join(body)}</div>')
 

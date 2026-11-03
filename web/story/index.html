@@ -2863,7 +2863,7 @@ async function foeAttack(i) {
     newStatus = "black_flame";
   } else if (special) {
     bub.style.display = "none";
-    await specialScene(sp.name, G.awakenArgs && G.awakenArgs.special, "50% 50%");
+    await specialScene(sp.name, G.awakenArgs && G.awakenArgs.special, sp.focus || "50% 50%");
     if (G.ward > 0 || G.guardTurns > 0) {
       G.ward = 0; G.guardTurns = 0; updateBadges(); fxEl("flash", { background: "rgba(160,80,255,.45)" });
       popAt(window.innerWidth / 2, window.innerHeight * 0.45, "💥 守りの術式が破られた！", "info"); await sleep(700);
@@ -3377,7 +3377,7 @@ async function enemyTurn() {
   } else if (special) {
     bub.style.display = "none";
     const sp = G.cfg.awaken.special;
-    await specialScene(sp.name, G.awakenArgs && G.awakenArgs.special, "35% 50%");
+    await specialScene(sp.name, G.awakenArgs && G.awakenArgs.special, sp.focus || "35% 50%");
     // 術式解除：アイテムでかけた守り（封炎・防御アップ）を消す
     if (G.ward > 0 || G.guardTurns > 0) {
       G.ward = 0; G.guardTurns = 0; updateBadges();

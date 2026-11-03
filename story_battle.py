@@ -53,9 +53,9 @@ def kz_args(config):
            "hit_masks": [story_assets.kz_hit_mask_uri(e) for e in foes]}
     aw = foes[0].get("awaken") if len(foes) == 1 and config.get("awaken") else None
     if aw:
-        awake = {**foes[0], "image": aw["image"], "cutout": aw.get("cutout", foes[0].get("cutout", True)), "name": aw["name"],
+        awake = {**foes[0], "image": aw["image"], "cutout": aw.get("cutout", foes[0].get("cutout", True)), "name": aw["name"], "fit": aw.get("fit"),
                  "focus": aw.get("focus", foes[0].get("focus"))}
-        out["awaken_scene_html"] = story_assets.kz_stage_html([awake], config["area"], bg, scene)
+        out["awaken_scene_html"] = story_assets.kz_stage_html([awake], config["area"], aw.get("bg", bg), scene)   # bg：覚醒後だけの背景
         out["awaken_hit_mask"] = story_assets.kz_hit_mask_uri(awake)
         if aw.get("special"):
             out["awaken_special_image"] = story_assets.image_uri(f"enemies/{aw['special']['image']}")
@@ -87,7 +87,8 @@ def battle(config, key):
                                   "image": story_assets.image_uri(f"enemies/{scene['image']}")}
     if config.get("awaken") and enemy.get("awaken"):
         aw = enemy["awaken"]
-        awake_enemy = {**enemy, "image": aw["image"], "focus": aw.get("focus", enemy.get("focus")), "name": aw["name"]}
+        awake_enemy = {**enemy, "image": aw["image"], "cutout": aw.get("cutout", enemy["cutout"]),
+                       "focus": aw.get("focus", enemy.get("focus")), "name": aw["name"]}
         awaken = {"awaken_scene_html": story_assets.stage_html(awake_enemy),
                   "awaken_hit_mask": story_assets.hit_mask_uri(awake_enemy),
                   "awaken_special_image": story_assets.image_uri(f"enemies/{aw['special']['image']}")}
