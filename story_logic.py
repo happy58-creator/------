@@ -1342,7 +1342,7 @@ def finish_run(profile, outcome, run=None):
 # 称号
 # ---------------------------------------------------------------------------
 def titles(profile):
-    """称号の一覧（モード全クリ4つ → エクストラ → キャラ Lv.10）。earned は手に入れたかどうか"""
+    """称号の一覧（モード全クリ4つ → エクストラ（宇宙龍・黒翼の執行者） → キャラ Lv.10）。earned は手に入れたかどうか"""
     out = []
     cleared = set(profile.get("cleared_modes") or [])
     for diff in story_data.DIFFICULTIES:
@@ -1353,6 +1353,10 @@ def titles(profile):
     out.append({"id": "extra", "kind": "extra", "name": t["name"], "badge": t["badge"],
                 "how": "ステージの番人（極点の宇宙龍）を倒す",
                 "earned": enemy_key(story_data.EXTRA_ENEMY) in profile.get("defeated", [])})
+    t = story_data.KZ_EXTRA_TITLE
+    out.append({"id": "kz_extra", "kind": "extra", "name": t["name"], "badge": t["badge"],
+                "how": "風哭きの森のエクストラ（黒翼の執行者）を倒す",
+                "earned": enemy_key(story_data.KZ_EXTRA_ENEMY) in profile.get("defeated", [])})
     for ally in story_data.ALLIES:
         lv = ally["lv"]
         role = ally["name"].split("、")[0]

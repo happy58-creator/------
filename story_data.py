@@ -233,32 +233,32 @@ ALLIES = [
      "magic": {"mp": (10, 38), "mag": (1, 9), "crit": 0.06, "spells": ["brave", "protect", "war_cry"]}, "class": "fighter",
      "unlock": {"quest": "kz", "min_difficulty": "easy", "stage": 3, "chance": 0.35},
      "abilities": [{"stat": "def", "value": 1}, {"stat": "def", "value": 1}, {"stat": "atk", "value": 3}],
-     "skill": {"name": "鹿角の一閃", "area": False, "type": "strike", "charge": 250, "power": 55, "anim": "riene", "text": "鹿のように駆けて槍で貫く。攻撃力×55 のダメージ"}},
+     "skill": {"name": "鹿角の一閃", "area": False, "type": "strike", "charge": 250, "power": 55, "anim": "riene", "scene": {"image": "skill_riene.webp", "focus": "45% 22%"}, "text": "鹿のように駆けて槍で貫く。攻撃力×55 のダメージ"}},
     {"lv": 13, "tier": 4, "name": "森の薬師、オルガ",       "hp": 18, "atk": 2, "def": 4, "max": {"hp": 50, "atk": 7, "def": 16}, "image": "ally_13.webp",
      "magic": {"mp": (25, 90), "mag": (3, 20), "crit": 0.03, "spells": ["heal", "stone_bullet", "cure", "heal_all", "high_heal"]}, "class": "magic",
      "unlock": {"quest": "kz", "min_difficulty": "normal", "stage": 4, "chance": 0.35},
      "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 5}],
-     "skill": {"name": "森の癒し手", "area": True, "type": "guard", "charge": 250, "heal_rate": 0.25, "guard": 2, "anim": "olga", "text": "森の薬草の力で、最大HPの25%を回復して、2ターン防御力2倍"}},
+     "skill": {"name": "森の癒し手", "area": True, "type": "guard", "charge": 250, "heal_rate": 0.25, "guard": 2, "anim": "olga", "scene": {"image": "skill_olga.webp", "focus": "55% 22%"}, "text": "森の薬草の力で、最大HPの25%を回復して、2ターン防御力2倍"}},
     {"lv": 14, "tier": 6, "name": "樹人の戦士、グラン",     "hp": 40, "atk": 7, "def": 8, "max": {"hp": 110, "atk": 20, "def": 30}, "image": "ally_14.webp",
      "magic": {"mp": (10, 40), "mag": (1, 8), "crit": 0.04, "spells": ["protect", "guard_all", "war_cry"]}, "class": "fighter",
      "unlock": {"quest": "kz", "min_difficulty": "normal", "stage": 7, "chance": 0.30},
      "abilities": [{"stat": "hp", "value": 8}, {"stat": "hp", "value": 8}, {"stat": "def", "value": 10}],
-     "skill": {"name": "大樹の一撃", "area": False, "type": "strike", "charge": 300, "power": 65, "guard": 2, "anim": "gran", "text": "大樹の斧をふり下ろす。攻撃力×65 のダメージと、2ターン防御力2倍"}},
+     "skill": {"name": "大樹の一撃", "area": False, "type": "strike", "charge": 300, "power": 65, "guard": 2, "anim": "gran", "scene": {"image": "skill_gran.webp", "focus": "50% 22%"}, "text": "大樹の斧をふり下ろす。攻撃力×65 のダメージと、2ターン防御力2倍"}},
     {"lv": 15, "tier": 7, "name": "翠玉の魔女、シルヴァ",   "hp": 40, "atk": 6, "def": 5, "max": {"hp": 90, "atk": 20, "def": 14}, "image": "ally_15.webp",
      "magic": {"mp": (32, 115), "mag": (4, 25), "crit": 0.03, "spells": ["stone_bullet", "rock_crush", "fire", "earthquake", "explosion"]}, "class": "magic",
      "unlock": {"quest": "kz", "min_difficulty": "hard", "stage": 5, "chance": 0.35},
      "abilities": [{"stat": "hp", "value": 5}, {"stat": "hp", "value": 5}, {"stat": "def", "value": 8}],
-     "skill": {"name": "翠晶の大地震", "area": True, "type": "strike", "charge": 350, "power": 75, "pierce": True, "anim": "silva", "text": "翠玉の力で大地を割る。攻撃力×75 の防御無視ダメージ"}},
+     "skill": {"name": "翠晶の大地震", "area": True, "type": "strike", "charge": 350, "power": 75, "pierce": True, "anim": "silva", "scene": {"image": "skill_silva.webp", "focus": "45% 20%"}, "text": "翠玉の力で大地を割る。攻撃力×75 の防御無視ダメージ"}},
     {"lv": 16, "tier": 8, "name": "蔦鎧の騎士、ヴェルデ",   "hp": 60, "atk": 13, "def": 12, "max": {"hp": 130, "atk": 34, "def": 34}, "image": "ally_16.webp",
      "magic": {"mp": (15, 60), "mag": (2, 14), "crit": 0.07, "spells": ["brave", "guard_all", "haste_all"]}, "class": "fighter",
      "unlock": {"quest": "kz", "min_difficulty": "hard", "stage": 8, "chance": 0.30},
      "abilities": [{"stat": "atk", "value": 2}, {"stat": "atk", "value": 2}, {"stat": "def", "value": 10}],
-     "skill": {"name": "茨棘の連撃", "area": False, "type": "strike", "charge": 350, "power": 85, "anim": "verde", "text": "茨のように何度も斬りつける。攻撃力×85 のダメージ"}},
+     "skill": {"name": "茨棘の連撃", "area": False, "type": "strike", "charge": 350, "power": 85, "anim": "verde", "scene": {"image": "skill_verde.webp", "focus": "40% 25%"}, "text": "茨のように何度も斬りつける。攻撃力×85 のダメージ"}},
     {"lv": 17, "tier": 9, "name": "森の大賢者、エルド",     "hp": 70, "atk": 14, "def": 16, "max": {"hp": 140, "atk": 30, "def": 36}, "image": "ally_17.webp",
      "magic": {"mp": (35, 130), "mag": (5, 30), "crit": 0.03, "spells": ["rock_crush", "thunder", "mana_heal", "earthquake", "meteor"]}, "class": "magic",
      "unlock": {"quest": "kz", "min_difficulty": "very_hard", "stage": 7, "chance": 0.25},
      "abilities": [{"stat": "def", "value": 3}, {"stat": "def", "value": 3}, {"stat": "atk", "value": 8}],
-     "skill": {"name": "古森の大魔法陣", "area": True, "type": "strike", "charge": 450, "power": 100, "pierce": True, "anim": "eld", "text": "古き森の魔法陣を開く。攻撃力×100 の防御無視ダメージ"}},
+     "skill": {"name": "古森の大魔法陣", "area": True, "type": "strike", "charge": 450, "power": 100, "pierce": True, "anim": "eld", "scene": {"image": "skill_eld.webp", "focus": "60% 22%"}, "text": "古き森の魔法陣を開く。攻撃力×100 の防御無視ダメージ"}},
     # 風哭きの森のエクストラ（黒翼の執行者）を倒すと、必ず仲間になる（unlock の kz_extra）
     {"lv": 18, "tier": 10.5, "name": "翠の大精霊、フィオラ", "hp": 110, "atk": 36, "def": 40, "max": {"hp": 190, "atk": 58, "def": 62}, "image": "ally_18.webp",
      "magic": {"mp": (45, 160), "mag": (6, 34), "crit": 0.06, "spells": ["fiora_lance", "fiora_bless", "fiora_guard", "fiora_chorus", "fiora_storm"]}, "class": "all",
@@ -403,6 +403,7 @@ EQUIPMENT = [
     {"id": "dragon_scale",   "icon": "🐲", "name": "宇宙龍の逆鱗",   "rank": "ultra",     "atk": 12, "def": 25, "hp": 60, "resist": None},
     {"id": "origin_robe",    "icon": "👘", "name": "初源の聖衣",     "rank": "ultra",     "atk": 0,  "def": 60, "hp": 0,  "resist": None},
     {"id": "silence_blade",  "icon": "🗡️", "name": "沈黙の魔剣",     "rank": "ultra",     "atk": 30, "def": 0,  "hp": 0,  "resist": None},
+    {"id": "dark_staff",     "icon": "🪄", "name": "黒翼の魔杖",     "rank": "ultra",     "atk": 0,  "def": 0,  "hp": 0,  "mag": 20, "mp": 60, "resist": None},
 ]
 
 # 特別な敵を倒したときに必ずもらえる超激レア装備（敵の画像ファイル名の拡張子なし → 装備ID）
@@ -410,6 +411,7 @@ ULTRA_REWARDS = {
     "enemy_extra": "dragon_scale",        # 極点の宇宙龍：HP・防御・攻撃をそろって大きく上げる
     "enemy_11_hard": "origin_robe",       # 混沌の初源：防御を非常に大きく上げる
     "enemy_11_veryhard": "silence_blade", # 永遠の沈黙：攻撃を非常に大きく上げる
+    "kz_19": "dark_staff",                # 黒翼の執行者（風哭きの森のエクストラ）：魔力・MPを非常に大きく上げる
 }
 
 # ---------------------------------------------------------------------------
@@ -485,6 +487,7 @@ MODE_TITLES = {
     "very_hard": {"name": "虚無を統べる者", "badge": "title_very_hard.webp"},
 }
 EXTRA_TITLE = {"name": "宇宙龍を討ちし者", "badge": "title_extra.webp"}
+KZ_EXTRA_TITLE = {"name": "黒翼を討ちし者", "badge": "title_kz_extra.webp"}   # 風哭きの森のエクストラ（黒翼の執行者）
 ALLY_TITLE_BADGE = "title_ally_{lv:02d}.webp"
 
 

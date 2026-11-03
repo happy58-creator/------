@@ -557,8 +557,8 @@ def test_profile_round_trips_through_json():
 
 def test_titles():
     p = L.new_profile()
-    assert [t["id"] for t in L.titles(p)][:5] == ["mode_easy", "mode_normal", "mode_hard", "mode_very_hard", "extra"]
-    assert len(L.titles(p)) == 5 + len(story_data.ALLIES) and not any(t["earned"] for t in L.titles(p))
+    assert [t["id"] for t in L.titles(p)][:6] == ["mode_easy", "mode_normal", "mode_hard", "mode_very_hard", "extra", "kz_extra"]
+    assert len(L.titles(p)) == 6 + len(story_data.ALLIES) and not any(t["earned"] for t in L.titles(p))
     # 全クリアで、その難易度の称号
     L.start_run(p, 1, "easy")
     p["run"]["cleared"] = 10
@@ -575,6 +575,10 @@ def test_titles():
     # 仲間でないキャラは、ポイントがあっても称号にならない
     p["ability"]["10"] = 999
     assert not next(t for t in L.titles(p) if t["id"] == "ally_10")["earned"]
+    # 黒翼の執行者を倒す
+    p["defeated"].append(L.enemy_key(story_data.KZ_EXTRA_ENEMY))
+    assert [t["id"] for t in L.take_new_titles(p)] == ["kz_extra"]
+    assert story_data.ULTRA_REWARDS["kz_19"] == "dark_staff"
 
 
 def test_titles_backfill_from_history():

@@ -79,6 +79,7 @@ ULTRA_HOW = {
     "dragon_scale": "ステージの番人（極点の宇宙龍）を倒す",
     "origin_robe": "ハード以上で「はじまりの光」を倒す",
     "silence_blade": "ベリーハードで「声なき者」を倒す",
+    "dark_staff": "風哭きの森のエクストラ（黒翼の執行者）を倒す",
 }
 
 TIPS = [
