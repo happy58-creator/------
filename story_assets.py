@@ -256,9 +256,9 @@ SCENE_CSS = """
 _SCENE_LAYERS = {
     "corridor": ["torch"],
     "prison": ["moon"],
-    "catacomb": ["candle", "fog"],
-    "altar": ["rune", "sparks"],
-    "nebula": ["twinkle"],
+    "catacomb": ["fog"],        # 光るキノコの洞窟
+    "altar": ["sparks"],        # 紫水晶の聖堂
+    "nebula": ["twinkle"],      # 宇宙に浮かぶ魔法陣の岩場
     "cosmos": ["twinkle"],      # 星の神殿（極点の宇宙龍）
     "image": [],
 }

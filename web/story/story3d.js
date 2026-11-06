@@ -27,7 +27,7 @@
   const ALLY_H = 2.0, ALLY_MAXW = 2.5;
   // 背景の絵の、床が始まるところ（絵の高さに対する割合。奥の壁と床のさかい目）。敵の足もとを床の奥のほうに、
   // 味方の足もとを床の手前に合わせて、背景を置く
-  const FLOOR = { bg_altar: 0.70, bg_catacomb: 0.68, bg_corridor: 0.66, bg_prison: 0.80, bg_nebula: 0.62, bg_cosmos: 0.72, bg_cosmos_awake: 0.70,
+  const FLOOR = { bg_altar: 0.66, bg_catacomb: 0.58, bg_corridor: 0.66, bg_prison: 0.80, bg_nebula: 0.50, bg_cosmos: 0.72, bg_cosmos_awake: 0.70,
                   bg_kz_forest: 0.64, bg_kz_valley: 0.68, bg_kz_gate: 0.70, bg_kz_extra: 0.62 };
   const rand = (a, b) => a + Math.random() * (b - a), any = (a) => a[Math.floor(Math.random() * a.length)];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -319,10 +319,10 @@
     scene.add(a.group);
     layoutAllies(); fit();
   }
-  // 味方の立ち位置：手前の下のほう。動いている人がいちばん手前で大きく、ほかの人は少しうしろ。
-  //   画面での位置（窓の割合）と、カメラからの距離 D で決める（カメラの近くにいるので、大きな敵と並んでも小さく見えない）
-  const SLOTS_TALL = [{ x: 0.26, head: 0.56, feet: 1.30, D: 6 }, { x: 0.78, head: 0.67, feet: 1.12, D: 9 }, { x: 0.98, head: 0.71, feet: 1.10, D: 10.5 }];
-  const SLOTS_WIDE = [{ x: 0.27, head: 0.44, feet: 1.25, D: 6 }, { x: 0.70, head: 0.58, feet: 1.12, D: 9 }, { x: 0.87, head: 0.60, feet: 1.12, D: 9.5 }];
+  // 味方の立ち位置：敵の手前に、横一列（イメージ画像のように、みんな同じ大きさ）。動いている人だけ少し前に出る。
+  //   x は画面の横の割合、head・feet は窓の高さの割合、D はカメラからの距離
+  const ROW_X = { 1: [0.5], 2: [0.3, 0.7], 3: [0.18, 0.5, 0.82] };
+  const ROW = { head: 0.56, feet: 1.0, D: 9 }, ROW_ACT = { head: 0.53, feet: 1.02, D: 8.6 };
   function homeCam() {
     const tH = homeGoal.t, d = homeGoal.d, p = BASE_PITCH, cam = new T.PerspectiveCamera(FOV, VW / VH, 0.1, 500);
     cam.position.set(tH.x, tH.y + Math.sin(p) * d, tH.z + Math.cos(p) * d); cam.lookAt(tH);
@@ -335,17 +335,16 @@
   }
   function layoutAllies() {
     if (!W3D.on || !homeGoal.t) return;
-    const cam = homeCam(), win = battleWindow(), Hw = win.bottom - win.top, S = TALL ? SLOTS_TALL : SLOTS_WIDE;
-    const order = [partyState.mi, ...allies.map((_, i) => i).filter((i) => i !== partyState.mi)];
-    order.forEach((i, k) => {
-      const a = allies[i]; if (!a || !a.img) return;
-      const sl = S[Math.min(k, S.length - 1)], head = win.top + sl.head * Hw, feet = win.top + sl.feet * Hw;
+    const cam = homeCam(), win = battleWindow(), Hw = win.bottom - win.top, n = Math.min(3, allies.length), xs = ROW_X[n] || ROW_X[3];
+    allies.forEach((a, i) => {
+      if (!a || !a.img) return;
+      const sl = i === partyState.mi ? ROW_ACT : ROW, head = win.top + sl.head * Hw, feet = win.top + sl.feet * Hw;
       const kk = 2 * sl.D * TAN / VH, asp = a.img.naturalWidth / a.img.naturalHeight;
-      let h = (feet - head) * kk, w = h * asp; const mw = h * 0.95; if (w > mw) { w = mw; h = w / asp; }
-      const c = atDepth(cam, VW * sl.x, (head + feet) / 2, sl.D);
+      let h = (feet - head) * kk, w = h * asp; const mw = VW * (n >= 3 ? 0.34 : 0.42) * kk; if (w > mw) { w = mw; h = w / asp; }
+      const c = atDepth(cam, VW * xs[Math.min(i, xs.length - 1)], feet - h / kk / 2, sl.D);    // 足もとをそろえる
       const goal = new T.Vector3(c.x, c.y - h / 2, c.z);
       if (!a.home) { a.home = goal.clone(); a.h = h; a.w = w; }
-      a.goal = goal; a.goalH = h; a.goalW = w; a.slot = k;
+      a.goal = goal; a.goalH = h; a.goalW = w; a.slot = i;
     });
   }
   let partyState = { mi: 0, dead: [] };
@@ -355,7 +354,7 @@
     if (lvs !== allies.map((a) => a.lv).join(",")) setAllies(members.map((m) => ({ lv: m.lv })));
     const changed = mi !== partyState.mi;
     partyState = { mi, dead: members.map((m) => !!m.dead) };
-    if (changed) layoutAllies();         // 動く人が、いちばん手前へ
+    if (changed) layoutAllies();         // 動く人が、少し前へ
   };
 
   // ---- カメラ：敵と味方がみんな、バトルの窓に入るように引く ----
@@ -378,7 +377,7 @@
   function fit(now) {
     if (!W3D.on) return;
     // 敵だけを、窓の上のほう（敵の場所）に大きく入れる。味方は手前に、あとから置く
-    const pts = actorPoints(), w0 = battleWindow(), win = { top: w0.top + 6, bottom: w0.top + (w0.bottom - w0.top) * (TALL ? 0.70 : 0.72) }, winH = win.bottom - win.top;
+    const pts = actorPoints(), w0 = battleWindow(), win = { top: w0.top + 6, bottom: w0.top + (w0.bottom - w0.top) * (TALL ? 0.56 : 0.58) }, winH = win.bottom - win.top;
     const box = new T.Box3().setFromPoints(pts), c = box.getCenter(_v());
     let lo = 4, hi = 120, sy = 0;
     const measure = (d) => {

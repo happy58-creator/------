@@ -30,11 +30,10 @@ input,select{font:inherit;color:inherit}
 .inc{color:var(--blue)} .exp{color:var(--red)}
 /* メニューのタイル（すべて同じ大きさ） */
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
-.tile{height:104px;border-radius:var(--r);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
-  box-shadow:0 4px 14px rgba(20,30,60,.12);font-weight:800;font-size:16px;transition:transform .08s}
+.tile{height:104px;border-radius:var(--r);color:#b24d72;background:linear-gradient(160deg,#fde7ee,#f8d3df);border:1px solid #f4c4d4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  box-shadow:0 4px 12px rgba(220,120,150,.15);font-weight:800;font-size:16px;transition:transform .08s}
 .tile:active{transform:scale(.97)}
-.tile .ic{font-size:30px;line-height:1}
-.tile.dark{color:#0d3440}
+.tile .ic{width:32px;height:32px}
 /* お知らせ */
 .alert{display:flex;gap:10px;align-items:center;background:#fff6ea;border:1px solid #ffe0b8;border-radius:12px;padding:10px 12px;margin-bottom:8px;font-size:14px}
 .alert b{white-space:nowrap}
@@ -189,8 +188,18 @@ const TOKEN = {
 const EXP = "支出", INC = "収入", MON = "月払い", YR = "年払い";
 const SOON = 7, YSOON = 30;
 const WEEK = "日月火水木金土";
-const TILES = [["入力","✏️","input","#5068FF"],["カレンダー","📅","calendar","#02D6B2",1],["レポート","📊","report","#36F8DD",1],["予算","👛","budget","#3ED7F8",1],
-  ["サブスク","🔁","subs","#4744CE"],["記録の一覧","📋","list","#787EF8"],["カテゴリ","🏷️","cats","#00B0FF"],["設定","⚙️","settings","#22CF7B"]];
+const TILES = [["入力","input"],["カレンダー","calendar"],["レポート","report"],["予算","budget"],["サブスク","subs"],["記録の一覧","list"],["カテゴリ","cats"],["設定","settings"]];
+// メニューのボタンのアイコン（線だけのシンプルな絵）
+const TILE_ICON = {
+  input: '<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-4-4L4 16z"/><path d="M14 6l4 4"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  report: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5V12l6 6"/>',
+  budget: '<path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><rect x="4" y="8" width="16.5" height="11.5" rx="2.5"/><path d="M16 13.8h1.5"/>',
+  subs: '<path d="M4 12a8 8 0 0 1 13.7-5.6L20 8.5"/><path d="M20 4v4.5h-4.5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 15.5"/><path d="M4 20v-4.5h4.5"/>',
+  list: '<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.8" cy="6.5" r="1"/><circle cx="4.8" cy="12" r="1"/><circle cx="4.8" cy="17.5" r="1"/>',
+  cats: '<path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.5 1.5 0 0 1 0 2.1l-6.3 6.3a1.5 1.5 0 0 1-2.1 0z"/><circle cx="8" cy="8" r="1.4"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/>',
+};
 const PALETTE = ["#5068FF","#F08A2C","#02B39A","#4744CE","#00A3EC","#22B86E","#9B6BD8","#F2B33D","#E5533A","#3ED7F8","#787EF8","#8A9099","#C2588E"];
 const ICON = {
   input: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-4-4L4 16z"/><path d="M14 6l4 4"/></svg>',
@@ -322,7 +331,7 @@ V.home = () => `<div class="title">家計簿</div>
   <div class="small muted" style="margin:0 4px 6px">今月（${+ymOf(today()).slice(5)}月）</div>
   ${sumBox(totals(inMonth(ymOf(today()))))}
   ${alerts()}
-  <div class="tiles">${TILES.map(([l, ic, v, c, dark]) => `<button class="tile${dark ? " dark" : ""}" style="background:${c}" data-go="${v}"><span class="ic">${ic}</span>${l}</button>`).join("")}</div>`;
+  <div class="tiles">${TILES.map(([l, v]) => `<button class="tile" data-go="${v}"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${TILE_ICON[v]}</svg>${l}</button>`).join("")}</div>`;
 
 V.input = () => {
   const list = cats(S.kind);

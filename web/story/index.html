@@ -575,6 +575,50 @@
   @keyframes wdot { to { transform:scale(1.35); } }
   #aim .hint { position:absolute; left:0; right:0; top:calc(max(10px, env(safe-area-inset-top)) + 92px); text-align:center; pointer-events:none; }
   #aim .hint span { display:inline-block; padding:6px 16px; border-radius:18px; background:rgba(20,12,30,.85); border:1px solid var(--c); font-weight:900; color:#fff; }
+
+  /* ===== スッキリした下の表示（v126）：仲間のカード・行動中の人の欄・丸いボタン ===== */
+  .hud.bottom { background:linear-gradient(to top, rgba(6,5,12,.97) 0, rgba(8,7,16,.93) 78%, rgba(8,7,16,0)); padding-top:16px; }
+  .hud.top { background:linear-gradient(to bottom, rgba(6,5,12,.9), rgba(6,5,12,.5) 75%, transparent); }
+  .hud.top .row:nth-child(2) { position:relative; }
+  .hud.top .hpbar { height:18px; border-radius:10px; border:1px solid rgba(255,200,150,.45); box-shadow:0 0 10px rgba(220,40,40,.25); }
+  .hud.top #enemyNum { position:absolute; left:0; right:0; min-width:0; text-align:center; font-size:12px; line-height:18px; pointer-events:none; color:#fff; text-shadow:0 1px 2px #000, 0 0 3px #000; }
+  .hud.top .ename { margin:0 auto; text-align:center; letter-spacing:.04em; }
+  .hud.top .row:first-child { justify-content:center; }
+  #party { gap:6px; margin:0 auto 8px; align-items:stretch; }
+  #party .pm { flex-direction:row; align-items:center; gap:6px; padding:6px 7px; border-radius:12px; background:linear-gradient(rgba(34,30,46,.92), rgba(18,16,26,.92));
+    border:1px solid rgba(255,255,255,.14); }
+  #party .pm { padding:5px 6px; gap:5px; }
+  #party .pm img { width:30px; height:30px; border-radius:8px; border:1px solid rgba(255,255,255,.25); }
+  #party .pm .nm { font:800 11.5px/1.15 sans-serif; margin-bottom:2px; letter-spacing:-.02em; }
+  #party .pm .hb, #party .pm .mb { position:relative; height:13px; border-radius:4px; background:#15121d; border:1px solid rgba(255,255,255,.08); }
+  #party .pm .hb > div { background:linear-gradient(#5fdc8a,#1f8a48); }
+  #party .pm .mb > div { background:linear-gradient(#7fb8ff,#2f62c9); }
+  #party .pm .hb span, #party .pm .mb span { position:absolute; inset:0; font:700 9.5px/12px ui-monospace,Menlo,monospace; color:#fff; text-align:center; text-shadow:0 1px 2px #000; white-space:nowrap; }
+  #party .pm.act { border:1.5px solid #ffd76a; background:linear-gradient(rgba(70,54,22,.92), rgba(30,24,14,.92)); box-shadow:0 0 12px rgba(255,210,100,.45); }
+  #party #autoBtn { width:36px; border-radius:12px; font:800 10px/1.2 sans-serif; }
+  .detail { max-width:720px; margin:0 auto; padding:8px 10px 6px; border-radius:14px; background:rgba(16,14,24,.85); border:1px solid rgba(255,215,140,.28);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06); }
+  .detail .badges { min-height:0; margin-top:4px; padding-left:62px; }
+  .detail .badges:empty { display:none; }
+  .ainfo { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:4px; font-size:11.5px; color:#cfc6b4; }
+  .ainfo b { color:#ffe3a3; font-weight:800; }
+  .ainfo .sk { color:#e9d7ff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
+  .aname { color:#ffd98a; }
+  /* 丸いボタン */
+  .buttons { justify-content:space-around; gap:6px; margin:10px auto 0; padding:6px 4px 0; }
+  .buttons .btn { flex:none; width:clamp(74px,22vw,92px); height:clamp(74px,22vw,92px); min-height:0; border-radius:50%; padding:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:#fff; font-size:clamp(12px,3.4vw,15px); letter-spacing:.06em;
+    border:3px solid #d9b46a; box-shadow:0 0 0 2px rgba(0,0,0,.6), 0 6px 16px rgba(0,0,0,.6), inset 0 2px 8px rgba(255,255,255,.35), inset 0 -8px 14px rgba(0,0,0,.35);
+    text-shadow:0 1px 3px rgba(0,0,0,.8); }
+  .buttons .btn .bi { font-size:clamp(24px,7vw,32px); line-height:1; filter:drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
+  .buttons .btn .bl { font-weight:900; line-height:1; }
+  .btn.attack { background:radial-gradient(circle at 50% 35%, #e0705a, #9b2f22 62%, #5c1710); }
+  .btn.magic { background:radial-gradient(circle at 50% 35%, #7e8de8, #3a46a8 62%, #1f2563); }
+  .btn.item { background:radial-gradient(circle at 50% 35%, #6fcf86, #2c8443 62%, #164a24); }
+  .btn.end { background:radial-gradient(circle at 50% 35%, #c5b3f0, #6b55b0 62%, #3a2a6a); }
+  .buttons .btn.end { display:none; } .buttons .btn.end.on { display:flex; }
+  .buttons .btn:not(:disabled) { animation:none; }
+  .buttons .btn.attack:not(:disabled) { box-shadow:0 0 0 2px rgba(0,0,0,.6), 0 0 18px rgba(255,190,90,.55), 0 6px 16px rgba(0,0,0,.6), inset 0 2px 8px rgba(255,255,255,.35), inset 0 -8px 14px rgba(0,0,0,.35); }
 </style>
 <style id="sceneCss"></style>
 </head>
@@ -613,6 +657,7 @@
 
   <div class="hud bottom">
     <div id="party"></div>
+    <div class="detail">
     <div class="row">
       <div class="skillwrap" id="skillWrap" title="必殺技"><div class="sring" id="skillRing"></div>
         <img class="icon" id="allyIcon" alt="" draggable="false"><span class="ready">必殺技！</span></div>
@@ -620,14 +665,16 @@
         <div class="row" style="margin:0"><span class="aname" id="allyName"></span><span class="num" id="allyNum" style="margin-left:auto"></span></div>
         <div class="hpbar" id="allyBar" style="margin-top:6px"><div class="lag"></div><div class="fill"></div></div>
         <div class="mprow" id="mpRow"><div class="mpbar" id="mpBar"><div class="fill"></div></div><span class="mpnum" id="mpNum"></span></div>
+        <div class="ainfo" id="allyInfo"></div>
       </div>
     </div>
     <div class="badges" id="badges"></div>
+    </div>
     <div class="buttons">
-      <button class="btn attack" id="btnAttack" type="button" disabled>⚔️ 攻撃</button>
-      <button class="btn end" id="btnEnd" type="button">⏭️ ターンを終える</button>
-      <button class="btn magic" id="btnMagic" type="button" disabled>🔮 魔法</button>
-      <button class="btn item" id="btnItem" type="button" disabled>🧪 アイテム</button>
+      <button class="btn attack" id="btnAttack" type="button" disabled><span class="bi">⚔️</span><span class="bl">攻撃</span></button>
+      <button class="btn end" id="btnEnd" type="button"><span class="bi">⏭️</span><span class="bl">ターン終了</span></button>
+      <button class="btn magic" id="btnMagic" type="button" disabled><span class="bi">🔮</span><span class="bl">魔法</span></button>
+      <button class="btn item" id="btnItem" type="button" disabled><span class="bi">🧪</span><span class="bl">アイテム</span></button>
     </div>
     <div class="note" id="hint" style="text-align:center;min-height:1.2em"></div>
   </div>
@@ -871,6 +918,8 @@ function updateBars() {
   $("allyIcon").classList.toggle("low", ap <= 30 && ap > 0);
   $("enemyNum").textContent = `${displayHp(G.enemyHp).toLocaleString()} / ${Math.round(e.max_hp).toLocaleString()}`;
   $("allyNum").textContent = `${displayHp(G.allyHp)} / ${Math.round(a.max_hp)}`;
+  if ($("allyInfo")) $("allyInfo").innerHTML = `<span>攻撃 <b>${Math.round(a.atk || 0)}</b></span><span>防御 <b>${Math.round(a.def || 0)}</b></span>` +
+    (a.mag ? `<span>魔力 <b>${Math.round(a.mag)}</b></span>` : "") + (G.cfg.skill && G.cfg.skill.name ? `<span class="sk">必殺 ${esc(G.cfg.skill.name)}</span>` : "");
   if (G.multi) layoutFoeBars();
   const mp = Math.max(0, G.mp), mx = a.max_mp || 0;
   $("mpBar").querySelector(".fill").style.width = (mx > 0 ? mp / mx * 100 : 0) + "%";
@@ -3090,8 +3139,9 @@ function renderParty() {
     const st = m.st, hp = Math.max(0, st.allyHp) / m.ally.max_hp * 100, mp = m.ally.max_mp ? Math.max(0, st.mp) / m.ally.max_mp * 100 : 0;
     return `<div class="pm${i === G.mi ? " act" : ""}${G.peek === i ? " peek" : ""}${m.dead ? " dead" : ""}" data-i="${i}"><img src="${m.icon || ""}" alt="">` +
       `<div class="bars"><div class="nm">${esc(m.ally.name.split("、").pop())}</div>` +
-      (m.dead ? `<div class="dl">戦闘不能</div>` : `<div class="hb"><div style="width:${hp}%"></div></div><div class="mb"><div style="width:${mp}%"></div></div>`) + `</div></div>`;
-  }).join("") + `<button type="button" id="autoBtn" class="${G.autoSub ? "on" : ""}" title="リーダー以外を自動で動かす">サブ<br>${G.autoSub ? "オート" : "手動"}</button>`;
+      (m.dead ? `<div class="dl">戦闘不能</div>` : `<div class="hb"><div style="width:${hp}%"></div><span>${Math.max(0, Math.ceil(st.allyHp))}/${Math.round(m.ally.max_hp)}</span></div>` +
+        (m.ally.max_mp ? `<div class="mb"><div style="width:${mp}%"></div><span>${Math.max(0, Math.floor(st.mp))}/${Math.round(m.ally.max_mp)}</span></div>` : "")) + `</div></div>`;
+  }).join("") + `<button type="button" id="autoBtn" class="${G.autoSub ? "on" : ""}" title="リーダー以外を自動で動かす">${G.autoSub ? "AUTO" : "手動"}</button>`;
   sync3dParty();
 }
 // 自分のターン（パーティ）：立っている人が順番に1回ずつ。全員が動いたら敵のターン
