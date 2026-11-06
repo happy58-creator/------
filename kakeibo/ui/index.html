@@ -326,9 +326,9 @@ function act(a) {
 }
 
 // ===== 画面の状態 =====
-const S = { view: "home", month: ymOf(today()), kind: EXP, date: today(), memo: "", amount: "", cat: {}, budEdit: false, ck: EXP, catDraft: null, calPick: null };
+const S = { rep: "month", view: "home", month: ymOf(today()), kind: EXP, date: today(), memo: "", amount: "", cat: {}, budEdit: false, ck: EXP, catDraft: null, calPick: null };
 try { Object.assign(S, JSON.parse(sessionStorage.getItem("kb_state") || "{}"), { budEdit: false, catDraft: null }); } catch (e) {}
-function keep() { try { sessionStorage.setItem("kb_state", JSON.stringify({ view: S.view, month: S.month, kind: S.kind, cat: S.cat, ck: S.ck })); } catch (e) {} }
+function keep() { try { sessionStorage.setItem("kb_state", JSON.stringify({ view: S.view, rep: S.rep, month: S.month, kind: S.kind, cat: S.cat, ck: S.ck })); } catch (e) {} }
 
 const cats = kind => {
   const c = D.cats.filter(x => x["種類"] === kind && x["名前"]);
@@ -445,8 +445,7 @@ function donut(items, total) {
     <text x="100" y="94" text-anchor="middle" font-size="12" fill="#7a808c">支出</text>
     <text x="100" y="116" text-anchor="middle" font-size="18" font-weight="800" fill="#22262e">${yen(total)}</text></svg>`;
 }
-function bars12() {
-  const ms = []; for (let i = 11; i >= 0; i--) ms.push(shiftM(S.month, -i));
+function barsFor(ms, cur) {
   const t = ms.map(m => totals(inMonth(m)));
   const max = Math.max(1, ...t.map(x => Math.max(x.inc, x.exp)));
   const W = 360, H = 230, mid = 110, h = 92, bw = 14, step = (W - 30) / 12;
@@ -454,23 +453,41 @@ function bars12() {
   const nice = max >= 10000 ? `${Math.round(max / 1000).toLocaleString()}千` : max.toLocaleString();
   g += `<text x="0" y="${mid - h + 4}" font-size="9" fill="#9aa0aa">${nice}</text><text x="0" y="${mid + h + 4}" font-size="9" fill="#9aa0aa">-${nice}</text>`;
   ms.forEach((m, i) => {
-    const x = 30 + i * step + (step - bw) / 2, hi = t[i].inc / max * h, he = t[i].exp / max * h, cur = m === S.month;
-    g += `<rect x="${x}" y="${mid - hi}" width="${bw}" height="${hi}" rx="3" fill="#2DB56A" opacity="${cur ? 1 : .75}"/>`;
-    g += `<rect x="${x}" y="${mid}" width="${bw}" height="${he}" rx="3" fill="#F08A2C" opacity="${cur ? 1 : .75}"/>`;
-    g += `<text x="${x + bw / 2}" y="${H - 4}" text-anchor="middle" font-size="10" fill="${cur ? "#22262e" : "#9aa0aa"}" font-weight="${cur ? 800 : 400}">${+m.slice(5)}月</text>`;
+    const x = 30 + i * step + (step - bw) / 2, hi = t[i].inc / max * h, he = t[i].exp / max * h, on = m === cur;
+    g += `<rect x="${x}" y="${mid - hi}" width="${bw}" height="${hi}" rx="3" fill="#2DB56A" opacity="${on ? 1 : .75}"/>`;
+    g += `<rect x="${x}" y="${mid}" width="${bw}" height="${he}" rx="3" fill="#F08A2C" opacity="${on ? 1 : .75}"/>`;
+    g += `<text x="${x + bw / 2}" y="${H - 4}" text-anchor="middle" font-size="10" fill="${on ? "#22262e" : "#9aa0aa"}" font-weight="${on ? 800 : 400}">${+m.slice(5)}月</text>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}">${g}</svg>`;
 }
+const legendBars = (label) => `<div class="small muted" style="display:flex;gap:14px;margin-bottom:6px"><span><span class="dot" style="display:inline-block;background:var(--green)"></span> 収入</span><span><span class="dot" style="display:inline-block;background:var(--orange)"></span> 支出</span><span style="margin-left:auto">${label}</span></div>`;
+function catBlock(rs, kind, label) {
+  const items = byCat(rs, kind), total = items.reduce((a, b) => a + b[1], 0);
+  if (!items.length) return kind === EXP ? `<div class="sec">${label}</div><div class="empty">まだありません</div>` : "";
+  return `<div class="sec">${label}</div>
+    ${kind === EXP ? `<div class="card chart">${donut(items, total)}</div>` : ""}
+    <div class="list legend">${items.map(([c, v], i) => `<div class="item">${kind === EXP ? `<span class="dot" style="background:${PALETTE[i % PALETTE.length]}"></span>` : `<span></span>`}<span class="lic">${iconOf(kind, c)}</span>
+      <div class="t"><b>${esc(c)}</b><span>${Math.round(v / total * 100)}%</span></div><div class="v">${yen(v)}</div></div>`).join("")}</div>`;
+}
+const formula = t => `<div class="formula"><span style="color:var(--green)">${yen(t.inc)}</span> − <span style="color:var(--orange)">${yen(t.exp)}</span> = ${yen(t.bal, true)}</div>`;
 V.report = () => {
-  const rs = inMonth(S.month), t = totals(rs), items = byCat(rs), total = items.reduce((a, b) => a + b[1], 0);
-  return `<div class="title">レポート</div>${monthNav()}
-  <div class="formula"><span style="color:var(--green)">${yen(t.inc)}</span> − <span style="color:var(--orange)">${yen(t.exp)}</span> = ${yen(t.bal, true)}</div>
-  <div class="card chart"><div class="small muted" style="display:flex;gap:14px;margin-bottom:6px"><span><span class="dot" style="display:inline-block;background:var(--green)"></span> 収入</span><span><span class="dot" style="display:inline-block;background:var(--orange)"></span> 支出</span><span style="margin-left:auto">直近12か月</span></div>${bars12()}</div>
-  <div class="sec">この月の支出</div>
-  ${items.length ? `<div class="card chart">${donut(items, total)}</div>
-    <div class="list legend">${items.map(([c, v], i) => `<div class="item"><span class="dot" style="background:${PALETTE[i % PALETTE.length]}"></span><span class="lic">${iconOf(EXP, c)}</span>
-      <div class="t"><b>${esc(c)}</b><span>${Math.round(v / total * 100)}%</span></div><div class="v">${yen(v)}</div></div>`).join("")}</div>`
-    : `<div class="empty">この月の支出はまだありません</div>`}`;
+  const yearMode = S.rep === "year";
+  const seg = `<div class="seg"><button class="${!yearMode ? "on" : ""}" data-a="rmode" data-v="month">月間</button><button class="${yearMode ? "on" : ""}" data-a="rmode" data-v="year">年間</button></div>`;
+  if (!yearMode) {
+    const rs = inMonth(S.month), t = totals(rs), prev = totals(inMonth(shiftM(S.month, -1)));
+    const diff = t.exp - prev.exp;
+    const cmp = prev.exp ? `<div class="small muted" style="text-align:center;margin:-4px 0 10px">先月の支出より <b style="color:${diff > 0 ? "var(--red)" : "var(--green)"}">${yen(diff, true)}</b></div>` : "";
+    return `<div class="title">レポート</div>${seg}${monthNav()}${formula(t)}${cmp}${catBlock(rs, EXP, "この月の支出")}${catBlock(rs, INC, "この月の収入")}`;
+  }
+  const y = S.month.slice(0, 4), ms = Array.from({ length: 12 }, (_, i) => `${y}-${pad(i + 1)}`);
+  const rs = D.records.filter(r => String(r["日付"]).startsWith(y + "-")), t = totals(rs);
+  const used = ms.filter(m => inMonth(m).length).length || 1;
+  return `<div class="title">レポート</div>${seg}
+  <div class="mnav"><button class="arrow" data-a="yprev">‹</button><div class="head">${y}年<small>1月 − 12月</small></div><button class="arrow" data-a="ynext">›</button></div>
+  ${formula(t)}
+  <div class="card sum" style="grid-template-columns:1fr 1fr"><div><span>1か月の平均 支出</span><b class="exp">${yen(t.exp / used)}</b></div><div><span>1か月の平均 収入</span><b class="inc">${yen(t.inc / used)}</b></div></div>
+  <div class="card chart">${legendBars(`${y}年の月ごと`)}${barsFor(ms, ymOf(today()))}</div>
+  ${catBlock(rs, EXP, `${y}年の支出`)}${catBlock(rs, INC, `${y}年の収入`)}`;
 };
 
 V.budget = () => {
@@ -599,6 +616,9 @@ document.addEventListener("click", e => {
   switch (a) {
     case "mprev": S.month = shiftM(S.month, -1); S.calPick = null; render(); break;
     case "mnext": S.month = shiftM(S.month, 1); S.calPick = null; render(); break;
+    case "rmode": S.rep = v; render(); break;
+    case "yprev": S.month = shiftM(S.month, -12); render(); break;
+    case "ynext": S.month = shiftM(S.month, 12); render(); break;
     case "kind": S.kind = v; render(true); break;
     case "dprev": S.date = addDays(S.date, -1); render(true); break;
     case "dnext": S.date = addDays(S.date, 1); render(true); break;
