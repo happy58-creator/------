@@ -61,12 +61,12 @@ input,select{font:inherit;color:inherit}
 .sec{font-weight:800;margin:18px 2px 8px;display:flex;justify-content:space-between;align-items:baseline}
 .sec .link{font-size:13px;color:var(--accent);font-weight:700}
 .cats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.cat{aspect-ratio:1/1;background:#fff;border-radius:14px;border:2px solid transparent;box-shadow:var(--shadow);
+.cat{aspect-ratio:1/1;background:linear-gradient(160deg,#fdeef3,#fadbe5);color:#b24d72;border-radius:14px;border:2px solid #f6cfdc;box-shadow:0 2px 8px rgba(220,120,150,.12);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:700;overflow:hidden}
-.cat .ic{font-size:26px;line-height:1}
+.cat .ic{width:26px;height:26px}
 .cat span{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
-.cat.on{border-color:var(--orange);background:#fff7ee}
-.cat.add{color:var(--sub);background:#f0f1f4;box-shadow:none}
+.cat.on{border-color:#d9658e;background:linear-gradient(160deg,#fbd5e1,#f6bfd1);box-shadow:0 0 0 3px rgba(217,101,142,.18)}
+.cat.add{color:#c98aa2;background:#fff;border:2px dashed #f2c3d3;box-shadow:none}
 .big{display:block;width:100%;height:56px;border-radius:999px;background:var(--orange);color:#fff;font-size:17px;font-weight:800;margin-top:18px;
   box-shadow:0 6px 16px rgba(240,138,44,.35)}
 .big.blue{background:var(--blue);box-shadow:0 6px 16px rgba(53,134,224,.3)}
@@ -136,7 +136,7 @@ input,select{font:inherit;color:inherit}
   box-shadow:0 8px 28px rgba(20,30,60,.16),0 0 0 1px rgba(0,0,0,.04);display:grid;grid-template-columns:repeat(5,1fr);padding:6px;z-index:10}
 #foot button{height:56px;border-radius:999px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:700;color:#3a3f48}
 #foot button svg{width:24px;height:24px}
-#foot button.on{background:#eef0f3;color:var(--orange)}
+#foot button.on{background:#fde7ee;color:#d9658e}
 /* 下からのシート・確認 */
 #modal{position:fixed;inset:0;background:rgba(15,20,30,.4);display:none;align-items:flex-end;justify-content:center;z-index:20}
 #modal.show{display:flex}
@@ -146,6 +146,24 @@ input,select{font:inherit;color:inherit}
 #toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-80px);background:#22262e;color:#fff;padding:10px 18px;border-radius:999px;font-size:14px;font-weight:700;transition:transform .25s;z-index:30;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
 #toast.show{transform:translate(-50%,0)}
 #sync{position:fixed;right:14px;top:12px;font-size:11px;color:var(--sub);background:#fff;border-radius:999px;padding:3px 9px;box-shadow:var(--shadow);display:none;z-index:9}
+
+/* ピンク（入力・予算） */
+:root{--pink:#d9658e;--pinkL:#fde7ee}
+.big.pink{background:linear-gradient(#e889a9,#d9658e);box-shadow:0 6px 16px rgba(217,101,142,.32)}
+.btn.pri.pink{background:#d9658e;border-color:#d9658e}
+.seg.k button.on.e{color:var(--pink)}
+.li{width:22px;height:22px;display:block}
+.item .ic{color:#b24d72;background:var(--pinkL)}
+.item .ic .li{width:21px;height:21px}
+.lic{color:#b24d72;display:grid;place-items:center}
+.bname{display:inline-flex;align-items:center;gap:8px}
+.bic{width:30px;height:30px;border-radius:9px;background:var(--pinkL);color:#b24d72;display:grid;place-items:center;flex:none}
+.bic .li{width:18px;height:18px}
+.cic{width:44px;height:42px;border-radius:10px;background:var(--pinkL) !important;color:#b24d72 !important;display:grid;place-items:center;border:1px solid #f4c4d4 !important}
+.ipick{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.ipick button{aspect-ratio:1/1;border-radius:12px;background:#fff;color:#b24d72;display:grid;place-items:center;border:2px solid #f4d6e0}
+.ipick button.on{border-color:#d9658e;background:var(--pinkL)}
+.ipick .li{width:24px;height:24px}
 </style>
 </head>
 <body>
@@ -189,6 +207,45 @@ const EXP = "支出", INC = "収入", MON = "月払い", YR = "年払い";
 const SOON = 7, YSOON = 30;
 const WEEK = "日月火水木金土";
 const TILES = [["入力","input"],["カレンダー","calendar"],["レポート","report"],["予算","budget"],["サブスク","subs"],["記録の一覧","list"],["カテゴリ","cats"],["設定","settings"]];
+// カテゴリーのアイコン（線だけのシンプルな絵）。カテゴリーの「アイコン」には "i:キー" で入る
+const CAT_ICON = {
+  food: '<path d="M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10"/><path d="M17 21V3c-2.2 1.2-3.5 3.6-3.5 7v3h3.5"/>',
+  daily: '<path d="M9 3h5v3H9z"/><path d="M8.5 6h6l1 3.5V20a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V9.5z"/><path d="M7.5 12h8"/>',
+  clothes: '<path d="M8.5 3.5L4 6.5l2 4 2-1V20.5h8V9.5l2 1 2-4-4.5-3c-.6 1.5-2 2.5-3.5 2.5S9.1 5 8.5 3.5z"/>',
+  beauty: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M18.5 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
+  social: '<path d="M7 3h10l-1.2 7a3.8 3.8 0 0 1-7.6 0z"/><path d="M12 14v6M8.5 20.5h7"/>',
+  medical: '<rect x="3.5" y="8" width="17" height="11" rx="2.5"/><path d="M9 8V5.5h6V8M12 11v5M9.5 13.5h5"/>',
+  education: '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5z"/><path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/>',
+  utility: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/>',
+  transport: '<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14M8.5 13.5h.01M15.5 13.5h.01M8 17l-2 4M16 17l2 4"/>',
+  phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+  house: '<path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5M10 20v-5h4v5"/>',
+  subs: '<path d="M4 12a8 8 0 0 1 13.7-5.6L20 8.5"/><path d="M20 4v4.5h-4.5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 15.5"/><path d="M4 20v-4.5h4.5"/>',
+  box: '<path d="M4 8l8-4 8 4v8.5l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8.5"/>',
+  salary: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 7.5L12 12l3.5-4.5M12 12v5M9 12.5h6M9 15h6"/>',
+  gift: '<rect x="3.5" y="8.5" width="17" height="4" rx="1"/><path d="M5 12.5V20h14v-7.5M12 8.5V20M12 8.5c-1-3-5-4-5-1.5S12 8.5 12 8.5zM12 8.5c1-3 5-4 5-1.5S12 8.5 12 8.5z"/>',
+  work: '<rect x="3.5" y="7" width="17" height="12.5" rx="2"/><path d="M9 7V5h6v2M3.5 12h17"/>',
+  pet: '<circle cx="7" cy="9" r="1.8"/><circle cx="17" cy="9" r="1.8"/><circle cx="10" cy="5.5" r="1.6"/><circle cx="14" cy="5.5" r="1.6"/><path d="M12 11c-3 0-5.5 3.6-5.5 6 0 2 1.8 2.5 3 2 1.2-.5 1.8-.6 2.5-.6s1.3.1 2.5.6c1.2.5 3-.0 3-2 0-2.4-2.5-6-5.5-6z"/>',
+  car: '<path d="M5 16V11.5L7 7h10l2 4.5V16"/><rect x="3.5" y="11.5" width="17" height="5.5" rx="1.5"/><path d="M6.5 17v2.5M17.5 17v2.5M7 14h.01M17 14h.01"/>',
+  cafe: '<path d="M4.5 9h12v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5z"/><path d="M16.5 10.5h1.5a2.5 2.5 0 0 1 0 5h-1.8M8 3.5v2.5M12 3.5v2.5"/>',
+  baby: '<circle cx="12" cy="12" r="8.5"/><path d="M9 11h.01M15 11h.01M9.5 15c1.4 1.2 3.6 1.2 5 0M12 3.5c-1 1-1 2.5 0 3"/>',
+  travel: '<path d="M10.5 13.5L3 11l1.5-1.5 7 1L16 6c1-1 2.5-1.5 3-1s0 2-1 3l-4.5 4.5 1 7L13 21l-2.5-7.5z"/>',
+  game: '<rect x="2.5" y="7.5" width="19" height="10" rx="5"/><path d="M7.5 11v3M6 12.5h3M15.5 12h.01M17.5 13.5h.01"/>',
+  heart: '<path d="M12 20s-8-4.7-8-10.5A4.5 4.5 0 0 1 12 6.5a4.5 4.5 0 0 1 8 3C20 15.3 12 20 12 20z"/>',
+  sport: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17M6 6c3 2.5 3 9.5 0 12M18 6c-3 2.5-3 9.5 0 12"/>',
+  cart: '<path d="M3 4h2.5l2.2 10.5h10.3L20 7H6.5"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
+  tag: '<path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.5 1.5 0 0 1 0 2.1l-6.3 6.3a1.5 1.5 0 0 1-2.1 0z"/><circle cx="8" cy="8" r="1.4"/>',
+};
+// 名前からアイコンを決める（はじめから入っているカテゴリー）
+const NAME_ICON = { 食費: "food", 日用品: "daily", 衣服: "clothes", 美容: "beauty", 交際費: "social", 医療費: "medical", 教育費: "education", 光熱費: "utility",
+  交通費: "transport", 通信費: "phone", 住居費: "house", サブスク: "subs", その他: "box", 給与: "salary", 賞与: "gift", 副収入: "work",
+  外食: "cafe", ペット: "pet", 車: "car", 旅行: "travel", 趣味: "game", 子ども: "baby", 医療: "medical", 買い物: "cart", スポーツ: "sport" };
+const svgIcon = (k, cls) => `<svg class="${cls || "li"}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${CAT_ICON[k] || CAT_ICON.tag}</svg>`;
+function iconKey(c) {
+  const v = String((c && c["アイコン"]) || "").trim();
+  if (v.startsWith("i:") && CAT_ICON[v.slice(2)]) return v.slice(2);
+  return NAME_ICON[c && c["名前"]] || "tag";
+}
 // メニューのボタンのアイコン（線だけのシンプルな絵）
 const TILE_ICON = {
   input: '<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-4-4L4 16z"/><path d="M14 6l4 4"/>',
@@ -277,7 +334,7 @@ const cats = kind => {
   const c = D.cats.filter(x => x["種類"] === kind && x["名前"]);
   return c.length ? c : [];
 };
-const iconOf = (kind, name) => (cats(kind).find(c => c["名前"] === name) || {})["アイコン"] || "📦";
+const iconOf = (kind, name) => svgIcon(iconKey(cats(kind).find(c => c["名前"] === name) || { 名前: name }));
 const inMonth = m => D.records.filter(r => ymOf(r["日付"]) === m);
 function totals(rs) {
   let i = 0, e = 0;
@@ -346,9 +403,9 @@ V.input = () => {
     <div class="field"><label>${S.kind}</label><div class="amount"><input data-b="amount" inputmode="numeric" pattern="[0-9]*" value="${esc(S.amount)}" placeholder="0">円</div></div>
   </div>
   <div class="sec">カテゴリー<button class="link" data-go="cats">編集・追加 ›</button></div>
-  <div class="cats">${list.map(c => `<button class="cat ${c["名前"] === S.cat[S.kind] ? "on" : ""}" data-a="cat" data-v="${esc(c["名前"])}"><span class="ic">${c["アイコン"] || "📦"}</span><span>${esc(c["名前"])}</span></button>`).join("")}
-    <button class="cat add" data-go="cats"><span class="ic">＋</span><span>追加</span></button></div>
-  <button class="big ${isE ? "" : "blue"}" data-a="submit">${S.kind}を入力する</button>`;
+  <div class="cats">${list.map(c => `<button class="cat ${c["名前"] === S.cat[S.kind] ? "on" : ""}" data-a="cat" data-v="${esc(c["名前"])}">${svgIcon(iconKey(c), "ic")}<span>${esc(c["名前"])}</span></button>`).join("")}
+    <button class="cat add" data-go="cats"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>追加</span></button></div>
+  <button class="big ${isE ? "pink" : "blue"}" data-a="submit">${S.kind}を入力する</button>`;
 };
 
 V.calendar = () => {
@@ -411,7 +468,7 @@ V.report = () => {
   <div class="card chart"><div class="small muted" style="display:flex;gap:14px;margin-bottom:6px"><span><span class="dot" style="display:inline-block;background:var(--green)"></span> 収入</span><span><span class="dot" style="display:inline-block;background:var(--orange)"></span> 支出</span><span style="margin-left:auto">直近12か月</span></div>${bars12()}</div>
   <div class="sec">この月の支出</div>
   ${items.length ? `<div class="card chart">${donut(items, total)}</div>
-    <div class="list legend">${items.map(([c, v], i) => `<div class="item"><span class="dot" style="background:${PALETTE[i % PALETTE.length]}"></span><span style="font-size:20px">${iconOf(EXP, c)}</span>
+    <div class="list legend">${items.map(([c, v], i) => `<div class="item"><span class="dot" style="background:${PALETTE[i % PALETTE.length]}"></span><span class="lic">${iconOf(EXP, c)}</span>
       <div class="t"><b>${esc(c)}</b><span>${Math.round(v / total * 100)}%</span></div><div class="v">${yen(v)}</div></div>`).join("")}</div>`
     : `<div class="empty">この月の支出はまだありません</div>`}`;
 };
@@ -421,9 +478,9 @@ V.budget = () => {
   D.budgets.forEach(b => have[b["カテゴリ"]] = int(b["予算"]));
   if (S.budEdit) {
     return `<div class="title">予算を設定</div><div class="small muted" style="margin:0 4px 8px">1か月の予算。空か 0 なら「未設定」になります</div>
-    <div class="list">${list.map(c => `<div class="bin"><div><span style="font-size:20px">${c["アイコン"]}</span> ${esc(c["名前"])}</div>
+    <div class="list">${list.map(c => `<div class="bin"><div class="bname"><span class="bic">${svgIcon(iconKey(c))}</span>${esc(c["名前"])}</div>
       <input inputmode="numeric" pattern="[0-9]*" data-bud="${esc(c["名前"])}" value="${have[c["名前"]] || ""}" placeholder="未設定"></div>`).join("")}</div>
-    <div class="row2" style="margin-top:14px"><button class="btn" data-a="budcancel">やめる</button><button class="btn pri" data-a="budsave">保存する</button></div>`;
+    <div class="row2" style="margin-top:14px"><button class="btn" data-a="budcancel">やめる</button><button class="btn pri pink" data-a="budsave">保存する</button></div>`;
   }
   const used = Object.fromEntries(byCat(inMonth(S.month)));
   let tb = 0, tu = 0;
@@ -442,8 +499,8 @@ V.budget = () => {
   };
   return `<div class="title">予算</div>${monthNav()}
     <div class="list" style="margin-bottom:var(--gap)">${row("予算合計", tb, tu, true)}</div>
-    <div class="list">${list.map(c => row(`<span style="font-size:18px">${c["アイコン"]}</span> ${esc(c["名前"])}`, have[c["名前"]] || 0, used[c["名前"]] || 0)).join("")}</div>
-    <button class="big blue" data-a="budedit">予算を設定する</button>`;
+    <div class="list">${list.map(c => row(`<span class="bname"><span class="bic">${svgIcon(iconKey(c))}</span>${esc(c["名前"])}</span>`, have[c["名前"]] || 0, used[c["名前"]] || 0)).join("")}</div>
+    <button class="big pink" data-a="budedit">予算を設定する</button>`;
 };
 
 V.subs = () => {
@@ -472,8 +529,8 @@ V.cats = () => {
   const rows = S.catDraft[S.ck];
   return `<div class="title">カテゴリー</div>
   <div class="seg"><button class="${S.ck === EXP ? "on" : ""}" data-a="ck" data-v="${EXP}">支出</button><button class="${S.ck === INC ? "on" : ""}" data-a="ck" data-v="${INC}">収入</button></div>
-  <div class="small muted" style="margin:0 4px 8px">左の枠に絵文字を1つ入れるとアイコンになります。↑↓ で並べかえ</div>
-  <div class="list">${rows.map((c, i) => `<div class="crow"><input class="e" data-c="${i}" data-f="アイコン" value="${esc(c["アイコン"])}" maxlength="4">
+  <div class="small muted" style="margin:0 4px 8px">左のアイコンを押すと、アイコンを選べます。↑↓ で並べかえ</div>
+  <div class="list">${rows.map((c, i) => `<div class="crow"><button class="cic" data-a="cicon" data-i="${i}">${svgIcon(iconKey(c))}</button>
     <input data-c="${i}" data-f="名前" value="${esc(c["名前"])}" placeholder="名前" maxlength="12">
     <button data-a="cup" data-i="${i}">↑</button><button data-a="cdown" data-i="${i}">↓</button><button data-a="cdel" data-i="${i}">✕</button></div>`).join("")}</div>
   <button class="btn" style="margin-top:10px" data-a="cadd">＋ カテゴリーを追加</button>
@@ -594,12 +651,19 @@ document.addEventListener("click", e => {
       if (j < 0 || j >= r.length) return; [r[i], r[j]] = [r[j], r[i]]; render(true); break;
     }
     case "cdel": S.catDraft[S.ck].splice(+b.dataset.i, 1); render(true); break;
-    case "cadd": S.catDraft[S.ck].push({ 種類: S.ck, 名前: "", アイコン: "📦" }); render(true);
+    case "cadd": S.catDraft[S.ck].push({ 種類: S.ck, 名前: "", アイコン: "i:tag" }); render(true);
       setTimeout(() => { const ins = appEl.querySelectorAll('[data-f="名前"]'); ins[ins.length - 1].focus(); }, 0); break;
     case "creset": S.catDraft = null; render(true); break;
+    case "cicon": {
+      const i = +b.dataset.i;
+      modal(`<div class="title" style="margin-top:0">アイコンをえらぶ</div><div class="ipick">${Object.keys(CAT_ICON).map(k => `<button data-a="cpick" data-i="${i}" data-v="${k}" class="${iconKey(S.catDraft[S.ck][i]) === k ? "on" : ""}">${svgIcon(k)}</button>`).join("")}</div>
+        <button class="btn" style="margin-top:14px" data-a="mclose">閉じる</button>`);
+      break;
+    }
+    case "cpick": S.catDraft[S.ck][+b.dataset.i]["アイコン"] = "i:" + v; closeModal(); render(true); break;
     case "csave": {
       const rows = [];
-      for (const k of [EXP, INC]) for (const c of S.catDraft[k]) if (String(c["名前"]).trim()) rows.push({ 種類: k, 名前: c["名前"].trim(), アイコン: (c["アイコン"] || "").trim() || "📦" });
+      for (const k of [EXP, INC]) for (const c of S.catDraft[k]) if (String(c["名前"]).trim()) rows.push({ 種類: k, 名前: c["名前"].trim(), アイコン: "i:" + iconKey(c) });
       if (!rows.some(r => r["種類"] === EXP) || !rows.some(r => r["種類"] === INC)) { toast("支出と収入に1つずつは必要です"); return; }
       act({ type: "save_cats", rows }); S.catDraft = null; toast("カテゴリーを保存しました"); render(true); break;
     }
