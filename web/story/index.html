@@ -28,7 +28,14 @@
   #app.d3 #stage .st-target.p3d { position:fixed !important; right:auto !important; bottom:auto !important; max-width:none !important; max-height:none !important;
     margin:0 !important; transform:none !important; animation:none !important; object-fit:fill !important; object-position:50% 50% !important; }
   #vig3d { display:none; }
-  #app.d3 .hud.bottom { background:linear-gradient(to top, rgba(5,4,8,.9), rgba(5,4,8,.55) 42%, rgba(5,4,8,.12) 78%, transparent); }
+  /* ねらいの円（3D：連打で当たる範囲。敵の体のまん中） */
+  .tzone { position:absolute; z-index:35; display:none; pointer-events:none; border-radius:50%; transform:translate(-50%,-50%);
+    border:3px dashed rgba(255,240,180,.95); background:radial-gradient(circle, rgba(255,230,150,.16), rgba(255,230,150,.04) 70%, transparent 72%);
+    box-shadow:0 0 16px rgba(255,214,110,.7), inset 0 0 22px rgba(255,214,110,.35);
+    animation:tzone 1.2s ease-in-out infinite; }
+  .tzone.on { display:block; }
+  .tzone.dark { border-color:rgba(196,150,255,.95); box-shadow:0 0 14px rgba(150,90,255,.6), inset 0 0 22px rgba(120,60,220,.35); }
+  @keyframes tzone { 0%,100% { opacity:.75; } 50% { opacity:1; } }
   #app.d3 #vig3d { display:block; position:absolute; inset:0; z-index:2; pointer-events:none;
     background:radial-gradient(ellipse 80% 74% at 50% 46%, transparent 56%, rgba(0,0,0,.6) 100%); }
   @keyframes shake { 0%,100%{transform:translate(0,0)} 15%{transform:translate(-9px,4px)} 30%{transform:translate(8px,-5px)} 45%{transform:translate(-6px,3px)} 60%{transform:translate(5px,-2px)} 80%{transform:translate(-2px,1px)} }
@@ -1361,7 +1368,8 @@ async function astelAssist(kind) {
 }
 // 必殺技の演出（キャラごと・光の粒）。攻撃は敵（範囲なら全員）、回復・守りは自分のまわり
 async function skillFx(s, look) {
-  const me = $("allyIcon").getBoundingClientRect(), P = { x: innerWidth / 2, y: Math.min(innerHeight * .8, me.top - 10) };
+  const me = $("allyIcon").getBoundingClientRect();
+  const P = (d3() && W3D.allySpot(G.party ? G.mi : 0)) || { x: innerWidth / 2, y: Math.min(innerHeight * .8, me.top - 10) };
   if (d3()) { if (s.type === "strike" || s.type === "break") await W3D.focusFoe(G.multi ? G.cur : 0, 500); else await W3D.home(500); }
   const T = s.type === "strike" || s.type === "break" ? (s.area && G.multi ? aliveFoes() : [G.multi ? G.cur : 0]).map(foeSpot) : [];
   const done = await MFX.skill(s.anim, T.length ? T : [foeSpot(G.multi ? G.cur : 0)], P);
@@ -1914,6 +1922,7 @@ function layoutFoeBars() {
   }
 }
 function foeAt(x, y) {
+  if (d3()) return W3D.zoneAt(x, y, aliveFoes().slice().reverse());     // 3D：ねらいの円の中なら当たり
   for (const i of aliveFoes().slice().reverse()) {          // 手前（あと）に描いた敵から
     const el = foeEl(i);
     if (el && isOnEnemy(x, y, el, G.foes.length === 1 ? G.hitMask : G.foes[i].mask)) return i;
@@ -2066,7 +2075,7 @@ async function aimPhase(sp) {
   const cand = pts.filter((p) => p[1] < y0 + (y1 - y0) * 0.6 && p[1] > y0 + (y1 - y0) * 0.1 && Math.abs(p[0] - (x0 + x1) / 2) < (x1 - x0) * 0.22);
   const wp = pick(cand.length ? cand : pts);
   const el = elemOf(sp), box = $("aim"), ring = box.querySelector(".aring"), dot = box.querySelector(".wdot");
-  const size = aimSize(sp);
+  const size = d3() ? Math.max(40, Math.round(aimSize(sp) * W3D.aimScale(G.cur))) : aimSize(sp);   // 3D：敵の大きさに合わせる
   box.style.setProperty("--c", el.color);
   ring.style.width = ring.style.height = size + "px";
   dot.style.left = wp[0] + "px"; dot.style.top = wp[1] + "px";
@@ -2119,6 +2128,7 @@ async function aimPhase(sp) {
 // サブのオート（リーダー以外を自動で動かす）
 // ---------------------------------------------------------------------------
 function foeCenter(i) {
+  if (d3()) { const z = W3D.zone(i); if (z) return { x: z.x, y: z.y }; }
   const el = foeEl(i); if (!el) return { x: window.innerWidth / 2, y: window.innerHeight * 0.4 };
   const r = el.getBoundingClientRect(), f = G.foes[i], m = f && (G.foes.length === 1 ? G.hitMask : f.mask);
   return { x: r.left + r.width * (m ? m.cx : 0.5), y: r.top + r.height * (m ? m.cy : 0.5) };
@@ -2264,7 +2274,7 @@ const MFX = (() => {
     const app = document.getElementById("app"); if (!cv.isConnected) app.appendChild(cv);
     const r = app.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
     if (r.width !== W || r.height !== H) { W = r.width; H = r.height; cv.width = W * DPR; cv.height = H * DPR; }
-    U = Math.min(W, H * 0.62);
+    U = window.W3D && W3D.on ? W3D.fxU() : Math.min(W, H * 0.62);   // 3D：敵の大きさに合わせた大きさ
   }
   function kick() { if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } }
   const spark = (x, y, o) => { const life = o.life ?? rand(.4, .9);
@@ -2627,6 +2637,7 @@ const MFX = (() => {
   }
   // ---- そのほかの演出（敵の攻撃・回復や強化・アイテム・状態異常）もこのキャンバスで描く ----
   const party = () => {        // 味方のいるところ（パーティ表示の少し上。HUD に隠れないように）
+    if (window.W3D && W3D.on && window.G) { const s = W3D.allySpot(G.party ? G.mi : 0); if (s) return s; }   // 3D：動いている味方の立ち絵
     const pe = document.getElementById("party"), r = (pe && pe.offsetParent ? pe : document.getElementById("allyIcon")).getBoundingClientRect();
     return { x: W / 2, y: Math.max(H * .4, Math.min(H * .72, r.top - U * .18)) }; };
   const fromFoe = () => { try { const c = enemyCenter(); return { x: c.x, y: c.y }; } catch (e) { return { x: W / 2, y: H * .35 }; } };

@@ -278,7 +278,7 @@ def stage_html(enemy):
             fit = f' style="object-fit:cover;object-position:{enemy.get("focus", "50% 50%")}"'
         body = f'<img class="st-photo st-target" data-idx="0" src="{uri}" alt="{enemy["name"]}" draggable="false"{fit}>'
     else:
-        layers = f'<img class="st-bg" src="{image_uri(f"backgrounds/bg_{scene}.webp")}" alt="" draggable="false">' + layers
+        layers = f'<img class="st-bg" data-bg="bg_{scene}" src="{image_uri(f"backgrounds/bg_{scene}.webp")}" alt="" draggable="false">' + layers
         shadow = "" if enemy["floating"] else '<div class="st-shadow"></div>'
         floating = " floating" if enemy["floating"] else ""
         body = f'{shadow}<img class="st-enemy st-target{floating}" src="{uri}" alt="{enemy["name"]}" draggable="false">'
@@ -304,7 +304,8 @@ def kz_stage_html(foes, area, bg_file=None, scene=None):
         if foes[0].get("scene", "image") == "image":
             return stage_html(foes[0])
         bg_file, scene = f"bg_{foes[0]['scene']}.webp", foes[0]["scene"]
-    bg = image_uri("backgrounds/" + (bg_file or story_data.KZ_AREAS[area]["bg"]))
+    bg_name = bg_file or story_data.KZ_AREAS[area]["bg"]
+    bg = image_uri("backgrounds/" + bg_name)
     layers = "".join(f'<div class="st-layer {name}"></div>' for name in _SCENE_LAYERS.get(scene or "", []))
     body = []
     for i, (e, (left, height, maxw)) in enumerate(zip(foes, _KZ_SLOTS[len(foes)])):
@@ -314,7 +315,7 @@ def kz_stage_html(foes, area, bg_file=None, scene=None):
         body.append(f'<img class="st-enemy st-target kz-foe{floating}" data-idx="{i}" src="{src}" '
                     f'alt="{e["name"]}" draggable="false" style="left:{left}%;height:{height}%;max-width:{maxw}%;z-index:{z};{e.get("stage_style", "")}">')
     return (f'<div class="st-scene kz {area}" data-enemy="{Path(foes[0]["image"]).stem}">'
-            f'<img class="st-bg" src="{bg}" alt="" draggable="false">{layers}{"".join(body)}</div>')
+            f'<img class="st-bg" data-bg="{Path(bg_name).stem}" src="{bg}" alt="" draggable="false">{layers}{"".join(body)}</div>')
 
 
 def kz_hit_mask_uri(e):

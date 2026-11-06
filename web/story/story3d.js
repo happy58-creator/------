@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
 // 3D の戦闘画面（Three.js）
-//   これまでの画面（#stage の中の背景・敵の絵）は、当たり判定とエフェクトの位置合わせ用に「見えない影」として残す。
-//   見た目は Three.js の空間に描き、影の絵の位置と大きさを、毎フレーム 3D の位置に合わせて動かす。
-//   こうすると、連打・魔法のねらい・敵の選択・エフェクトの位置（すべて画面の座標で計算している）が、
-//   カメラが動いてもそのまま正しく働く。
-//   MFX（魔法・必殺技・敵の攻撃のエフェクト）は、出した瞬間の画面の位置を 3D の空間の位置に置きかえて、
-//   空間の中で動かす（カメラが回りこむと、奥行きが見える）。
+//   敵は奥の列、味方は手前の列に、役割ごとの大きさで立てる。カメラは、上のステータスと下のボタンの
+//   あいだ（バトルの窓）に、敵と味方がみんな入るように自動で引く。
+//   #stage の中の絵（今までの 2D の画面）は「見えない影」として残し、毎フレーム 3D の位置と大きさに合わせる。
+//   こうすると、魔法のねらい・エフェクトの位置（画面の座標で計算している）が、そのまま正しく働く。
+//   連打で当たる範囲は、敵ごとの「ねらいの円」（W3D.zone）で決める（キャラが小さくても当てやすい）。
+//   MFX（魔法・必殺技・敵の攻撃のエフェクト）は、出した瞬間の画面の位置を、空間の位置に置きかえて動かす。
 //   Three.js が使えないとき（読みこめない・WebGL がない）は、これまでどおりの 2D の画面のまま動く。
 // ---------------------------------------------------------------------------
 (function () {
@@ -14,17 +14,36 @@
   window.W3D = W3D;
   const CDN = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const FOV = 50, DC = 10, TAN = Math.tan(FOV * Math.PI / 360);
-  const BACK_Z = -24, ALLY_Z = 4;
+  const FOV = 40, TAN = Math.tan(FOV * Math.PI / 360);
+  // 並び方（縦長の画面は、敵をつめて、少し上から見下ろす）。resize で決め直す
+  let FOE_Z = -2.4, ALLY_Z = 2.4, BASE_PITCH = 0.2, TALL = false;
+  function layoutParams() {
+    TALL = VW / VH < 0.8;
+    if (TALL) { FOE_Z = -3.2; ALLY_Z = 3.0; BASE_PITCH = 0.42; }
+    else { FOE_Z = -3.0; ALLY_Z = 2.8; BASE_PITCH = 0.36; }
+    if (home) home.pitch = BASE_PITCH;
+  }
+  // 敵の背の高さ（役割ごと。味方は ALLY_H）
+  const FOE_H = { zako: 2.1, fast: 2.2, healer: 2.3, mage: 2.3, normal: 2.3, stone: 2.6, leader: 2.7, midboss: 3.0, boss: 3.4, extra: 4.6 };
+  const ALLY_H = 2.0, ALLY_MAXW = 2.5;
+  // 背景の絵の、床が始まるところ（絵の高さに対する割合。奥の壁と床のさかい目）。敵の足もとを床の奥のほうに、
+  // 味方の足もとを床の手前に合わせて、背景を置く
+  const FLOOR = { bg_altar: 0.70, bg_catacomb: 0.68, bg_corridor: 0.66, bg_prison: 0.80, bg_nebula: 0.62, bg_cosmos: 0.72, bg_cosmos_awake: 0.70,
+                  bg_kz_forest: 0.64, bg_kz_valley: 0.68, bg_kz_gate: 0.70, bg_kz_extra: 0.62 };
   const rand = (a, b) => a + Math.random() * (b - a), any = (a) => a[Math.floor(Math.random() * a.length)];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // 戦闘の状態（index.html のいちばん外の let G。window.G ではないので、名前で読む）
+  // eslint-disable-next-line no-undef
+  const gG = () => (typeof G !== "undefined" ? G : null);
   let T = null, renderer = null, scene = null, camera = null, app = null, stage = null;
-  let VW = 1, VH = 1, args = {}, booted = false, started = false;
-  const rig = { yaw: 0, pitch: 0, dist: DC, tx: 0, ty: 0, tz: 0 };
-  let shakeW = 0, shakeT = 0, clock = 0, last = 0;
+  let VW = 1, VH = 1, args = {}, booted = false;
+  // home：いつものカメラ（fit で決める）。rig：演出で home から動かす量
+  const home = { t: null, d: 14, pitch: BASE_PITCH, offY: 0 }, homeGoal = { t: null, d: 14, offY: 0 };
+  const rig = { yaw: 0, pitch: 0, dist: 1, tx: 0, ty: 0, tz: 0 };
+  let shakeW = 0, clock = 0, last = 0, ground = null;
   const jobs = [];
-  const scenes = [];        // { el, group, foes: [...], back, opacity }
-  let allies = [];          // { lv, group, mesh, halo, home, off, ... }
+  const scenes = [];        // { el, group, foes: [...], back, photo }
+  let allies = [];          // { lv, group, mesh, halo, shadow, home, off, ... }
 
   // ---- Three.js を用意する（同じフォルダの three.min.js。なければ CDN） ----
   function loadThree() {
@@ -50,19 +69,19 @@
     app.insertBefore(cv, app.firstChild);
     const vig = document.createElement("div"); vig.id = "vig3d"; app.insertBefore(vig, stage.nextSibling);
     scene = new T.Scene();
-    camera = new T.PerspectiveCamera(FOV, 1, 0.1, 400);
+    camera = new T.PerspectiveCamera(FOV, 1, 0.1, 500);
+    home.t = new T.Vector3(0, 1.4, 0); homeGoal.t = home.t.clone();
     makeShared();
+    ground = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map: TEX.shadow, transparent: true, opacity: 0.55, depthWrite: false }));
+    ground.rotation.x = -Math.PI / 2; ground.scale.set(17, 9.5, 1); ground.position.set(0, 0.01, 0); ground.renderOrder = -5; ground.material.opacity = 0.3; scene.add(ground);
     FX.init();
     resize();
-    addEventListener("resize", () => { resize(); relayout(); });
-    // 場面の入れかえ（新しい戦闘・覚醒で姿が変わる）を見張る
+    addEventListener("resize", () => { resize(); for (const s of scenes) if (s.ready) placeFoes(s); layoutAllies(); fit(true); });
     new MutationObserver(() => syncScenes()).observe(stage, { childList: true });
     new MutationObserver((recs) => {
       for (const r of recs) {
         const el = r.target;
-        if (r.attributeName === "class" && el.classList && el.classList.contains("struck")) {
-          const f = foeOf(el); if (f) f.flashT = clock;
-        }
+        if (r.attributeName === "class" && el.classList && el.classList.contains("struck")) { const f = foeOf(el); if (f) f.flashT = clock; }
       }
     }).observe(stage, { attributes: true, subtree: true, attributeFilter: ["class"] });
     W3D.on = true; app.classList.add("d3");
@@ -70,30 +89,43 @@
     return true;
   }
   function resize() {
-    VW = innerWidth; VH = innerHeight;
+    VW = innerWidth; VH = innerHeight; layoutParams();
     renderer.setSize(VW, VH, false);
     camera.aspect = VW / VH; camera.updateProjectionMatrix();
     FX.resize();
   }
 
-  // 画面の位置 ↔ 空間の位置（いつもの位置のカメラ：(0, 0, DC) から -z を見る）
-  const kz = (z) => 2 * (DC - z) * TAN / VH;                     // 奥行き z での、1px あたりの長さ
-  const homeW = (x, y, z) => new T.Vector3((x - VW / 2) * kz(z), (VH / 2 - y) * kz(z), z);
-  // 今のカメラで、画面の点 (x, y) が奥行き z の面と交わるところ
+  // ---- 位置の計算 ----
   const _v = () => new T.Vector3();
-  function toW(x, y, z = 0) {
-    const v = _v().set((x / VW) * 2 - 1, -(y / VH) * 2 + 1, 0.5).unproject(camera);
-    const d = v.sub(camera.position).normalize();
-    const t = Math.abs(d.z) < 1e-4 ? DC : (z - camera.position.z) / d.z;
-    return camera.position.clone().addScaledVector(d, t > 0 ? t : DC);
-  }
   const _fw = () => { const f = _v(); camera.getWorldDirection(f); return f; };
   function kAt(p) { const depth = Math.max(0.5, _v().subVectors(p, camera.position).dot(_fw())); return 2 * depth * TAN / VH; }
   function toS(p) { const v = p.clone().project(camera); return { x: (v.x + 1) / 2 * VW, y: (1 - v.y) / 2 * VH, z: v.z }; }
   W3D.toS = (p) => toS(p);
+  // 画面の y に合う奥行き（敵の列 ～ 味方の列のあいだ）
+  function zFor(y) {
+    const a = toS(new T.Vector3(0, 1.2, FOE_Z)).y, b = toS(new T.Vector3(0, 1.0, ALLY_Z)).y;
+    if (!(b > a + 1)) return FOE_Z;
+    return FOE_Z + (ALLY_Z - FOE_Z) * clamp((y - a) / (b - a), 0, 1);
+  }
+  // 今のカメラで、画面の点 (x, y) が奥行き z の面と交わるところ（z を省くと zFor(y)）
+  function toW(x, y, z) {
+    if (z === undefined) z = zFor(y);
+    const v = _v().set((x / VW) * 2 - 1, -(y / VH) * 2 + 1, 0.5).unproject(camera);
+    const d = v.sub(camera.position).normalize();
+    const t = Math.abs(d.z) < 1e-4 ? 10 : (z - camera.position.z) / d.z;
+    return camera.position.clone().addScaledVector(d, t > 0 ? t : 10);
+  }
+  // バトルの窓：上のステータスの下から、下の仲間の表示の上まで
+  function battleWindow() {
+    const top = document.querySelector(".hud.top"), pe = document.getElementById("party");
+    const low = pe && pe.offsetParent ? pe : document.getElementById("allyIcon")?.closest(".row");
+    const t = top ? top.getBoundingClientRect().bottom - 4 : VH * 0.12;
+    const b = low ? low.getBoundingClientRect().top - 6 : VH * 0.7;
+    return { top: clamp(t, 0, VH * 0.4), bottom: clamp(b, VH * 0.45, VH) };
+  }
 
   // ---- 共通の絵 ----
-  let TEX = {};
+  const TEX = {};
   function canvasTex(w, h, draw) {
     const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h);
     const t = new T.CanvasTexture(c); t.encoding = T.sRGBEncoding; return t;
@@ -115,10 +147,16 @@
       g.fillStyle = r; g.fillRect(0, 0, w, w);
     });
   }
-  function texFromImg(img) {
-    const t = new T.Texture(img); t.encoding = T.sRGBEncoding; t.anisotropy = 4; t.needsUpdate = true; return t;
+  // 背景の光の色：キャラに少しだけ混ぜて、背景になじませる
+  function tintOf(img) {
+    const c = document.createElement("canvas"); c.width = c.height = 8; const g = c.getContext("2d"); g.drawImage(img, 0, 0, 8, 8);
+    const d = g.getImageData(0, 0, 8, 8).data; let r = 0, gg = 0, b = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; }
+    const n = d.length / 4, m = Math.max(r, gg, b) / n || 1, L = (0.3 * r + 0.59 * gg + 0.11 * b) / n / 255;
+    const k = 0.78 + 0.35 * L;          // 暗い背景は少し暗く、明るい背景はそのまま
+    const t = new T.Color(r / n / m * k, gg / n / m * k, b / n / m * k);
+    return new T.Color(1, 1, 1).lerp(t, 0.22);
   }
-  // ぼかした絵（1枚絵の敵のうしろ）：小さく縮めてから引きのばす
+  function texFromImg(img) { const t = new T.Texture(img); t.encoding = T.sRGBEncoding; t.anisotropy = 4; t.needsUpdate = true; return t; }
   function blurTex(img) {
     const c = document.createElement("canvas"), s = 48 / Math.max(img.naturalWidth, img.naturalHeight);
     c.width = Math.max(4, Math.round(img.naturalWidth * s)); c.height = Math.max(4, Math.round(img.naturalHeight * s));
@@ -130,16 +168,7 @@
     if (img.complete && img.naturalWidth) return res(img);
     img.addEventListener("load", () => res(img), { once: true }); img.addEventListener("error", () => res(null), { once: true });
   });
-
-  // 敵の絵の「中身」が画面のどこに描かれているか（object-fit を考えた範囲）
-  function contentRect(img) {
-    const r = img.getBoundingClientRect(), nw = img.naturalWidth || 1, nh = img.naturalHeight || 1, cs = getComputedStyle(img);
-    const s = cs.objectFit === "cover" ? Math.max(r.width / nw, r.height / nh) : Math.min(r.width / nw, r.height / nh);
-    const dw = nw * s, dh = nh * s;
-    const pos = cs.objectPosition.split(" ").map((v) => v.endsWith("%") ? parseFloat(v) / 100 : 0.5);
-    const fy = img.classList.contains("st-enemy") ? 1 : pos[1];
-    return { x: r.left + (r.width - dw) * pos[0], y: r.top + (r.height - dh) * fy, w: dw, h: dh };
-  }
+  const flat = (w, h, op) => { const m = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map: TEX.shadow, transparent: true, opacity: op ?? 1, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.scale.set(w, h, 1); m.renderOrder = -4; return m; };
 
   // ---- 場面（背景と敵） ----
   function syncScenes() {
@@ -151,76 +180,89 @@
   function dropScene(s) {
     scenes.splice(scenes.indexOf(s), 1);
     scene.remove(s.group);
-    s.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map && o.material.map !== TEX.glow && o.material.map !== TEX.shadow) o.material.map.dispose(); o.material.dispose(); } });
+    s.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map && !Object.values(TEX).includes(o.material.map)) o.material.map.dispose(); o.material.dispose(); } });
     for (const f of s.foes) { f.el.classList.remove("p3d"); for (const k of ["left", "top", "width", "height"]) f.el.style.removeProperty(k); }
+    for (const z of s.zones || []) z.remove();
+    fit();
   }
   async function addScene(el) {
     const rec = { el, group: new T.Group(), foes: [], ready: false, kind: sceneKind(el) };
     scenes.push(rec);
     await Promise.all([...el.querySelectorAll("img")].map(loaded));
     if (!scenes.includes(rec)) return;
-    layoutScene(rec);
+    buildScene(rec);
     scene.add(rec.group);
     rec.ready = true;
+    fit(scenes.filter((s) => s.ready).length <= 1);
   }
   function sceneKind(el) {
     for (const k of ["corridor", "prison", "catacomb", "altar", "nebula", "cosmos", "kz"]) if (el.classList.contains(k)) return k;
     return "image";
   }
-  function layoutScene(rec) {
+  const cfgFoe = (i) => (gG() && G.cfg && G.cfg.foes && G.cfg.foes[i]) || {};
+  function buildScene(rec) {
     const g = rec.group;
-    while (g.children.length) g.remove(g.children[0]);
-    for (const f of rec.foes) { f.el.classList.remove("p3d"); for (const k of ["left", "top", "width", "height"]) f.el.style.removeProperty(k); }
-    rec.foes = [];
-    // 背景：画面いっぱい（cover）より少し大きく、ずっと奥に置く。カメラが回りこんでも端が見えないように
     const bgImg = rec.el.querySelector("img.st-bg") || rec.el.querySelector("img.st-photo-bg");
     if (bgImg && bgImg.naturalWidth) {
       const blur = bgImg.classList.contains("st-photo-bg");
-      const d = DC - BACK_Z, vh = 2 * d * TAN, vw = vh * VW / VH, a = bgImg.naturalWidth / bgImg.naturalHeight;
-      const needW = vw * 1.15 + 2 * d * Math.tan(0.62) + 10, needH = vh * 1.35 + 2 * d * Math.tan(0.22) + 6;
-      const ph = Math.max(needH, needW / a), pw = ph * a;
-      const mat = new T.MeshBasicMaterial({ map: blur ? blurTex(bgImg) : texFromImg(bgImg), depthWrite: false, fog: false });
+      const mat = new T.MeshBasicMaterial({ map: blur ? blurTex(bgImg) : texFromImg(bgImg), depthWrite: false });
       if (blur) mat.color.setScalar(0.5);
-      const m = new T.Mesh(new T.PlaneGeometry(pw, ph), mat); m.position.set(0, 0, BACK_Z); m.renderOrder = -10;
-      g.add(m); rec.back = m;
+      rec.back = new T.Mesh(new T.PlaneGeometry(1, 1), mat); rec.back.renderOrder = -10; rec.back.aspect = bgImg.naturalWidth / bgImg.naturalHeight;
+      rec.back.floor = blur ? null : (FLOOR[bgImg.dataset.bg] ?? 0.68);
+      rec.pivot = new T.Group(); rec.pivot.add(rec.back); g.add(rec.pivot);       // カメラが回りこむと、背景もいっしょに回る（遠くの景色）
+      rec.tint = blur ? new T.Color(1, 1, 1) : tintOf(bgImg);
     }
-    // 敵：今の画面での位置（CSS で決まる）を、そのまま空間の位置に持ちあげる
     const targets = [...rec.el.querySelectorAll("img.st-target")];
     const n = targets.length;
     targets.forEach((img, i) => {
       if (!img.naturalWidth) return;
-      const r = contentRect(img), photo = img.classList.contains("st-photo");
-      const z = n === 3 && i === 1 ? 0.8 : 0;
-      const tl = homeW(r.x, r.y, z), br = homeW(r.x + r.w, r.y + r.h, z);
-      const w = br.x - tl.x, h = tl.y - br.y, c = new T.Vector3((tl.x + br.x) / 2, (tl.y + br.y) / 2, z);
+      const photo = img.classList.contains("st-photo"), aspect = img.naturalWidth / img.naturalHeight;
       const tex = texFromImg(img);
-      const mat = new T.MeshBasicMaterial({ map: tex, transparent: !photo, alphaTest: photo ? 0 : 0.02, depthWrite: false, side: T.DoubleSide });
-      const mesh = new T.Mesh(new T.PlaneGeometry(1, 1), mat); mesh.scale.set(w, h, 1);
-      const hold = new T.Group(); hold.position.copy(c); hold.add(mesh); g.add(hold);
-      // ねらっている敵：絵の形にそった金色の光
-      const gm = new T.ShaderMaterial({
-        uniforms: { map: { value: tex }, uOp: { value: 0 }, uCol: { value: new T.Color("#ffe28a") } },
-        vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-        fragmentShader: "uniform sampler2D map; uniform float uOp; uniform vec3 uCol; varying vec2 vUv; void main(){ float a = texture2D(map, vUv).a; gl_FragColor = vec4(uCol, a * uOp); }",
-        transparent: true, depthWrite: false, blending: T.AdditiveBlending,
-      });
-      const glow = new T.Mesh(new T.PlaneGeometry(1, 1), gm); glow.scale.set(w * 1.07, h * 1.05, 1); glow.position.z = -0.02; hold.add(glow);
-      let shadow = null;
-      if (!photo && !img.classList.contains("floating")) {
-        shadow = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map: TEX.shadow, transparent: true, depthWrite: false }));
-        shadow.rotation.x = -Math.PI / 2; shadow.scale.set(w * 0.55, w * 0.22, 1); shadow.position.set(c.x, br.y + 0.02, z); g.add(shadow);
+      const mat = new T.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: photo ? 0 : 0.02, depthWrite: false, side: T.DoubleSide });
+      const mesh = new T.Mesh(new T.PlaneGeometry(1, 1), mat);
+      const hold = new T.Group(); hold.add(mesh); g.add(hold);
+      const f = { el: img, hold, mesh, photo, aspect, seed: Math.random() * 10, flashT: -9, deadT: null, last: null, idx: i };
+      if (photo) {
+        f.w = 1; f.h = 1; f.base = new T.Vector3(); mesh.renderOrder = -8;     // 1枚絵：位置と大きさは fit で決める
+      } else {
+        f.role = cfgFoe(i).role || ""; f.floating = img.classList.contains("floating"); f.n = n;
+        f.base = new T.Vector3();
+        const gm = new T.ShaderMaterial({
+          uniforms: { map: { value: tex }, uOp: { value: 0 }, uCol: { value: new T.Color("#ffe28a") } },
+          vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+          fragmentShader: "uniform sampler2D map; uniform float uOp; uniform vec3 uCol; varying vec2 vUv; void main(){ float a = texture2D(map, vUv).a; gl_FragColor = vec4(uCol, a * uOp); }",
+          transparent: true, depthWrite: false, blending: T.AdditiveBlending,
+        });
+        f.glow = new T.Mesh(new T.PlaneGeometry(1, 1), gm); f.glow.position.z = -0.02; hold.add(f.glow);
+        f.shadow = flat(1, 1, f.floating ? 0.45 : 0.9); g.add(f.shadow);
       }
-      rec.foes.push({ el: img, hold, mesh, glow, shadow, base: c.clone(), w, h, z, photo, floating: img.classList.contains("floating"),
-                      seed: Math.random() * 10, flashT: -9, deadT: null, op: 1, last: null, gx: 0 });
+      rec.foes.push(f);
       img.classList.add("p3d");
     });
-    // 場面ごとのまわりの粒（たいまつの火の粉・霧・星など）
-    const amb = ambient(rec.kind);
-    if (amb) g.add(amb);
-    rec.amb = amb;
+    rec.photo = rec.foes.some((f) => f.photo);
+    placeFoes(rec);
+    const amb = ambient(rec.kind); if (amb) { g.add(amb); rec.amb = amb; }
+    makeZones(rec);
   }
-  function relayout() { for (const s of scenes) if (s.ready) layoutScene(s); layoutAllies(); }
+  // 敵の大きさと位置（役割ごとの背の高さ。横に広い絵は幅でおさえる）
+  function placeFoes(rec) {
+    const n = rec.foes.length;
+    const XS = n === 1 ? [0] : n === 2 ? (TALL ? [-1.55, 1.55] : [-2.0, 2.0]) : (TALL ? [-2.15, 0, 2.15] : [-3.1, 0, 3.1]);
+    const ZS = n === 3 ? [0, -1.1, 0] : [0, 0, 0];
+    rec.foes.forEach((f, i) => {
+      if (f.photo) return;
+      let h = FOE_H[f.role] ?? 2.4, w = h * f.aspect;
+      const maxW = n === 1 ? (TALL ? (f.role === "extra" ? 7.0 : 5.6) : 8.0) : n === 2 ? (TALL ? 2.9 : 3.8) : (TALL ? 2.45 : 3.0);
+      if (w > maxW) { w = maxW; h = w / f.aspect; }
+      f.w = w; f.h = h;
+      f.base = new T.Vector3(XS[i] ?? 0, h / 2 + (f.floating ? 0.55 : 0), FOE_Z + (ZS[i] || 0));
+      f.mesh.scale.set(w, h, 1); f.glow.scale.set(w * 1.07, h * 1.05, 1);
+      f.shadow.scale.set(w * 0.75, w * 0.3, 1); f.shadow.position.set(f.base.x, 0.02, f.base.z);
+      f.hold.position.copy(f.base);
+    });
+  }
   function foeOf(el) { for (const s of scenes) for (const f of s.foes) if (f.el === el) return f; return null; }
+  const curScene = () => scenes.filter((x) => x.ready).slice(-1)[0];
   W3D.foes = () => { const out = []; for (const s of scenes) for (const f of s.foes) out.push(f); return out; };
 
   // まわりの粒
@@ -237,33 +279,14 @@
     }[kind];
     if (!P) return null;
     const geo = new T.BufferGeometry(), pos = new Float32Array(P.n * 3), col = new Float32Array(P.n * 3);
-    for (let i = 0; i < P.n; i++) {
-      pos.set([rand(-16, 16), rand(-8, 9), rand(-14, 6)], i * 3);
-      const c = new T.Color(any(P.c)); col.set([c.r, c.g, c.b], i * 3);
-    }
+    for (let i = 0; i < P.n; i++) { pos.set([rand(-9, 9), rand(0, 7), rand(-8, 5)], i * 3); const c = new T.Color(any(P.c)); col.set([c.r, c.g, c.b], i * 3); }
     geo.setAttribute("position", new T.BufferAttribute(pos, 3)); geo.setAttribute("color", new T.BufferAttribute(col, 3));
-    const pts = new T.Points(geo, new T.PointsMaterial({ size: P.s * 2.2, map: TEX.glow, vertexColors: true, transparent: true, opacity: 0.75, blending: T.AdditiveBlending, depthWrite: false }));
+    const pts = new T.Points(geo, new T.PointsMaterial({ size: P.s * 1.6, map: TEX.glow, vertexColors: true, transparent: true, opacity: 0.75, blending: T.AdditiveBlending, depthWrite: false }));
     pts.userData = P; pts.renderOrder = 2;
     return pts;
   }
 
-  // ---- 味方（切り抜いた全身の絵を、手前に立てる） ----
-  const ALLY_H = 0.34;      // 画面の高さに対する、立ち絵の高さ
-  function layoutAllies() {
-    if (!W3D.on) return;
-    const n = allies.length;
-    const off = Math.min(VW * 0.33, 250);
-    const xs = n === 1 ? [0.5] : n === 2 ? [0.5 - off / VW * 0.75, 0.5 + off / VW * 0.75] : [0.5, 0.5 - off / VW, 0.5 + off / VW];
-    allies.forEach((a, i) => {
-      if (!a.img) return;
-      const k = kz(ALLY_Z), hW = VH * ALLY_H * k, wW = hW * a.img.naturalWidth / a.img.naturalHeight;
-      const feet = homeW(VW * xs[i], VH * 1.0, ALLY_Z);
-      a.home = new T.Vector3(feet.x, feet.y, ALLY_Z + (i === 0 && n === 3 ? 0.25 : 0));
-      a.mesh.scale.set(wW, hW, 1); a.mesh.position.y = hW / 2;
-      a.halo.scale.set(wW * 1.6, hW * 1.15, 1); a.halo.position.y = hW * 0.55;
-      a.hW = hW;
-    });
-  }
+  // ---- 味方（切り抜いた全身の絵を、手前の列に立てる） ----
   let allyGen = 0;
   function setAllies(list) {
     for (const a of allies) scene.remove(a.group);
@@ -276,15 +299,28 @@
     const img = new Image(); img.src = uri; await loaded(img);
     if (gen !== allyGen || !img.naturalWidth) return;
     a.img = img;
-    {
-      a.mesh = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map: texFromImg(img), transparent: true, alphaTest: 0.03, depthWrite: false, side: T.DoubleSide }));
-      a.halo = new T.Sprite(new T.SpriteMaterial({ map: TEX.glow, color: new T.Color("#ffe8a0"), transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false }));
-      a.group.add(a.halo); a.group.add(a.mesh); a.halo.renderOrder = 5; a.mesh.renderOrder = 6;
-      scene.add(a.group);
-    }
-    layoutAllies();
+    a.mesh = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map: texFromImg(img), transparent: true, alphaTest: 0.03, depthWrite: false, side: T.DoubleSide }));
+    a.halo = new T.Sprite(new T.SpriteMaterial({ map: TEX.glow, color: new T.Color("#ffe8a0"), transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false }));
+    a.shadow = flat(1, 1, 0.85);
+    a.group.add(a.shadow); a.group.add(a.halo); a.group.add(a.mesh); a.halo.renderOrder = 5; a.mesh.renderOrder = 6;
+    scene.add(a.group);
+    layoutAllies(); fit();
   }
-  // パーティの状態（倒れた人・今動いている人）を立ち絵に映す
+  function layoutAllies() {
+    const n = allies.length;
+    const XS = n === 1 ? [0] : n === 2 ? (TALL ? [-1.2, 1.2] : [-1.4, 1.4]) : (TALL ? [0, -1.75, 1.75] : [0, -2.5, 2.5]);
+    allies.forEach((a, i) => {
+      if (!a.img) return;
+      const asp = a.img.naturalWidth / a.img.naturalHeight;
+      const mw = TALL ? 1.9 : ALLY_MAXW;
+      let h = ALLY_H, w = h * asp; if (w > mw) { w = mw; h = w / asp; }
+      a.w = w; a.h = h;
+      a.home = new T.Vector3(XS[i] ?? 0, 0, ALLY_Z + (n === 3 && i === 0 ? 0.45 : 0));
+      a.mesh.scale.set(w, h, 1); a.mesh.position.y = h / 2;
+      a.halo.scale.set(w * 1.6, h * 1.15, 1); a.halo.position.y = h * 0.55;
+      a.shadow.scale.set(w * 0.8, w * 0.32, 1); a.shadow.position.y = 0.02;
+    });
+  }
   let partyState = { mi: 0, dead: [] };
   W3D.party = function (members, mi) {
     if (!W3D.on) return;
@@ -293,7 +329,79 @@
     partyState = { mi, dead: members.map((m) => !!m.dead) };
   };
 
-  // ---- カメラ ----
+  // ---- カメラ：敵と味方がみんな、バトルの窓に入るように引く ----
+  function placeCam(t, d, pitch, yaw, offY) {
+    camera.position.set(t.x + Math.sin(yaw) * Math.cos(pitch) * d, t.y + Math.sin(pitch) * d, t.z + Math.cos(yaw) * Math.cos(pitch) * d);
+    camera.lookAt(t);
+    if (offY) camera.setViewOffset(VW, VH, 0, offY, VW, VH); else camera.clearViewOffset();
+    camera.updateMatrixWorld(); camera.updateProjectionMatrix();
+  }
+  function actorPoints() {
+    const pts = [], s = curScene();
+    if (s) for (const f of s.foes) {
+      if (f.photo) { pts.push(new T.Vector3(-2.2, 0, FOE_Z), new T.Vector3(2.2, 3.6, FOE_Z)); continue; }
+      const b = f.base;
+      pts.push(new T.Vector3(b.x - f.w / 2, b.y - f.h / 2, b.z), new T.Vector3(b.x + f.w / 2, b.y + f.h / 2, b.z), new T.Vector3(b.x - f.w / 2, b.y + f.h / 2, b.z), new T.Vector3(b.x + f.w / 2, 0, b.z));
+    }
+    for (const a of allies) if (a.home) pts.push(new T.Vector3(a.home.x - a.w / 2, 0, a.home.z + 0.3), new T.Vector3(a.home.x + a.w / 2, a.h, a.home.z), new T.Vector3(a.home.x - a.w / 2, a.h, a.home.z), new T.Vector3(a.home.x + a.w / 2, 0, a.home.z + 0.3));
+    if (!pts.length) pts.push(new T.Vector3(-3, 0, FOE_Z), new T.Vector3(3, 3, FOE_Z), new T.Vector3(-2, 0, ALLY_Z), new T.Vector3(2, 2, ALLY_Z));
+    return pts;
+  }
+  function fit(now) {
+    if (!W3D.on) return;
+    const pts = actorPoints(), win = battleWindow(), winH = win.bottom - win.top;
+    const box = new T.Box3().setFromPoints(pts), c = box.getCenter(_v());
+    let lo = 4, hi = 120, sy = 0;
+    const measure = (d) => {
+      placeCam(c, d, BASE_PITCH, 0, 0);
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (const p of pts) { const s = toS(p); x0 = Math.min(x0, s.x); x1 = Math.max(x1, s.x); y0 = Math.min(y0, s.y); y1 = Math.max(y1, s.y); }
+      return { w: x1 - x0, h: y1 - y0, cy: (y0 + y1) / 2 };
+    };
+    for (let i = 0; i < 28; i++) { const d = (lo + hi) / 2, m = measure(d); if (m.w <= VW * 0.94 && m.h <= winH * 0.95) hi = d; else lo = d; }
+    const m = measure(hi); sy = m.cy;
+    homeGoal.t = c.clone(); homeGoal.d = hi; homeGoal.offY = sy - (win.top + win.bottom) / 2;
+    if (now || !home.t) { home.t = homeGoal.t.clone(); home.d = homeGoal.d; home.offY = homeGoal.offY; }
+    placeBacks();
+  }
+  W3D.fit = fit;
+  W3D._dbg = () => ({ win: battleWindow(), home: { d: home.d, offY: home.offY, t: home.t.toArray() }, goal: { d: homeGoal.d, offY: homeGoal.offY }, VH, VW });
+  // 背景：いつものカメラから、画面いっぱい（＋カメラが動く分の余白）に見える大きさで、ずっと奥に置く
+  function placeBacks() {
+    for (const s of scenes) {
+      if (!s.ready) continue;
+      const tH = homeGoal.t, d = homeGoal.d, p = BASE_PITCH;
+      const camPos = new T.Vector3(tH.x, tH.y + Math.sin(p) * d, tH.z + Math.cos(p) * d), fwd = _v().subVectors(tH, camPos).normalize();
+      if (s.back) {
+        // いつものカメラで見た、敵の列・味方の列の足もとの画面の高さ
+        const cam = new T.PerspectiveCamera(FOV, VW / VH, 0.1, 500);
+        cam.position.copy(camPos); cam.lookAt(tH); cam.setViewOffset(VW, VH, 0, homeGoal.offY, VW, VH); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+        const sy = (v) => (1 - v.clone().project(cam).y) / 2 * VH;
+        const yE = sy(new T.Vector3(0, 0, FOE_Z)), yA = sy(new T.Vector3(0, 0, ALLY_Z)), a = s.back.aspect;
+        let Hs, fe;
+        if (s.back.floor != null) {
+          const F = s.back.floor; fe = F + 0.22 * (1 - F); const fa = F + 0.9 * (1 - F);
+          Hs = (yA - yE) / (fa - fe);                                   // 床の奥 → 敵の足もと、床の手前 → 味方の足もと
+        } else { fe = 0.5; Hs = VH; }
+        Hs = Math.max(Hs, VW * 1.12 / a, (yE + 30) / fe, (VH + 20 - yE) / (1 - fe));   // 画面を全部おおう大きさより小さくしない
+        const top = yE - fe * Hs, cy = top + Hs / 2 + homeGoal.offY - VH / 2;     // 絵のまん中が、画面のまん中から何 px 下か（view offset の前）
+        const D = d + 26, k = 2 * D * TAN / VH;
+        const center = camPos.clone().addScaledVector(fwd, D).add(new T.Vector3(0, -cy * k * Math.cos(p), cy * k * Math.sin(p)));
+        s.pivot.position.copy(tH); s.back.position.copy(center).sub(tH);
+        s.back.scale.set(Hs * a * k, Hs * k, 1); s.back.rotation.set(-p, 0, 0);
+      }
+      for (const f of s.foes) if (f.photo) {
+        // 1枚絵の敵：バトルの窓の中に、絵全体が入る大きさ（contain）で、敵の列のすぐうしろに立てる
+        const win = battleWindow(), D = d + 1.5, k = 2 * D * TAN / VH;
+        const maxW = VW * 0.98 * k, maxH = (win.bottom - win.top) * 0.98 * k;
+        let w = maxW, h = w / f.aspect; if (h > maxH) { h = maxH; w = h * f.aspect; }
+        f.w = w; f.h = h; f.mesh.scale.set(w, h, 1);
+        const mid = (win.top + win.bottom) / 2 + homeGoal.offY - VH / 2;   // 窓のまん中が、画面のまん中から何 px 下か（view offset の前）
+        f.base = camPos.clone().addScaledVector(fwd, D).add(new T.Vector3(0, -mid * k * Math.cos(p), mid * k * Math.sin(p)));
+        f.hold.position.copy(f.base); f.hold.rotation.set(-p, 0, 0);
+      }
+    }
+  }
   function tween(ms, fn, ease) {
     ease = ease || ((k) => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
     return new Promise((res) => { let t0 = null; jobs.push((now) => { if (t0 === null) t0 = now; const k = ms <= 0 ? 1 : Math.min(1, (now - t0) / ms); fn(ease(k)); if (k >= 1) { res(); return false; } return true; }); });
@@ -306,47 +414,46 @@
     if (reduce) ms = Math.min(ms, 200);
     return tween(ms, (k) => { if (gen !== camGen) return; for (const key in e) rig[key] = s[key] + (e[key] - s[key]) * k; });
   }
+  // 目標のところ（world）に寄る：home の中心から p へ ratio だけ動かす
+  const toward = (p, ratio) => ({ tx: (p.x - home.t.x) * ratio, ty: (p.y - home.t.y) * ratio, tz: (p.z - home.t.z) * ratio });
   W3D.camTo = camTo;
-  W3D.home = (ms = 700) => camTo({ yaw: 0, pitch: 0, dist: DC, tx: 0, ty: 0, tz: 0 }, ms);
-  W3D.isHome = () => Math.abs(rig.yaw) + Math.abs(rig.pitch) + Math.abs(rig.dist - DC) + Math.abs(rig.tx) + Math.abs(rig.ty) + Math.abs(rig.tz) < 1e-3;
-  W3D.shake = (px) => { if (!W3D.on) return; shakeW = Math.max(shakeW, (reduce ? 0.2 : 1) * px * kz(0) * 0.6); };
-  function foeWorld(i) {
-    const s = scenes.filter((x) => x.ready).slice(-1)[0]; if (!s) return new T.Vector3();
-    const f = s.foes[Math.max(0, Math.min(s.foes.length - 1, i || 0))]; if (!f) return new T.Vector3();
-    return f.hold.position.clone();
+  W3D.home = (ms = 700) => camTo({ yaw: 0, pitch: 0, dist: 1, tx: 0, ty: 0, tz: 0 }, ms);
+  W3D.isHome = () => Math.abs(rig.yaw) + Math.abs(rig.pitch) + Math.abs(rig.dist - 1) + Math.abs(rig.tx) + Math.abs(rig.ty) + Math.abs(rig.tz) < 1e-3;
+  W3D.shake = (px) => { if (!W3D.on || !home.t) return; shakeW = Math.max(shakeW, (reduce ? 0.2 : 1) * px * kAt(home.t) * 0.5); };
+  function foeAt3(i) {
+    const s = curScene(); if (!s || !s.foes.length) return null;
+    return s.foes[clamp(i || 0, 0, s.foes.length - 1)];
   }
-  // ねらっている敵に寄る
-  W3D.focusFoe = (i, ms = 600) => { const p = foeWorld(i); return camTo({ tx: p.x * 0.5, ty: p.y * 0.35, tz: 0, dist: DC * 0.74, yaw: clamp(-p.x * 0.04, -0.2, 0.2) + 0.12, pitch: 0.04 }, ms); };
-  // 味方（必殺技を使う人）に回りこむ
+  function foeWorld(i) { const f = foeAt3(i); return f ? f.hold.position.clone() : new T.Vector3(0, 1.5, FOE_Z); }
+  W3D.focusFoe = (i, ms = 600) => { const p = foeWorld(i); return camTo({ ...toward(p, 0.7), dist: 0.62, yaw: 0.14 - clamp(p.x * 0.03, -0.1, 0.1), pitch: -0.04 }, ms); };
   W3D.focusAlly = (i, ms = 750) => {
     const a = allies[i]; if (!a || !a.home) return W3D.home(ms);
-    const p = a.home.clone().add(new T.Vector3(0, (a.hW || 2) * 0.55, 0));
-    const side = a.home.x === 0 ? 1 : Math.sign(a.home.x);
-    return camTo({ tx: p.x, ty: p.y, tz: p.z, dist: 4.2, yaw: side * 0.5, pitch: 0.06 }, ms);
+    const p = a.home.clone().add(new T.Vector3(0, a.h * 0.55, 0)), side = a.home.x === 0 ? 1 : Math.sign(a.home.x);
+    return camTo({ ...toward(p, 1), dist: 0.42, yaw: side * 0.42, pitch: -0.08 }, ms);
   };
-  // 魔法の種類ごとのカメラ
   W3D.spellCam = (kind) => {
     if (!W3D.on) return Promise.resolve();
-    const p = foeWorld(window.G && G.cur);
+    const p = foeWorld(gG() && G.cur);
     switch (kind) {
-      case "lance": case "holy": case "rain": case "meteor":       // 見上げてから、降ってくるものを追う
-        return camTo({ pitch: -0.16, dist: DC * 1.05, ty: 1.2, tx: p.x * 0.3, yaw: -0.1 }, 700).then(() => camTo({ pitch: 0.08, ty: p.y * 0.3, dist: DC * 0.86 }, 900));
+      case "lance": case "holy": case "rain": case "meteor":
+        return camTo({ pitch: -0.1, dist: 0.95, ...toward(p, 0.25), yaw: -0.08 }, 650).then(() => camTo({ pitch: -0.02, dist: 0.88 }, 900));
       case "explosion": case "earth": case "spirits":
-        return camTo({ yaw: 0.28, pitch: 0.12, dist: DC * 0.95, tx: p.x * 0.4, ty: p.y * 0.2 }, 900);
+        return camTo({ yaw: 0.2, pitch: 0.03, dist: 0.92, ...toward(p, 0.3) }, 900);
       case "thunder":
-        return camTo({ pitch: -0.08, dist: DC * 0.9, tx: p.x * 0.4, yaw: -0.15 }, 600);
+        return camTo({ pitch: -0.05, dist: 0.9, ...toward(p, 0.3), yaw: -0.12 }, 600);
       default:
-        return camTo({ yaw: 0.22, dist: DC * 0.82, tx: p.x * 0.5, ty: p.y * 0.3, pitch: 0.05 }, 750);
+        return camTo({ yaw: 0.16, dist: 0.85, ...toward(p, 0.4), pitch: 0 }, 750);
     }
   };
   // 味方が敵へ踏みこむ（自分の連打の攻撃）
   W3D.lunge = async (mi, foeIdx) => {
     if (!W3D.on) return;
-    const a = allies[mi]; const p = foeWorld(foeIdx);
-    const camP = camTo({ tx: p.x * 0.45, ty: p.y * 0.3, dist: DC * 0.72, yaw: (a && a.home ? -Math.sign(a.home.x || 1) : 1) * 0.28, pitch: 0.05 }, 500);
+    const a = allies[mi], p = foeWorld(foeIdx);
+    const camP = camTo({ ...toward(p, 0.45), dist: 0.74, yaw: (a && a.home ? -Math.sign(a.home.x || 1) : 1) * 0.2, pitch: -0.02 }, 500);
     if (!a || !a.home) return camP;
-    const to = new T.Vector3(p.x - a.home.x + (a.home.x > 0 ? 1.2 : -1.2), -0.2, p.z + 1.6 - a.home.z);
-    await tween(380, (k) => { a.off.set(to.x * k, Math.sin(k * Math.PI) * 1.4 + to.y * k, to.z * k); }, (k) => 1 - Math.pow(1 - k, 3));
+    const side = a.home.x > p.x ? 1 : -1;
+    const to = new T.Vector3(p.x + side * 1.1 - a.home.x, 0, p.z + 1.3 - a.home.z);
+    await tween(380, (k) => { a.off.set(to.x * k, Math.sin(k * Math.PI) * 1.1, to.z * k); }, (k) => 1 - Math.pow(1 - k, 3));
     a.back = true;
   };
   W3D.lungeBack = async (mi) => {
@@ -354,19 +461,54 @@
     const a = allies[mi]; W3D.home(700);
     if (!a) return;
     const from = a.off.clone();
-    await tween(450, (k) => { a.off.set(from.x * (1 - k), from.y * (1 - k) + Math.sin(k * Math.PI) * 0.8, from.z * (1 - k)); });
+    await tween(450, (k) => { a.off.set(from.x * (1 - k), Math.sin(k * Math.PI) * 0.7, from.z * (1 - k)); });
     a.off.set(0, 0, 0); a.back = false;
   };
-  // 敵が攻撃で前に出る
-  W3D.foeStrike = (i) => {
-    if (!W3D.on) return;
-    const s = scenes.filter((x) => x.ready).slice(-1)[0]; if (!s) return;
-    const f = s.foes[Math.max(0, Math.min(s.foes.length - 1, i || 0))]; if (!f) return;
-    f.strikeT = clock; W3D.shake(10);
-  };
-  W3D._allies = () => allies.map((a) => ({ lv: a.lv, img: !!a.img, home: a.home && a.home.toArray().map((v) => +v.toFixed(2)), op: +a.op.toFixed(2) }));
+  W3D.foeStrike = (i) => { if (!W3D.on) return; const f = foeAt3(i); if (f) { f.strikeT = clock; W3D.shake(10); } };
+  // 味方の体のまん中（画面の位置）。エフェクトの出どころ・当たるところ
+  W3D.allySpot = (mi) => { const a = allies[mi]; if (!a || !a.home || !a.mesh) return null; const s = toS(a.group.position.clone().add(new T.Vector3(0, a.h * 0.5, 0))); return { x: s.x, y: s.y }; };
   W3D.allyHurt = (mi) => { const a = allies[mi]; if (a) a.hurtT = clock; };
   W3D.allyGlow = (mi, on) => { const a = allies[mi]; if (a) a.glowOn = !!on; };
+  W3D._allies = () => allies.map((a) => ({ lv: a.lv, img: !!a.img, home: a.home && a.home.toArray().map((v) => +v.toFixed(2)), op: +a.op.toFixed(2) }));
+
+  // ---- ねらいの円（連打で当たる範囲）。敵の体のまん中に、体の大きさに合わせた円 ----
+  function maskOf(i) { if (!gG() || !G.foes) return null; return G.foes.length === 1 ? (G.hitMask || G.foes[0].mask) : (G.foes[i] && G.foes[i].mask); }
+  function maskFrac(m) {
+    if (m._frac != null) return m._frac;
+    let n = 0, all = 0; for (let y = 0; y < m.h; y += 2) for (let x = 0; x < m.w; x += 2) { all++; if (m.data[(y * m.w + x) * 4] > 127) n++; }
+    return (m._frac = all ? n / all : 0.3);
+  }
+  function zone(i) {
+    const s = curScene(); const f = s && s.foes[i]; if (!f || !f.rect) return null;
+    const r = f.rect, m = maskOf(i);
+    const cx = r.x + r.w * (m ? m.cx : 0.5), cy = r.y + r.h * (m ? m.cy : 0.5);
+    let rad = m ? Math.sqrt(maskFrac(m) * r.w * r.h / Math.PI) * 1.2 : Math.min(r.w, r.h) * 0.4;
+    rad = clamp(rad, 40, Math.max(40, Math.min(r.w, r.h) * 0.62));
+    if (f.photo) rad = clamp(rad, 50, Math.min(VW, VH) * 0.28);
+    const dark = !!(gG() && G.status && G.status.darkness > 0);
+    if (dark) rad *= (G.cfg.status && G.cfg.status.darkness && G.cfg.status.darkness.hit_scale) || 0.6;
+    return { x: cx, y: cy, r: rad, dark };
+  }
+  W3D.zone = zone;
+  W3D.zoneAt = (x, y, alive) => {
+    let best = -1, bd = 1e9;
+    for (const i of alive) { const z = zone(i); if (!z) continue; const d = Math.hypot(x - z.x, y - z.y) / z.r; if (d <= 1 && d < bd) { bd = d; best = i; } }
+    return best;
+  };
+  // 敵の画面での大きさの、2D のときの大きさ（画面の高さの45%）に対する割合（魔法のねらいの円を合わせる）
+  W3D.aimScale = (i) => { const s = curScene(); const f = s && s.foes[i || 0]; if (!f || !f.rect || f.photo) return 1; return clamp(f.rect.h / (VH * 0.45), 0.35, 1); };
+  // エフェクトの大きさの目安（MFX の U）
+  W3D.fxU = () => {
+    const s = curScene(), full = Math.min(VW, VH * 0.62);
+    if (!s || s.photo) return full * 0.8;
+    const hs = s.foes.filter((f) => f.rect && f.deadT === null).map((f) => f.rect.h);
+    if (!hs.length) return full * 0.6;
+    return clamp(hs.reduce((a, b) => a + b, 0) / hs.length * 1.05, 150, full);
+  };
+  function makeZones(rec) {
+    for (const z of rec.zones || []) z.remove();
+    rec.zones = rec.foes.map((f, i) => { const d = document.createElement("div"); d.className = "tzone"; d.dataset.idx = i; app.appendChild(d); return d; });
+  }
 
   // ---- 毎フレーム ----
   function frame(now) {
@@ -374,52 +516,53 @@
     const dt = Math.max(0, Math.min(0.05, (now - (last || now)) / 1000)); last = now; clock += dt;
     for (let i = jobs.length - 1; i >= 0; i--) if (jobs[i](now) === false) jobs.splice(i, 1);
     const tapping = app.classList.contains("tapping") || document.getElementById("aim")?.classList.contains("on");
-    // カメラ（いつもは、ほんの少しゆれる。連打・ねらいの間は止める）
-    const sway = tapping || reduce ? 0 : Math.sin(clock * 0.27) * 0.018;
-    const quake = stage.classList.contains("quake") ? (stage.classList.contains("hard") ? 0.16 : 0.08) : 0;
+    // いつものカメラを、目標（fit の結果）へなめらかに
+    const ease = Math.min(1, dt * 4);
+    home.t.lerp(homeGoal.t, ease); home.d += (homeGoal.d - home.d) * ease; home.offY += (homeGoal.offY - home.offY) * ease;
+    const sway = tapping || reduce ? 0 : Math.sin(clock * 0.27) * 0.02;
+    const quake = stage.classList.contains("quake") ? (stage.classList.contains("hard") ? 0.14 : 0.07) : 0;
     shakeW = Math.max(shakeW * Math.pow(0.02, dt), quake); if (shakeW < 0.002) shakeW = 0;
-    const yaw = rig.yaw + sway, pitch = rig.pitch;
-    camera.position.set(rig.tx + Math.sin(yaw) * Math.cos(pitch) * rig.dist, rig.ty + Math.sin(pitch) * rig.dist, rig.tz + Math.cos(yaw) * Math.cos(pitch) * rig.dist);
-    camera.lookAt(rig.tx, rig.ty, rig.tz);
-    if (shakeW > 0) { camera.position.x += rand(-shakeW, shakeW); camera.position.y += rand(-shakeW, shakeW); }
-    camera.updateMatrixWorld();
-    const camYaw = Math.atan2(camera.position.x - rig.tx, camera.position.z - rig.tz);
-    // 敵
+    const t = home.t.clone().add(new T.Vector3(rig.tx, rig.ty, rig.tz));
+    placeCam(t, home.d * rig.dist, home.pitch + rig.pitch, rig.yaw + sway, home.offY);
+    if (shakeW > 0) { camera.position.x += rand(-shakeW, shakeW); camera.position.y += rand(-shakeW, shakeW); camera.updateMatrixWorld(); }
+    const camYaw = Math.atan2(camera.position.x - t.x, camera.position.z - t.z);
     let moved = false;
     for (const s of scenes) {
       if (!s.ready) continue;
       const sop = parseFloat(getComputedStyle(s.el).opacity) || 0;
       s.group.visible = sop > 0.01;
-      if (s.back) s.back.material.opacity = sop, s.back.material.transparent = sop < 0.999;
+      if (s.back) { s.back.material.opacity = sop; s.back.material.transparent = sop < 0.999; s.pivot.position.copy(home.t); s.pivot.rotation.y = rig.yaw + sway; }
       if (s.amb) { const P = s.amb.userData, a = s.amb.geometry.attributes.position.array;
-        for (let i = 0; i < a.length; i += 3) { a[i + 1] += P.up * dt; a[i] += Math.sin(clock * 0.4 + i) * 0.05 * dt; if (a[i + 1] > 9) a[i + 1] = -8; }
+        for (let i = 0; i < a.length; i += 3) { a[i + 1] += P.up * dt; a[i] += Math.sin(clock * 0.4 + i) * 0.05 * dt; if (a[i + 1] > 7) a[i + 1] = 0; }
         s.amb.geometry.attributes.position.needsUpdate = true; s.amb.material.opacity = 0.75 * sop * (0.75 + 0.25 * Math.sin(clock * 1.7)); }
-      for (const f of s.foes) {
-        const cl = f.el.classList;
-        const dead = cl.contains("dead");
+      const caster = gG() && G.cfg && G.cfg.ally && G.cfg.ally.caster && s.foes.length > 1;
+      s.foes.forEach((f, fi) => {
+        const cl = f.el.classList, dead = cl.contains("dead");
         if (dead && f.deadT === null) { f.deadT = clock; FX.dissolve(f); }
         if (!dead && f.deadT !== null) f.deadT = null;
         const fade = f.deadT === null ? 1 : Math.max(0, 1 - (clock - f.deadT) / 0.8);
-        const bob = f.floating ? Math.sin(clock * 1.25 + f.seed) * f.h * 0.016 : 0;
-        const gust = cl.contains("gust") ? Math.sin(clock * 5.7) * f.w * 0.22 : 0;
-        const st = f.strikeT != null ? clock - f.strikeT : 9;
-        const lunge = st < 0.6 ? Math.sin(Math.min(1, st / 0.6) * Math.PI) : 0;
-        f.hold.position.set(f.base.x + gust, f.base.y + bob - lunge * 0.3, f.base.z + lunge * 2.6);
-        f.hold.rotation.set(0, camYaw, cl.contains("gust") ? Math.sin(clock * 5.7) * 0.07 : 0);
+        if (!f.photo) {
+          const bob = f.floating ? Math.sin(clock * 1.25 + f.seed) * 0.12 : 0;
+          const gust = cl.contains("gust") ? Math.sin(clock * 5.7) * f.w * 0.22 : 0;
+          const st = f.strikeT != null ? clock - f.strikeT : 9, lunge = st < 0.6 ? Math.sin(Math.min(1, st / 0.6) * Math.PI) : 0;
+          f.hold.position.set(f.base.x + gust, f.base.y + bob + lunge * 0.2, f.base.z + lunge * 2.4);
+          f.hold.rotation.set(0, camYaw, cl.contains("gust") ? Math.sin(clock * 5.7) * 0.07 : 0);
+          f.glow.material.uniforms.uOp.value = cl.contains("sel") && !dead ? (0.55 + 0.25 * Math.sin(clock * 4)) * sop : 0;
+          if (f.shadow) { f.shadow.material.opacity = fade * sop * (f.floating ? 0.45 : 0.9); f.shadow.position.x = f.base.x + gust; f.shadow.position.z = f.base.z + lunge * 2.4; }
+        }
         const fl = clock - f.flashT, struck = fl < 0.45 ? (fl < 0.18 ? 3 : 1 + 2 * (1 - (fl - 0.18) / 0.27)) : 1;
-        const hit = cl.contains("hit") ? 1.6 : 1;
-        f.mesh.material.color.setScalar(Math.max(struck, hit));
-        f.mesh.material.opacity = fade * sop; f.mesh.material.transparent = true;
-        f.glow.material.uniforms.uOp.value = cl.contains("sel") && !dead ? (0.55 + 0.25 * Math.sin(clock * 4)) * sop : 0;
-        if (f.shadow) { f.shadow.material.opacity = fade * sop; f.shadow.position.x = f.base.x + gust; }
+        const br = Math.max(struck, cl.contains("hit") ? 1.6 : 1);
+        if (s.tint && br === 1) f.mesh.material.color.copy(s.tint); else f.mesh.material.color.setScalar(br);
+        f.mesh.material.opacity = fade * sop;
         f.mesh.visible = fade > 0.01;
-        // 見えない影の絵を、3D の位置に合わせる（当たり判定・エフェクトの位置合わせ）
+        // 見えない影の絵を、3D の位置に合わせる
         f.hold.updateMatrixWorld();
         let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
         for (const [u, v] of [[-.5, -.5], [.5, -.5], [.5, .5], [-.5, .5]]) {
-          const p = new T.Vector3(u, v, 0).applyMatrix4(f.mesh.matrixWorld), s2 = toS(p);
-          x0 = Math.min(x0, s2.x); x1 = Math.max(x1, s2.x); y0 = Math.min(y0, s2.y); y1 = Math.max(y1, s2.y);
+          const q = toS(new T.Vector3(u, v, 0).applyMatrix4(f.mesh.matrixWorld));
+          x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
         }
+        f.rect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
         const key = `${x0.toFixed(1)},${y0.toFixed(1)},${(x1 - x0).toFixed(1)},${(y1 - y0).toFixed(1)}`;
         if (key !== f.last) {
           f.last = key; moved = true;
@@ -427,36 +570,48 @@
           st2.setProperty("left", x0 + "px", "important"); st2.setProperty("top", y0 + "px", "important");
           st2.setProperty("width", (x1 - x0) + "px", "important"); st2.setProperty("height", (y1 - y0) + "px", "important");
         }
-      }
+        // ねらいの円（連打の間だけ見せる）
+        const zd = s.zones && s.zones[fi];
+        if (zd) {
+          const z = s === curScene() ? zone(fi) : null;
+          const show = !!z && tapping && !app.classList.contains("chanting") && !dead && (!caster || fi === G.sel);
+          zd.classList.toggle("on", show);
+          if (show) { zd.classList.toggle("dark", z.dark); zd.style.left = z.x + "px"; zd.style.top = z.y + "px"; zd.style.width = zd.style.height = z.r * 2 + "px"; }
+        }
+      });
     }
-    if (moved && window.G && G.multi && typeof window.layoutFoeBars === "function") window.layoutFoeBars();
+    if (moved && gG() && G.multi && typeof window.layoutFoeBars === "function") window.layoutFoeBars();
     // 味方
     allies.forEach((a, i) => {
       if (!a.mesh || !a.home) return;
       const dead = !!partyState.dead[i], act = i === partyState.mi && !dead;
       const hurt = clock - a.hurtT, hk = hurt < 0.5 ? 1 - hurt / 0.5 : 0;
-      const want = dead ? 0.38 : tapping && !a.back ? 0.22 : 1;
+      const want = dead ? 0.4 : 1;
       a.op += (want - a.op) * Math.min(1, dt * 8);
-      a.group.position.set(a.home.x + a.off.x + (hk ? Math.sin(hurt * 60) * 0.06 : 0), a.home.y + a.off.y + Math.sin(clock * 1.6 + i) * 0.03, a.home.z + a.off.z - hk * 0.25);
-      a.mesh.rotation.set(0, camYaw, dead ? 0.05 : 0);
+      a.group.position.set(a.home.x + a.off.x + (hk ? Math.sin(hurt * 60) * 0.05 : 0), a.home.y + a.off.y, a.home.z + a.off.z + hk * 0.25);
+      a.mesh.position.y = a.h / 2 + Math.sin(clock * 1.6 + i) * 0.025;
+      a.mesh.rotation.set(0, camYaw, dead ? 0.05 : 0); a.halo.position.y = a.h * 0.55;
       const c = dead ? [0.42, 0.42, 0.46] : hk ? [1 + hk * 1.4, 1 - hk * 0.4, 1 - hk * 0.45] : [1, 1, 1];
-      a.mesh.material.color.setRGB(c[0], c[1], c[2]); a.mesh.material.opacity = a.op;
-      const hop = (act ? 0.35 + 0.12 * Math.sin(clock * 3) : 0) + (a.glowOn ? 0.6 : 0);
+      a.mesh.material.color.setRGB(c[0], c[1], c[2]);
+      const ts = curScene(); if (ts && ts.tint && !dead && !hk) a.mesh.material.color.multiply(ts.tint);
+      a.mesh.material.opacity = a.op;
+      a.shadow.material.opacity = 0.85 * a.op;
+      const hop = (act ? 0.32 + 0.12 * Math.sin(clock * 3) : 0) + (a.glowOn ? 0.6 : 0);
       a.halo.material.opacity += (hop * a.op - a.halo.material.opacity) * Math.min(1, dt * 6);
     });
     FX.update(dt);
     renderer.render(scene, camera);
   }
 
-  // ---- 戦闘の開始（start のあと）。args の切り抜いた立ち絵を覚える ----
+  // ---- 戦闘の開始（start のあと） ----
   W3D.attach = async function (a) {
     args = a || {};
     const ok = await boot();
     if (!ok) return;
-    if (!started) { started = true; }
-    rig.yaw = rig.pitch = rig.tx = rig.ty = rig.tz = 0; rig.dist = DC; camGen++;
+    rig.yaw = rig.pitch = rig.tx = rig.ty = rig.tz = 0; rig.dist = 1; camGen++;
     syncScenes();
     FX.clear();
+    setTimeout(() => fit(true), 0);
   };
 
   // =========================================================================
@@ -523,7 +678,7 @@
     }
     // 倒れた敵：絵の色の粒になって消える
     function dissolve(f) {
-      const k = kz(f.z), n = 70;
+      const k = kAt(f.hold.position), n = 70;
       for (let i = 0; i < n; i++) {
         const p = f.hold.position.clone().add(new T.Vector3(rand(-.4, .4) * f.w, rand(-.45, .45) * f.h, rand(-.3, .3)));
         addPart({ pos: p, vel: new T.Vector3(rand(-40, 40) * k, rand(40, 160) * k, rand(-40, 40) * k), life: rand(.7, 1.3), max: 1.3, size: rand(6, 12) * k,
@@ -544,24 +699,24 @@
         addPart(q);
       }
       for (const r of src.rings.splice(0)) { const c = toW(r.x, r.y), k = kAt(c); strokes.push({ type: "ring", c, k, r1: r.r1 * k, w: r.w, color: col(r.color), t: r.t, dur: r.dur }); }
-      for (const b of src.bolts.splice(0)) { const pts = b.pts.map(([x, y]) => toW(x, y)); strokes.push({ type: "bolt", pts, k: kAt(pts[pts.length - 1]), w: b.w, color: col(b.color), life: b.life, max: b.max }); }
+      for (const b of src.bolts.splice(0)) { const zb = zFor(b.pts[b.pts.length - 1][1]), pts = b.pts.map(([x, y]) => toW(x, y, zb)); strokes.push({ type: "bolt", pts, k: kAt(pts[pts.length - 1]), w: b.w, color: col(b.color), life: b.life, max: b.max }); }
       for (const c of src.cracks.splice(0)) {
         const [x0, y0] = c.pts[0], O = toW(x0, y0), k = kAt(O);
         const floor = nearFeet(y0);
         const pts = c.pts.map(([x, y]) => floor ? new T.Vector3(O.x + (x - x0) * k, O.y + 0.02, O.z + (y - y0) * k * 2.6) : toW(x, y));
         strokes.push({ type: "crack", pts, k, flat: floor, color: col(c.color), t: c.t, dur: c.dur });
       }
-      for (const p of src.pillars.splice(0)) { const b = toW(p.x, p.gy), k = kAt(b); const top = toW(p.x, -VH * 0.25).y; strokes.push({ type: "pillar", b, top: Math.max(top, b.y + 4), w: p.w * k, color: col(p.color || "#fff0be"), t: p.t, dur: p.dur }); }
-      for (const m of src.circles.splice(0)) { const c = toW(m.x, m.y), k = kAt(c); strokes.push({ type: "circle", c, k, r: m.r * k, color: col(m.color), t: m.t, dur: m.dur }); }
+      for (const p of src.pillars.splice(0)) { const b = toW(p.x, p.gy), k = kAt(b); const top = toW(p.x, -VH * 0.25, b.z).y; strokes.push({ type: "pillar", b, top: Math.max(top, b.y + 4), w: p.w * k, color: col(p.color || "#fff0be"), t: p.t, dur: p.dur }); }
+      for (const m of src.circles.splice(0)) { const c = toW(m.x, clampWin(m.y)), k = kAt(c); strokes.push({ type: "circle", c, k, r: m.r * k, color: col(m.color), t: m.t, dur: m.dur }); }
       for (const s of src.slashes.splice(0)) {
         const mx = (s.x1 + s.x2) / 2 - (s.y2 - s.y1) * s.bend, my = (s.y1 + s.y2) / 2 + (s.x2 - s.x1) * s.bend;
-        const p1 = toW(s.x1, s.y1), p2 = toW(s.x2, s.y2), pm = toW(mx, my), k = kAt(pm);
+        const pm = toW(mx, my), p1 = toW(s.x1, s.y1, pm.z), p2 = toW(s.x2, s.y2, pm.z), k = kAt(pm);
         const dz = p1.distanceTo(p2) * 0.22 * rand(-1, 1);       // 斬撃に奥行きのかたむき
         p1.z += dz; p2.z -= dz;
         strokes.push({ type: "slash", p1, p2, pm, k, w: s.w * k, color: col(s.color), t: s.t, dur: s.dur, thorns: s.thorns });
       }
       for (const sp of src.spears.splice(0)) {
-        const z = rand(-1.6, 1.6), tip = toW(sp.x, sp.y, z), k = kAt(tip), gy = toW(sp.x, sp.gy, z).y;
+        const z = zFor(sp.gy) + rand(-0.9, 0.9), tip = toW(sp.x, sp.y, z), k = kAt(tip), gy = toW(sp.x, sp.gy, z).y;
         strokes.push({ type: "spear", tip, gy, k, len: sp.len * k, vy: sp.vy * k, tilt: sp.tilt, color: col(sp.color), stuck: 0, life: sp.life, w: 7 * u * k });
       }
       for (const s of src.shards.splice(0)) {
@@ -569,7 +724,7 @@
         solids.push({ type: "shard", pos, vel: new T.Vector3(s.vx * k, -s.vy * k, rand(-1, 1) * Math.hypot(s.vx, s.vy) * k * .5), r: s.r, vr: s.vr, size: s.size * k, color: col(s.color), life: s.life, max: s.max, g: 900 * k });
       }
       for (const c of src.crystals.splice(0)) {
-        const z = rand(-0.8, 0.8), b = toW(c.x, c.gy, z), k = kAt(b);
+        const z = zFor(c.gy) + rand(-0.5, 0.5), b = toW(c.x, c.gy, z), k = kAt(b);
         solids.push({ type: "crystal", b, h: c.h * k, w: c.w * k, tilt: c.tilt, color: col(c.color), t: c.t, dur: c.dur });
       }
       for (const d of src.domes.splice(0)) {
@@ -580,7 +735,7 @@
       }
       for (const o of src.orbs.splice(0)) {
         if (o.fly) {
-          const p1 = toW(o.x1, o.y1), p2 = toW(o.x2, o.y2), k = kAt(p2);
+          const p2 = toW(o.x2, o.y2), p1 = toW(o.x1, o.y1 > VH * 0.7 ? clampWin(o.y1) : o.y1, p2.z), k = kAt(p2);
           flyers.push({ p1, p2, pos: p1.clone(), arc: rand(1, 2.5), color: col(o.color), t: o.t, dur: o.dur, trail: o.trail, r: o.r * k, done: o.done });
         } else {
           const c = toW(o.x, o.y), k = kAt(c);
@@ -590,6 +745,8 @@
         }
       }
     }
+    // 下のボタンに隠れるところに出したものは、バトルの窓の下のはしへ
+    function clampWin(y) { const w = battleWindow(); return Math.min(y, w.bottom - 24); }
     // 画面の y が、敵の足もとの近くか（ひび割れを地面に描くか）
     function nearFeet(y) {
       for (const f of W3D.foes()) { if (f.photo) continue; const r = f.el.getBoundingClientRect(); if (Math.abs(r.bottom - y) < 60) return true; }
@@ -654,7 +811,7 @@
     }
     // 衝撃の輪：カメラに向けて、少し上に傾けた輪（いつもの位置で、楕円 0.62 に見える）
     function ringAxes() {
-      const camDir = _v().subVectors(camPos(), new T.Vector3(rig.tx, rig.ty, rig.tz)).normalize();
+      const camDir = _fw().negate();
       const n = _v().copy(camDir).multiplyScalar(0.62).addScaledVector(UP, 0.785).normalize();
       const u = _v().crossVectors(UP, n).normalize(); if (u.lengthSq() < 1e-6) u.copy(AX);
       const v = _v().crossVectors(n, u).normalize();

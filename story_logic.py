@@ -1517,7 +1517,7 @@ def spell_config(spell_id):
 def kz_foe_config(e, st, ally, idx, stage_label, party_stats=None):
     """風哭きの森の敵1体ぶんの、戦闘画面に渡す数字"""
     return {
-        "idx": idx, "key": enemy_key(e), "lv": e.get("lv", stage_label if stage_label != EXTRA else "???"), "name": e["name"],
+        "idx": idx, "key": enemy_key(e), "lv": e.get("lv", stage_label if stage_label != EXTRA else "???"), "name": e["name"], "role": e.get("role", ""),
         "title": e.get("title", ""), "lines": e["lines"], "effect": e["effect"],
         "max_hp": st["hp"], "atk": st["atk"], "def": st["def"],
         "gimmicks": [g for g in e["gimmicks"] if g != "meteor"], "meteor": "meteor" in e["gimmicks"],
