@@ -42,3 +42,9 @@
 3. GitHub にプッシュして「Reboot app」。`…streamlit.app/kakeibo` を開く。
 
 ※ secrets を足す前は「試し用の保存」で動きます（再起動で消えます）。
+
+## 画面について（2026-11 から）
+- 画面はすべて `ui/index.html`（JavaScript）。`app.py` はデータを渡して、操作を保存するだけです。
+- Streamlit Cloud の右下のアイコンや上のバーは、アプリの外側に表示されるため消せないことがあります。
+  そのときは URL の「.streamlit.app/」のあとに「~/+/」を入れて開いてください（例：`https://〇〇.streamlit.app/~/+/kakeibo`）。
+  スマホのホーム画面には、この URL で追加するのがおすすめです。
