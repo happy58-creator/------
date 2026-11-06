@@ -10,7 +10,7 @@ _STAMP = max(p.stat().st_mtime for p in _HERE.glob("*.py"))
 if getattr(sys, "_kyouzai_code_stamp", None) != _STAMP:
     for _name in ("common", "auth", "history", "pdfgen", "web_games",
                   "story_data", "story_logic", "story_assets", "story_battle", "story_profile",
-                  "story_inventory", "story_guide"):
+                  "story_inventory", "story_guide", "kb_calc", "kb_store"):
         sys.modules.pop(_name, None)
     sys._kyouzai_code_stamp = _STAMP
 

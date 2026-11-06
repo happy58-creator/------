@@ -4,3 +4,4 @@ __pycache__/
 generated/
 history/
 .auth_secret
+kakeibo/data/
