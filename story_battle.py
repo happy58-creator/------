@@ -110,7 +110,11 @@ def battle(config, key):
 
 def party_args(config):
     """パーティの仲間の顔と必殺技の絵"""
-    out = {"member_icons": {}, "member_skill_images": {}, "member_equip_icons": {}}
+    out = {"member_icons": {}, "member_skill_images": {}, "member_equip_icons": {}, "member_cuts": {}}
+    # 3D の戦闘画面に立てる、背景のない全身の絵（リーダーとサブ）
+    for lv in [config["ally"]["lv"]] + [m["lv"] for m in config.get("party") or []]:
+        if (story_assets.ASSET_DIR / "ally_cuts" / f"ally_{lv:02d}.webp").exists():
+            out["member_cuts"][str(lv)] = story_assets.image_uri(f"ally_cuts/ally_{lv:02d}.webp")
     for m in config.get("party") or []:
         out["member_icons"][str(m["lv"])] = story_assets.ally_icon_uri(m["lv"])
         sc = (m.get("skill") or {}).get("scene")

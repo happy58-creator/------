@@ -22,6 +22,15 @@
   #stage .st-shadow { bottom:17.5%; }
   #stage .st-photo { top:9%; bottom:17%; left:0; width:100%; height:74%; }
   #stage.shake { animation:shake .38s linear; }
+  /* 3D の画面（story3d.js）：絵は 3D で描き、#stage の絵は当たり判定用の見えない影にする */
+  #gl { position:absolute; inset:0; width:100%; height:100%; display:block; z-index:0; }
+  #app.d3 #stage .st-scene { visibility:hidden; }
+  #app.d3 #stage .st-target.p3d { position:fixed !important; right:auto !important; bottom:auto !important; max-width:none !important; max-height:none !important;
+    margin:0 !important; transform:none !important; animation:none !important; object-fit:fill !important; object-position:50% 50% !important; }
+  #vig3d { display:none; }
+  #app.d3 .hud.bottom { background:linear-gradient(to top, rgba(5,4,8,.9), rgba(5,4,8,.55) 42%, rgba(5,4,8,.12) 78%, transparent); }
+  #app.d3 #vig3d { display:block; position:absolute; inset:0; z-index:2; pointer-events:none;
+    background:radial-gradient(ellipse 80% 74% at 50% 46%, transparent 56%, rgba(0,0,0,.6) 100%); }
   @keyframes shake { 0%,100%{transform:translate(0,0)} 15%{transform:translate(-9px,4px)} 30%{transform:translate(8px,-5px)} 45%{transform:translate(-6px,3px)} 60%{transform:translate(5px,-2px)} 80%{transform:translate(-2px,1px)} }
   .st-target.hit { filter:brightness(1.6) saturate(1.2); }
   .st-target.struck { animation:struck .45s ease-out; }
@@ -659,6 +668,8 @@
     </div>
   </div></div>
 </div>
+<script src="three.min.js"></script>
+<script src="story3d.js"></script>
 <script>
 "use strict";
 // 軽いタップ・クリックでも必ず反応させる：押した場所とはなした場所がほぼ同じなら、はなした瞬間にクリック扱いにする
@@ -721,6 +732,7 @@ function start(args) {
   if (G && G.round === c.round) return;          // 同じ戦闘の再描画は無視（途中から始め直さない）
   $("sceneCss").textContent = args.scene_css;
   $("stage").innerHTML = args.scene_html;
+  if (window.W3D) W3D.attach(args).then(() => { if (G) sync3dParty(); });
   G = {
     round: c.round, cfg: c, enemyHp: c.enemy.max_hp, allyHp: c.ally.hp,
     phase: "intro", turn: 0, usedItem: false, atkTurns: 0, guardTurns: 0, defDown: 0, regenTurns: 0, regenMp: 0, elemWard: 0, spiritTurns: 0, spiritHp: 0, spiritMp: 0, spiritMs: 0,
@@ -852,7 +864,7 @@ function updateBars() {
   const mp = Math.max(0, G.mp), mx = a.max_mp || 0;
   $("mpBar").querySelector(".fill").style.width = (mx > 0 ? mp / mx * 100 : 0) + "%";
   $("mpNum").textContent = `MP ${Math.floor(mp + 1e-9)} / ${Math.round(mx)}`;
-  if (G.party && G.members) renderParty();
+  if (G.party && G.members) renderParty(); else sync3dParty();
 }
 
 // 効果があるあいだ、状態アイコンを表示する。
@@ -930,7 +942,14 @@ function popAt(x, y, text, cls) {
   el.style.left = x + "px"; el.style.top = y + "px";
   $("app").appendChild(el); setTimeout(() => el.remove(), 1400);
 }
-function shake() { const s = $("stage"); s.classList.remove("shake"); void s.offsetWidth; s.classList.add("shake"); }
+function shake() { const s = $("stage"); s.classList.remove("shake"); void s.offsetWidth; s.classList.add("shake"); if (window.W3D) W3D.shake(16); }
+// 3D の立ち絵に、パーティの状態（倒れた人・動いている人）を伝える
+function sync3dParty() {
+  if (!window.W3D || !W3D.on || !G) return;
+  const ms = G.party ? G.members.map((m) => ({ lv: m.lv, dead: !!m.dead })) : [{ lv: G.cfg.ally.lv, dead: G.allyHp <= 0 }];
+  W3D.party(ms, G.party ? G.mi : 0);
+}
+const d3 = () => !!(window.W3D && W3D.on);
 
 // ---------------------------------------------------------------------------
 // エフェクト（種類ごとに、#fx に一時的な要素を足す）
@@ -1343,6 +1362,7 @@ async function astelAssist(kind) {
 // 必殺技の演出（キャラごと・光の粒）。攻撃は敵（範囲なら全員）、回復・守りは自分のまわり
 async function skillFx(s, look) {
   const me = $("allyIcon").getBoundingClientRect(), P = { x: innerWidth / 2, y: Math.min(innerHeight * .8, me.top - 10) };
+  if (d3()) { if (s.type === "strike" || s.type === "break") await W3D.focusFoe(G.multi ? G.cur : 0, 500); else await W3D.home(500); }
   const T = s.type === "strike" || s.type === "break" ? (s.area && G.multi ? aliveFoes() : [G.multi ? G.cur : 0]).map(foeSpot) : [];
   const done = await MFX.skill(s.anim, T.length ? T : [foeSpot(G.multi ? G.cur : 0)], P);
   if (!done) await look.fx();
@@ -1351,6 +1371,8 @@ async function useSkill() {
   const s = G.cfg.skill, look = SKILL_FX[s.anim] || SKILL_FX.kou;
   G.phase = "skill"; G.skillUsed = true; G.charge = 0;
   setButtons(false); updateSkill(); $("sheet").classList.remove("open");
+  const me3 = G.party ? G.mi : 0;
+  if (d3()) { W3D.allyGlow(me3, true); await W3D.focusAlly(me3); await sleep(250); }     // 使う人に回りこむ
   if (s.scene && s.scene.grand && G.skillSceneImage) {
     await grandSkill(s, G.skillSceneImage);       // アステル：特別演出
     await skillFx(s, look);
@@ -1427,6 +1449,7 @@ async function useSkill() {
     G.eBreak = s.turns;
   }
   updateBars(); updateBadges();
+  if (d3()) { W3D.allyGlow(me3, false); W3D.home(900); }
   await sleep(900);
   if (foesDown()) return finish("win");
   G.phase = "player"; setButtons(true); updateSkill();
@@ -1655,6 +1678,7 @@ async function castSpell(sp) {
   ch.querySelector(".count .d").textContent = isAtk ? `1タップ ${fmt(perTap)}（押すほど強い）` : `／ ${need}回で満点`;
   ch.querySelector(".rate > div").style.width = "0%"; ch.querySelector(".rateNum").textContent = "0%";
   $("gearBtn").style.visibility = "hidden"; $("app").classList.add("tapping", "chanting"); $("tip").style.display = "none";
+  if (d3()) { W3D.home(300); W3D.allyGlow(G.party ? G.mi : 0, true); }
   await banner(sp.name, "円の中を連打して詠唱！", 900);
   let inside = 0;
   ch.classList.add("on");
@@ -1729,12 +1753,16 @@ async function resolveSpell(sp, rate) {
   if (sp.kind === "attack" && G.multi && sp.target === "enemies") {      // 敵全体：生きている敵みんなに
     const keep = G.cur;
     const ids = aliveFoes();
+    if (d3()) W3D.spellCam(MFX.kindOf(sp));
     await MFX.play(sp, ids.map(foeSpot), async (n) => { foeLoad(ids[n]); await spellHit(sp, rate, cm, el, M, false); });
+    if (d3()) W3D.home(800);
     foeLoad(G.foes[keep].dead ? (aliveFoes()[0] ?? keep) : keep);
   } else if (sp.kind === "attack") {
     const aim = sp.target === "enemy" ? await aimPhase(sp) : 1;     // 敵1体：ねらい
     const at = G.multi ? G.cur : 0;
+    if (d3()) W3D.spellCam(MFX.kindOf(sp));
     await MFX.play(sp, [foeSpot(at)], async () => { if (G.multi) foeLoad(at); await spellHit(sp, rate, cm, el, M, false, aim); });
+    if (d3()) W3D.home(800);
   } else if (false) {
     const elemMult = sp.element !== "none" && sp.element === e.weak ? M.weak : sp.element !== "none" && sp.element === e.resist_elem ? M.resist : 1;
     const raw = curMag() * sp.power * (sp.target === "enemies" ? M.all_rate : 1) * rate * cm * elemMult;
@@ -1902,6 +1930,7 @@ $("app").addEventListener("pointerdown", (ev) => {
 
 async function attackMulti(auto) {
   G.phase = "ready"; setButtons(false); $("sheet").classList.remove("open"); $("gearSheet").classList.remove("open"); $("app").classList.add("prep");
+  if (d3()) W3D.home(350);                        // 連打の間は、いつもの位置のカメラ
   if (auto) await banner("オート", `${G.cfg.ally.name.split("、").pop()}の攻撃`, 650);
   else {
     await banner("よーい……", G.status.freeze > 0 ? "❄️ 凍えて 連打の時間が短い！" : G.status.wind > 0 ? "🌪️ 突風で 敵がゆれている！"
@@ -1972,6 +2001,7 @@ async function attackMulti(auto) {
     await banner("回避された！", "影に攻撃をかわされた", 1000, "lose");
   } else {
     await banner("アタック！", boost > 1 ? `号令でダメージ×${boost}！` : "", 500);
+    if (d3()) await W3D.lunge(G.party ? G.mi : 0, G.sel);     // 敵へ踏みこむ
     playerAttackFx(G.tapHits);
     await sleep(240);
     shake();
@@ -1991,6 +2021,7 @@ async function attackMulti(auto) {
     if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
     foeLoad(G.foes[keep].dead ? keep : keep);
     foesDown();
+    if (d3()) W3D.lungeBack(G.party ? G.mi : 0);
   }
   if (G.atkTurns > 0) G.atkTurns--;
   for (const k of ["darkness", "shadow", "freeze", "wind"]) if (G.status[k] > 0) G.status[k]--;
@@ -2025,6 +2056,7 @@ function aimSize(sp) { const M = G.cfg.magic; return Math.round(Math.max(54, Mat
 async function aimPhase(sp) {
   const M = G.cfg.magic, A = M.aim || { weak: 1.5, full: 1, part: 0.8, miss: 0.1 };
   if (G.autoNow) return autoAim(sp);
+  if (d3()) await W3D.home(250);                  // ねらいは、いつもの位置のカメラで
   const img = curTarget();
   const mask = G.multi && G.foes.length > 1 ? G.foes[G.cur].mask : G.hitMask;
   const pts = img ? bodyPoints(img, mask) : [];
@@ -2500,11 +2532,16 @@ const MFX = (() => {
 
   function frame(now) {
     const dt = Math.max(0, Math.min(.05, (now - last) / 1000)); last = Math.max(last, now);   // kick() の時刻より前のフレームが来ることがある
+    // 3D のとき：出したものを 3D の空間へ渡す（ここでは、画面全体の光・色だけを描く）
+    if (window.W3D && W3D.on) W3D.fxIngest({ parts, rings, bolts, cracks, pillars, shards, circles, orbs, spears, slashes, domes, crystals, U, W, H });
     const busy = slashes.length || domes.length || crystals.length || spears.length || parts.length || rings.length || bolts.length || cracks.length || pillars.length || shards.length || circles.length || orbs.length || flash || tint || shakeA > 0;
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
     if (!busy) { running = false; return; }
     const app = document.getElementById("app");
-    if (shakeA > 0) { app.style.transform = `translate(${rand(-shakeA, shakeA) * .5}px,${rand(-shakeA, shakeA) * .5}px)`; shakeA = Math.max(0, shakeA - 60 * dt); if (!shakeA) app.style.transform = ""; }
+    if (shakeA > 0) {
+      if (window.W3D && W3D.on) { W3D.shake(shakeA); app.style.transform = ""; }        // 3D：カメラをゆらす
+      else app.style.transform = `translate(${rand(-shakeA, shakeA) * .5}px,${rand(-shakeA, shakeA) * .5}px)`;
+      shakeA = Math.max(0, shakeA - 60 * dt); if (!shakeA) app.style.transform = ""; }
     if (tint) { tint.t += dt; ctx.fillStyle = tint.color; ctx.globalAlpha = Math.max(0, 1 - Math.max(0, tint.t - tint.dur * .7) / (tint.dur * .3)); ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; if (tint.t > tint.dur) tint = null; }
     for (const m of circles) { m.t += dt; const k = Math.min(1, m.t / .35), fade = Math.max(0, 1 - Math.max(0, m.t - m.dur + .4) / .4);
       ctx.save(); ctx.translate(m.x, m.y); ctx.scale(1, m.flat); ctx.rotate(m.t * 1.2); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = fade;
@@ -2840,6 +2877,7 @@ async function foeAttack(i) {
   if (espell) { fxEl("ring", { "--c": espell.color, "--s": 40 }); particles(espell.color, 12, 40); }
   const fc = enemyCenter(); fxEl("ring", { "--c": e.effect.color, "--s": 18, left: fc.x + "px" });
   await sleep(900);
+  if (d3()) W3D.foeStrike(i);                    // 敵が前に出て攻撃する
   f.attacks++; G.enemyAttacks++;
   let newStatus = null;
   const mult = G.eStatus.darkness > 0 ? G.eStatus.darkMult : 1;
@@ -3037,6 +3075,7 @@ function renderParty() {
       `<div class="bars"><div class="nm">${esc(m.ally.name.split("、").pop())}</div>` +
       (m.dead ? `<div class="dl">戦闘不能</div>` : `<div class="hb"><div style="width:${hp}%"></div></div><div class="mb"><div style="width:${mp}%"></div></div>`) + `</div></div>`;
   }).join("") + `<button type="button" id="autoBtn" class="${G.autoSub ? "on" : ""}" title="リーダー以外を自動で動かす">サブ<br>${G.autoSub ? "オート" : "手動"}</button>`;
+  sync3dParty();
 }
 // 自分のターン（パーティ）：立っている人が順番に1回ずつ。全員が動いたら敵のターン
 function partyTurn() {
@@ -3254,6 +3293,7 @@ function hurt(amount, x, y, cls) {
   const dmg = Math.min(amount, G.allyHp);
   G.allyHp -= dmg; G.taken += dmg;
   const ic = $("allyIcon"); ic.classList.remove("hurt"); void ic.offsetWidth; ic.classList.add("hurt");
+  if (d3()) W3D.allyHurt(G.party ? G.mi : 0);
   popAt(x, y, "-" + fmt(amount), cls || "hurt");
   updateBars();
 }
