@@ -9,12 +9,12 @@ import sys
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))      # このフォルダの kb_calc・kb_store を読む
 import kb_calc as calc  # noqa: E402
 import kb_store as store  # noqa: E402
+from kb_ui import ui  # noqa: E402
 from kb_calc import EXPENSE, INCOME  # noqa: E402
 
 try:
@@ -39,7 +39,6 @@ html, body, .stApp { background: #f5f6f8 !important; overflow: hidden !important
 iframe[title*="kakeibo_ui"] { position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important; height: 100dvh !important;
   border: 0 !important; z-index: 999990 !important; background: #f5f6f8; }
 </style>"""
-ui = components.declare_component("kakeibo_ui", path=str(HERE / "ui"))
 
 
 def secret(key):
