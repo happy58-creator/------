@@ -121,3 +121,27 @@ def pay_sub(sub, today):
     day = to_int(sub.get("支払日の日")) or d.day
     nxt = add_cycle(d, sub.get("周期", MONTHLY), day)
     return record, {**sub, "次の支払日": nxt.isoformat(), "支払日の日": day}
+
+
+def by_day(records):
+    """日ごとの収入・支出 {"2026-11-06": {"収入": .., "支出": ..}}"""
+    out = {}
+    for r in records:
+        d = str(r.get("日付", ""))[:10]
+        t = out.setdefault(d, {INCOME: 0, EXPENSE: 0})
+        if r.get("種類") in t:
+            t[r["種類"]] += to_int(r["金額"])
+    return out
+
+
+def month_weeks(month):
+    """カレンダーの週（日曜はじまり）。[[date, ...7], ...]。前後の月の日もふくむ"""
+    y, m = int(month[:4]), int(month[5:7])
+    first = date(y, m, 1)
+    start = first - timedelta(days=(first.weekday() + 1) % 7)
+    last = date(y, m, calendar.monthrange(y, m)[1])
+    weeks, d = [], start
+    while d <= last or len(weeks) < 5:
+        weeks.append([d + timedelta(days=i) for i in range(7)])
+        d += timedelta(days=7)
+    return weeks
