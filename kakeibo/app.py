@@ -4,8 +4,10 @@
   ・Python → 画面：記録・予算・サブスク・カテゴリ（args の data）と、保存が終わった操作の ID（done）
   ・画面 → Python：まだ保存されていない操作の列（queue）。同じ操作を2回保存しないよう ID で見分ける
 保存は kb_store.py（Google スプレッドシート）、計算は kb_calc.py。"""
+import hashlib
 import hmac
 import sys
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -57,20 +59,56 @@ def secret(key):
         return None
 
 
+LOGIN_HOURS = 24      # 一度ログインしたら、この時間はパスワードなしで開ける
+
+
+def make_token(pw, exp):
+    """ログインの証明（期限つき）。パスワードを鍵にした署名なので、パスワードを変えると前の証明は使えなくなる"""
+    sig = hmac.new(str(pw).encode(), f"kakeibo:{exp}".encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{exp}.{sig}"
+
+
+def token_ok(pw, token):
+    try:
+        exp, sig = str(token).split(".", 1)
+        return int(exp) > time.time() and hmac.compare_digest(make_token(pw, int(exp)), f"{exp}.{sig}")
+    except Exception:
+        return False
+
+
 def gate():
-    """パスワード（secrets に KAKEIBO_PASSWORD があるときだけ）"""
+    """パスワード（secrets に KAKEIBO_PASSWORD があるときだけ）。ログインは24時間つづく"""
+    ss = st.session_state
     pw = secret("KAKEIBO_PASSWORD")
-    if not pw or st.session_state.get("kb_ok"):
+    if not pw:
+        return
+    if ss.get("kb_ok") and token_ok(pw, ss.get("kb_token")):
+        return
+    ss.kb_ok = False
+    # ブラウザに保存した証明（クッキー）が、まだ期限内ならそのまま入る
+    try:
+        cookie = st.context.cookies.get("kb_token")
+    except Exception:
+        cookie = None
+    if cookie and cookie != ss.get("kb_ignore") and token_ok(pw, cookie):
+        ss.kb_ok, ss.kb_token = True, cookie
         return
     hide_badges()
+    # クッキーが届かない環境のために、画面の中の保存（localStorage）も見にいく（見えない部品）
+    probe = ui(mode="probe", key="kb_probe", default=None)
+    if isinstance(probe, dict) and probe.get("token") and token_ok(pw, probe["token"]):
+        ss.kb_ok, ss.kb_token = True, probe["token"]
+        st.rerun()
     st.markdown(HIDE.replace("overflow: hidden !important;", "") + """<style>
     .block-container { max-width: 380px !important; padding-top: 18vh !important; padding-left: 16px !important; padding-right: 16px !important; margin: 0 auto; }
+    iframe[title*="kakeibo_ui"] { display: none !important; }
     </style><div style="text-align:center;font-size:22px;font-weight:800;margin-bottom:12px">家計簿</div>""", unsafe_allow_html=True)
     with st.form("login"):
         v = st.text_input("パスワード", type="password")
         if st.form_submit_button("ひらく", type="primary", use_container_width=True):
             if hmac.compare_digest(v.encode(), str(pw).encode()):
-                st.session_state.kb_ok = True
+                ss.kb_ok = True
+                ss.kb_token = make_token(pw, int(time.time()) + LOGIN_HOURS * 3600)
                 st.rerun()
             st.error("パスワードがちがいます")
     st.stop()
@@ -125,7 +163,7 @@ data = {
     "records": store.load("記録"), "budgets": store.load("予算"), "subs": store.load("サブスク"), "cats": categories(),
     "sheets": store.using_sheets(), "password": bool(secret("KAKEIBO_PASSWORD")),
 }
-val = ui(data=data, done=done[-200:], key="kb_ui", default=None)
+val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", key="kb_ui", default=None)
 if isinstance(val, dict):
     changed = False
     for a in val.get("queue") or []:
@@ -140,7 +178,8 @@ if isinstance(val, dict):
         changed = True
     if val.get("logout") and val["logout"] not in done:
         done.append(val["logout"])
-        ss.kb_ok = False
+        ss.kb_ignore = ss.get("kb_token")       # ログアウトしたあとは、同じ証明で入りなおさない
+        ss.kb_ok, ss.kb_token = False, None
         changed = True
     if changed:
         st.rerun()

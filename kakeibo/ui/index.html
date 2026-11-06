@@ -165,6 +165,26 @@ const SL = {
   value(v) { this.send("streamlit:setComponentValue", { value: v, dataType: "json" }); },
 };
 
+// ===== ログインの証明（24時間）をブラウザに保存する =====
+const TOKEN = {
+  get() {
+    let t = "";
+    try { t = localStorage.getItem("kb_token") || ""; } catch (e) {}
+    if (!t) { try { const m = window.parent.document.cookie.match(/(?:^|; )kb_token=([^;]+)/); if (m) t = decodeURIComponent(m[1]); } catch (e) {} }
+    return t;
+  },
+  set(t) {
+    if (!t) return;
+    const exp = +t.split(".")[0], left = Math.max(0, Math.floor(exp - Date.now() / 1000));
+    try { localStorage.setItem("kb_token", t); } catch (e) {}
+    try { window.parent.document.cookie = `kb_token=${encodeURIComponent(t)}; max-age=${left}; path=/; SameSite=Lax; Secure`; } catch (e) {}
+  },
+  clear() {
+    try { localStorage.removeItem("kb_token"); } catch (e) {}
+    try { window.parent.document.cookie = "kb_token=; max-age=0; path=/; SameSite=Lax; Secure"; } catch (e) {}
+  },
+};
+
 // ===== 決まりごと =====
 const EXP = "支出", INC = "収入", MON = "月払い", YR = "年払い";
 const SOON = 7, YSOON = 30;
@@ -574,7 +594,7 @@ document.addEventListener("click", e => {
       if (!rows.some(r => r["種類"] === EXP) || !rows.some(r => r["種類"] === INC)) { toast("支出と収入に1つずつは必要です"); return; }
       act({ type: "save_cats", rows }); S.catDraft = null; toast("カテゴリーを保存しました"); render(true); break;
     }
-    case "logout": SL.value({ queue: QUEUE, logout: uid() }); break;
+    case "logout": TOKEN.clear(); SL.value({ queue: QUEUE, logout: uid() }); break;
   }
 });
 document.addEventListener("input", e => {
@@ -596,6 +616,11 @@ window.addEventListener("message", e => {
   const m = e.data;
   if (!m || m.type !== "streamlit:render") return;
   const args = m.args || {};
+  if (args.mode === "probe") {          // ログイン画面の見えない部品：保存した証明を Python に渡すだけ
+    if (!window.__probed) { window.__probed = true; SL.value({ token: TOKEN.get() }); }
+    return;
+  }
+  if (args.token) TOKEN.set(args.token);
   SERVER = args.data || SERVER;
   const done = new Set(args.done || []);
   QUEUE = QUEUE.filter(a => !done.has(a.id));
