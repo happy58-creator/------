@@ -18,7 +18,7 @@ from kb_ui import ui  # noqa: E402
 from kb_calc import EXPENSE, INCOME  # noqa: E402
 
 try:
-    st.set_page_config(page_title="かけいぼ", page_icon="💴", layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="家計簿", page_icon="💴", layout="wide", initial_sidebar_state="collapsed")
 except Exception:
     pass
 
@@ -65,7 +65,7 @@ def gate():
     hide_badges()
     st.markdown(HIDE.replace("overflow: hidden !important;", "") + """<style>
     .block-container { max-width: 380px !important; padding-top: 18vh !important; padding-left: 16px !important; padding-right: 16px !important; margin: 0 auto; }
-    </style><div style="text-align:center;font-size:22px;font-weight:800;margin-bottom:12px">💴 かけいぼ</div>""", unsafe_allow_html=True)
+    </style><div style="text-align:center;font-size:22px;font-weight:800;margin-bottom:12px">家計簿</div>""", unsafe_allow_html=True)
     with st.form("login"):
         v = st.text_input("パスワード", type="password")
         if st.form_submit_button("ひらく", type="primary", use_container_width=True):

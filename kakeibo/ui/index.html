@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>かけいぼ</title>
+<title>家計簿</title>
 <style>
 :root{
   --bg:#f5f6f8; --card:#fff; --ink:#22262e; --sub:#7a808c; --line:#e7e9ee;
@@ -298,7 +298,7 @@ function groupByDay(rs, del) {
 
 // ===== 画面 =====
 const V = {};
-V.home = () => `<div class="title">💴 かけいぼ</div>
+V.home = () => `<div class="title">家計簿</div>
   <div class="small muted" style="margin:0 4px 6px">今月（${+ymOf(today()).slice(5)}月）</div>
   ${sumBox(totals(inMonth(ymOf(today()))))}
   ${alerts()}

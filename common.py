@@ -370,7 +370,7 @@ def build_navigation():
     names = BAND_SECTIONS.get(band, {})
     nav = {names.get(section, section): [PAGES[k] for k in keys] for section, keys in SECTIONS.items()}
     # 家計簿（大人用）：メニューには出さないページ。URL の最後に /kakeibo を付けて開く（パスワードは kakeibo/app.py）
-    nav[names.get("きろく", "きろく")].append(st.Page(page_file("kakeibo/app.py"), title="かけいぼ", icon="💴", url_path="kakeibo"))
+    nav[names.get("きろく", "きろく")].append(st.Page(page_file("kakeibo/app.py"), title="家計簿", icon="💴", url_path="kakeibo"))
     return st.navigation(nav, position=position)
 
 
