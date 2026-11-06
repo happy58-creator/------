@@ -1586,7 +1586,8 @@ def battle_config(round_id, stage_no, difficulty_id, ally_lv, ally_hp=None, prof
     kz_group = ([story_data.KZ_EXTRA_ENEMY if quest == KZ else story_data.EXTRA_ENEMY] if stage_no == EXTRA
                 else stage_group(quest, stage_no, difficulty_id, group or roll_group(stage_no, difficulty_id, quest=quest)))
     enemy_data = kz_group[0]
-    kz_stats = kz_group_stats(kz_group, EXTRA if stage_no == EXTRA else stage_no, difficulty_id, quest)
+    # エクストラは、どのモードでも同じ強さ（ベリーハード基準）
+    kz_stats = kz_group_stats(kz_group, EXTRA if stage_no == EXTRA else stage_no, story_data.EXTRA_DIFFICULTY if stage_no == EXTRA else difficulty_id, quest)
     enemy = kz_stats[0]
     ally = ally_stats(ally_lv, profile)
     max_hp = ally["hp"]
