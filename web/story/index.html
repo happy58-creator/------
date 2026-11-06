@@ -36,6 +36,10 @@
   .tzone.on { display:block; }
   .tzone.dark { border-color:rgba(196,150,255,.95); box-shadow:0 0 14px rgba(150,90,255,.6), inset 0 0 22px rgba(120,60,220,.35); }
   @keyframes tzone { 0%,100% { opacity:.75; } 50% { opacity:1; } }
+  /* カットの切りかえの一瞬の白 */
+  #cut3d { position:absolute; inset:0; z-index:37; pointer-events:none; background:#fff; opacity:0; }
+  #cut3d.on { animation:cut3d .24s ease-out; }
+  @keyframes cut3d { 0% { opacity:.5; } 100% { opacity:0; } }
   #app.d3 #vig3d { display:block; position:absolute; inset:0; z-index:2; pointer-events:none;
     background:radial-gradient(ellipse 80% 74% at 50% 46%, transparent 56%, rgba(0,0,0,.6) 100%); }
   @keyframes shake { 0%,100%{transform:translate(0,0)} 15%{transform:translate(-9px,4px)} 30%{transform:translate(8px,-5px)} 45%{transform:translate(-6px,3px)} 60%{transform:translate(5px,-2px)} 80%{transform:translate(-2px,1px)} }
@@ -2030,7 +2034,7 @@ async function attackMulti(auto) {
     if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
     foeLoad(G.foes[keep].dead ? keep : keep);
     foesDown();
-    if (d3()) W3D.lungeBack(G.party ? G.mi : 0);
+    if (d3()) { const who = G.party ? G.mi : 0; setTimeout(() => W3D.lungeBack(who), 1050); }   // 敵の大写しを少し見せてから、いつもの画面へ
   }
   if (G.atkTurns > 0) G.atkTurns--;
   for (const k of ["darkness", "shadow", "freeze", "wind"]) if (G.status[k] > 0) G.status[k]--;
@@ -2709,6 +2713,7 @@ const MFX = (() => {
 })();
 // 敵 i の位置（画面の座標）。体のまん中と足もと
 function foeSpot(i) {
+  if (d3()) { const s = W3D.foeSpot(G.multi ? i : 0); if (s) return s; }     // 3D：いつもの画面での位置（カメラが動いていても）
   const el = G.multi ? foeEl(i) : curTarget(); const r = el ? el.getBoundingClientRect() : { left: innerWidth * .3, top: innerHeight * .2, width: innerWidth * .4, height: innerHeight * .4 };
   return { x: r.left + r.width / 2, y: r.top + r.height * .45, gy: Math.min(innerHeight * .78, r.top + r.height * .92) };
 }
