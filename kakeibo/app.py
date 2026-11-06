@@ -41,6 +41,15 @@ iframe[title*="kakeibo_ui"] { position: fixed !important; inset: 0 !important; w
 </style>"""
 
 
+def hide_badges():
+    """教材と同じ：Streamlit Cloud の王冠マーク・作った人のアカウント表示などを JavaScript で消す（common.py のものを使う）"""
+    try:
+        import common
+        st.html(common._HIDE_CLOUD_BADGES_JS, unsafe_allow_javascript=True)
+    except Exception:
+        pass
+
+
 def secret(key):
     try:
         return st.secrets[key]
@@ -53,6 +62,7 @@ def gate():
     pw = secret("KAKEIBO_PASSWORD")
     if not pw or st.session_state.get("kb_ok"):
         return
+    hide_badges()
     st.markdown(HIDE.replace("overflow: hidden !important;", "") + """<style>
     .block-container { max-width: 380px !important; padding-top: 18vh !important; padding-left: 16px !important; padding-right: 16px !important; margin: 0 auto; }
     </style><div style="text-align:center;font-size:22px;font-weight:800;margin-bottom:12px">💴 かけいぼ</div>""", unsafe_allow_html=True)
@@ -108,6 +118,7 @@ def apply(a):
 # =========================================================================
 gate()
 st.markdown(HIDE, unsafe_allow_html=True)
+hide_badges()
 ss = st.session_state
 done = ss.setdefault("kb_done", [])
 data = {
