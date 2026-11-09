@@ -16,7 +16,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))      # このフォルダの kb_calc・kb_store を読む
 import kb_calc as calc  # noqa: E402
 import kb_store as store  # noqa: E402
-if "目安" not in getattr(store, "TABLES", {}).get("積立", []):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
+if "アイコン名" not in getattr(store, "TABLES", {}):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
     import importlib
     store = importlib.reload(store)
 from kb_ui import ui  # noqa: E402
@@ -139,7 +139,7 @@ def apply(a):
     elif t == "save_budgets":
         store.save("予算", [{"カテゴリ": r["カテゴリ"], "予算": calc.to_int(r.get("予算")), "表示": "0" if str(r.get("表示")) == "0" else ""}
                             for r in a["rows"] if calc.to_int(r.get("予算")) > 0 or str(r.get("表示")) == "0"])
-    elif t == "save_table" and a.get("table") in ("積立", "積立記録"):        # 積立は表ごと書きかえる
+    elif t == "save_table" and a.get("table") in ("積立", "積立記録", "アイコン名"):        # 積立は表ごと書きかえる
         store.save(a["table"], [pick(a["table"], r) for r in a.get("rows") or []])
     elif t == "add_sub":
         store.append("サブスク", pick("サブスク", a["row"]))
@@ -167,7 +167,7 @@ ss = st.session_state
 done = ss.setdefault("kb_done", [])
 data = {
     "records": store.load("記録"), "budgets": store.load("予算"), "cats": categories(),
-    "tsumi": store.load("積立"), "tlog": store.load("積立記録"),
+    "tsumi": store.load("積立"), "tlog": store.load("積立記録"), "inames": store.load("アイコン名"),
     "sheets": store.using_sheets(), "password": bool(secret("KAKEIBO_PASSWORD")),
 }
 val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", key="kb_ui", default=None)

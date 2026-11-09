@@ -241,6 +241,17 @@ button.item.tap:active{background:#fdf2f6}
 .bic.big{width:44px;height:44px;border-radius:12px}
 .bic.big .li{width:24px;height:24px}
 .ipick{grid-template-columns:repeat(7,1fr)}
+
+/* アイコンの名前（長い名前は … で切って、形をくずさない） */
+.nrow{display:grid;grid-template-columns:30px 1fr 48px;gap:10px;align-items:center;padding:7px 12px;border-bottom:1px solid var(--line)}
+.nrow:last-child{border-bottom:0}
+.nrow input{height:40px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:16px;width:100%;min-width:0}
+.nrow.unused .bic{opacity:.55}
+.inuse{font-style:normal;font-size:10px;font-weight:800;color:#b24d72;background:var(--pinkL);border-radius:6px;padding:2px 5px;text-align:center}
+.nrow1{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:center;padding:10px}
+.nrow1 input{height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:17px;width:100%;min-width:0}
+.rename{margin-left:8px;font-size:11px;font-weight:700;color:var(--accent);vertical-align:2px}
+.legend .item .t b, .dhead div b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -354,6 +365,12 @@ const ICON_LABEL = { food: "食費", daily: "日用品", clothes: "衣服", beau
   music: "音楽", film: "映画・動画", camera: "写真", gym: "ジム", bike: "自転車", bed: "ホテル・寝具", tooth: "歯医者", glasses: "めがね", scissors: "美容院",
   flower: "花・ガーデン", tool: "修理・工具", fuel: "ガソリン", laptop: "パソコン", tv: "テレビ・家電", toy: "おもちゃ・ボール", beer: "お酒", bowl: "ラーメン・ごはん",
   apple: "くだもの", cake: "ケーキ・お祝い", star: "お気に入り", piggy: "積立" };
+// アイコンの名前：自分でつけた名前があればそれ、なければはじめの名前
+const ICON_NAME_MAX = 8;          // 画面の形がくずれないよう、名前は8文字まで
+function iconLabel(k) {
+  const c = (D.inames || []).find(x => x["キー"] === k);
+  return (c && String(c["名前"]).trim()) || ICON_LABEL[k] || "その他";
+}
 // 名前からアイコンを決める（はじめから入っているカテゴリー）
 const NAME_ICON = { 食費: "food", 日用品: "daily", 衣服: "clothes", 美容: "beauty", 交際費: "social", 医療費: "medical", 教育費: "education", 光熱費: "utility",
   交通費: "transport", 通信費: "phone", 住居費: "house", サブスク: "subs", その他: "box", 給与: "salary", 賞与: "gift", 副収入: "work",
@@ -403,7 +420,7 @@ const dlabel = s => { const d = parse(s); return `${d.getMonth() + 1}月${d.getD
 const uid = () => Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 6);
 const lastDay = (y, m) => new Date(y, m + 1, 0).getDate();     // m は 0 はじまり
 // ===== データ（サーバーのデータ ＋ まだ保存が終わっていない操作） =====
-let SERVER = { records: [], budgets: [], cats: [], tsumi: [], tlog: [], sheets: false, password: false };
+let SERVER = { records: [], budgets: [], cats: [], tsumi: [], tlog: [], inames: [], sheets: false, password: false };
 let D = SERVER;
 let QUEUE = [];          // サーバーにまだ届いていない操作
 let firstRender = true;
@@ -414,7 +431,7 @@ function applyOp(d, a) {
     case "add_record": d.records = [...d.records, a.rec]; break;
     case "delete_record": d.records = d.records.filter(r => r.ID !== a.rid); break;
     case "save_budgets": d.budgets = a.rows; break;
-    case "save_table": d[{ 積立: "tsumi", 積立記録: "tlog" }[a.table]] = a.rows; break;
+    case "save_table": d[{ 積立: "tsumi", 積立記録: "tlog", アイコン名: "inames" }[a.table]] = a.rows; break;
     case "save_cats": d.cats = a.rows; break;
   }
   return d;
@@ -510,7 +527,7 @@ function iconGroups(months, kind, rf) {
   }
   const o = {};
   for (const r of repRecs(months, kind, rf)) {
-    const k = recIcon(r), g = o[k] = o[k] || { key: k, label: ICON_LABEL[k] || "その他", cats: new Set(), v: 0 };
+    const k = recIcon(r), g = o[k] = o[k] || { key: k, label: iconLabel(k), cats: new Set(), v: 0 };
     g.v += int(r["金額"]); g.cats.add(r["カテゴリ"] || "その他");
   }
   return Object.values(o).map(g => ({ ...g, sub: [...g.cats].join("・") })).sort((a, b) => b.v - a.v);
@@ -635,7 +652,7 @@ function showDetail(key, kind) {
   const rs = repRecs(repMonths(), kind, S.rf).filter(r => recIcon(r) === key);
   const total = rs.reduce((a, r) => a + int(r["金額"]), 0);
   const when = S.rep === "year" ? `${S.month.slice(0, 4)}年` : `${+S.month.slice(5)}月`;
-  modal(`<div class="dhead"><span class="bic big">${svgIcon(key)}</span><div><b>${esc(ICON_LABEL[key] || "その他")}</b><span>${when}の${kind}${kind === EXP && S.rf !== "全て" ? `（${S.rf}）` : ""}・${rs.length}件</span></div>
+  modal(`<div class="dhead"><span class="bic big">${svgIcon(key)}</span><div><b>${esc(iconLabel(key))}<button class="rename" data-a="iname1" data-v="${key}">名前を変える</button></b><span>${when}の${kind}${kind === EXP && S.rf !== "全て" ? `（${S.rf}）` : ""}・${rs.length}件</span></div>
     <b class="${kind === EXP ? "exp" : "inc"}">${yen(total)}</b></div>
     ${rs.length ? groupByDay(rs, false) : `<div class="empty">記録はありません</div>`}
     <button class="btn" style="margin-top:14px" data-a="mclose">閉じる</button>`);
@@ -747,7 +764,7 @@ V.cats = () => {
   const rows = S.catDraft[S.ck];
   return `<div class="title">カテゴリー</div>
   <div class="seg"><button class="${S.ck === EXP ? "on" : ""}" data-a="ck" data-v="${EXP}">支出</button><button class="${S.ck === INC ? "on" : ""}" data-a="ck" data-v="${INC}">収入</button></div>
-  <div class="small muted" style="margin:0 4px 8px">左のアイコンを押すと、アイコンを選べます。↑↓ で並べかえ</div>
+  <div class="small muted" style="margin:0 4px 8px;display:flex;gap:8px;align-items:baseline">左のアイコンを押すと、アイコンを選べます。↑↓ で並べかえ<button class="link" style="margin-left:auto;white-space:nowrap" data-go="inames">アイコンの名前 ›</button></div>
   <div class="list">${rows.map((c, i) => `<div class="crow"><button class="cic" data-a="cicon" data-i="${i}">${svgIcon(iconKey(c))}</button>
     <input data-c="${i}" data-f="名前" value="${esc(c["名前"])}" placeholder="名前" maxlength="12">
     <button data-a="cup" data-i="${i}">↑</button><button data-a="cdown" data-i="${i}">↓</button><button data-a="cdel" data-i="${i}">✕</button></div>`).join("")}</div>
@@ -755,6 +772,19 @@ V.cats = () => {
   <div class="row2" style="margin-top:14px"><button class="btn" data-a="creset">元にもどす</button><button class="btn pri" data-a="csave">保存する</button></div>`;
 };
 
+// アイコンの名前を変える画面（レポートで、アイコン別にまとめたときの名前）
+V.inames = () => {
+  if (!S.inDraft) S.inDraft = Object.fromEntries((D.inames || []).map(x => [x["キー"], x["名前"]]));
+  const keys = Object.keys(CAT_ICON).filter(k => k !== "tag" && k !== "piggy");
+  const used = new Set([...D.cats.map(c => iconKey(c))]);
+  keys.sort((a, b) => (used.has(b) - used.has(a)));          // 使っているアイコンを先に
+  return `<div class="title">アイコンの名前</div>
+  <div class="small muted" style="margin:0 4px 8px">レポートで、アイコン別にまとめたときの名前です（${ICON_NAME_MAX}文字まで）。空にすると、はじめの名前にもどります</div>
+  <div class="list">${keys.map(k => `<div class="nrow ${used.has(k) ? "" : "unused"}"><span class="bic">${svgIcon(k)}</span>
+    <input data-iname="${k}" value="${esc(S.inDraft[k] || "")}" placeholder="${esc(ICON_LABEL[k] || "")}" maxlength="${ICON_NAME_MAX}">
+    ${used.has(k) ? `<i class="inuse">使用中</i>` : "<span></span>"}</div>`).join("")}</div>
+  <div class="row2" style="margin-top:14px"><button class="btn" data-go="cats">もどる</button><button class="btn pri pink" data-a="insave">保存する</button></div>`;
+};
 V.settings = () => `<div class="title">設定</div>
   <div class="card">${D.sheets ? "✅ 保存先：Google スプレッドシート" : "⚠️ いまは試し用の保存です（アプリを再起動すると消えます）。kakeibo/README.md の手順で Google スプレッドシートにつないでください"}</div>
   <div class="card small muted">ホーム画面に追加するときは、URL の「.streamlit.app/」のあとに「~/+/」を入れた形（例：…streamlit.app/~/+/kakeibo）を使うと、上のバーと右下のアイコンが出ません</div>
@@ -769,7 +799,7 @@ function render(keepScroll) {
   if (keepScroll) scrollEl.scrollTop = y;
   keep();
 }
-function go(v) { S.view = v; S.budEdit = false; S.catDraft = null; S.calPick = null; render(); scrollEl.scrollTop = 0; }
+function go(v) { S.view = v; S.budEdit = false; S.catDraft = null; S.inDraft = null; S.calPick = null; render(); scrollEl.scrollTop = 0; }
 
 let toastT;
 function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2000); }
@@ -885,6 +915,25 @@ document.addEventListener("click", e => {
     case "paym": S.pay = PAY_METHODS[(PAY_METHODS.indexOf(S.pay) + 1) % PAY_METHODS.length]; render(true); break;
     case "rf": S.rf = RFILTER[(RFILTER.indexOf(S.rf) + 1) % RFILTER.length]; render(true); break;
     case "rdetail": showDetail(v, b.dataset.k); break;
+    case "iname1": {          // レポートの一覧から、そのアイコンの名前だけ変える
+      modal(`<div class="title" style="margin-top:0">アイコンの名前</div>
+        <div class="card nrow1"><span class="bic big">${svgIcon(v)}</span><input id="iname1" value="${esc(iconLabel(v))}" placeholder="${esc(ICON_LABEL[v] || "")}" maxlength="${ICON_NAME_MAX}"></div>
+        <div class="small muted" style="margin:-4px 4px 10px">${ICON_NAME_MAX}文字まで。空にすると、はじめの名前（${esc(ICON_LABEL[v] || "")}）にもどります</div>
+        <div class="row2"><button class="btn" data-a="mclose">やめる</button><button class="btn pri pink" data-a="iname1save" data-v="${v}">保存する</button></div>`, true);
+      setTimeout(() => { const el = document.getElementById("iname1"); if (el) { el.focus(); el.select(); } }, 50);
+      break;
+    }
+    case "iname1save": {
+      const name = (document.getElementById("iname1").value || "").trim().slice(0, ICON_NAME_MAX);
+      const rows = (D.inames || []).filter(x => x["キー"] !== v);
+      if (name && name !== ICON_LABEL[v]) rows.push({ キー: v, 名前: name });
+      act({ type: "save_table", table: "アイコン名", rows }); closeModal(); toast("名前を変えました"); break;
+    }
+    case "insave": {
+      appEl.querySelectorAll("[data-iname]").forEach(i => S.inDraft[i.dataset.iname] = i.value);
+      const rows = Object.entries(S.inDraft).map(([k, n]) => [k, String(n || "").trim().slice(0, ICON_NAME_MAX)]).filter(([k, n]) => n && n !== ICON_LABEL[k]).map(([k, n]) => ({ キー: k, 名前: n }));
+      act({ type: "save_table", table: "アイコン名", rows }); S.inDraft = null; toast("アイコンの名前を保存しました"); go("cats"); break;
+    }
     case "bhide": case "bshow": {
       saveBudInputs(); const h = new Set(S.budDraft.hidden);
       if (a === "bhide") h.add(v); else h.delete(v);
@@ -980,6 +1029,7 @@ document.addEventListener("input", e => {
   if (t.dataset.tsumi !== undefined) t.value = t.value.replace(/[^0-9]/g, "");
   if (t.dataset.c !== undefined && S.catDraft) S.catDraft[S.ck][+t.dataset.c][t.dataset.f] = t.value;
   if (t.dataset.bud !== undefined) t.value = t.value.replace(/[^0-9]/g, "");
+  if (t.dataset.iname !== undefined && S.inDraft) S.inDraft[t.dataset.iname] = t.value;
 });
 document.addEventListener("change", e => {
   const t = e.target;
