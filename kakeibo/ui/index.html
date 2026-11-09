@@ -292,9 +292,9 @@ const TOKEN = {
 
 // ===== 決まりごと =====
 const EXP = "支出", INC = "収入";
-const CASH = "現金", CARD = "クレカ", FURI = "振替", TSUMI = "積立";
+const CASH = "現金", CARD = "クレカ", FURI = "引落", TSUMI = "積立";
 const PAY_METHODS = [CASH, CARD, FURI];                 // 入力の支払方法（押すたびに切りかわる）
-const RFILTER = ["全て", CASH, CARD, FURI, TSUMI];      // レポートの支出の切りかえ（全てに振替は入る・積立は入らない）
+const RFILTER = ["全て", CASH, CARD, FURI, TSUMI];      // レポートの支出の切りかえ（全てに引落は入る・積立は入らない）
 const PAYS = ["毎月", "2か月ごと", "3か月ごと", "4か月ごと", "5か月ごと", "半年ごと", "年1回", "2年に1回", "3年に1回", "4年に1回", "5年に1回"];      // 積立の「支払」
 const WEEK = "日月火水木金土";
 const TILES = [["入力","input"],["カレンダー","calendar"],["レポート","report"],["予算","budget"],["積立","tsumi"],["記録の一覧","list"],["カテゴリ","cats"],["設定","settings"]];
@@ -449,6 +449,9 @@ function act(a) {
 // ===== 画面の状態 =====
 const S = { pay: CASH, rf: "全て", budDraft: null, rep: "month", view: "home", month: ymOf(today()), kind: EXP, date: today(), memo: "", amount: "", cat: {}, budEdit: false, ck: EXP, catDraft: null, calPick: null };
 try { Object.assign(S, JSON.parse(sessionStorage.getItem("kb_state") || "{}"), { budEdit: false, catDraft: null, budDraft: null }); } catch (e) {}
+if (S.pay === "振替") S.pay = FURI;
+if (S.rf === "振替") S.rf = FURI;
+if (!PAY_METHODS.includes(S.pay)) S.pay = CASH;
 function keep() { try { sessionStorage.setItem("kb_state", JSON.stringify({ view: S.view, pay: S.pay, rf: S.rf, rep: S.rep, month: S.month, kind: S.kind, cat: S.cat, ck: S.ck })); } catch (e) {} }
 
 const cats = kind => {
@@ -468,7 +471,7 @@ function byCat(rs, kind = EXP) {
   return Object.entries(o).sort((a, b) => b[1] - a[1]);
 }
 
-const payOf = r => PAY_METHODS.includes(r["支払方法"]) ? r["支払方法"] : CASH;        // 前からの記録（空）は現金
+const payOf = r => r["支払方法"] === "振替" ? FURI : PAY_METHODS.includes(r["支払方法"]) ? r["支払方法"] : CASH;        // 前からの記録（空）は現金。「振替」で入れた記録は引落
 
 // ---- 積立：項目ごとに「この月の積立額」は、その月かそれより前に入れた最後の金額（先月の金額が続く）----
 const tItems = () => [...D.tsumi].sort((a, b) => int(a["並び"]) - int(b["並び"]));
@@ -515,7 +518,7 @@ function meyasu(it, m) {
 // ---- レポートの支出（全て・現金・クレカ・積立）----
 // 記録のアイコン（そのカテゴリーのアイコン）
 const recIcon = r => iconKey(cats(r["種類"]).find(c => c["名前"] === r["カテゴリ"]) || { 名前: r["カテゴリ"] });
-// レポートで数える記録（kind：支出か収入。支出は 全て・現金・クレカ・振替 で分ける）
+// レポートで数える記録（kind：支出か収入。支出は 全て・現金・クレカ・引落 で分ける）
 function repRecs(months, kind, rf) {
   const set = new Set(months);
   return D.records.filter(r => r["種類"] === kind && set.has(ymOf(r["日付"])) && (kind !== EXP || rf === "全て" || payOf(r) === rf));
