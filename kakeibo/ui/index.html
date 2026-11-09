@@ -251,7 +251,7 @@ const TOKEN = {
 const EXP = "支出", INC = "収入";
 const CASH = "現金", CARD = "クレカ", TSUMI = "積立";
 const RFILTER = ["全て", CASH, CARD, TSUMI];      // レポートの支出の切りかえ（全てに積立は入らない）
-const PAYS = ["毎月", "2か月ごと", "3か月ごと", "半年ごと", "年1回"];      // 積立の「支払」
+const PAYS = ["毎月", "2か月ごと", "3か月ごと", "半年ごと", "年1回", "2年に1回", "3年に1回", "4年に1回", "5年に1回"];      // 積立の「支払」
 const WEEK = "日月火水木金土";
 const TILES = [["入力","input"],["カレンダー","calendar"],["レポート","report"],["予算","budget"],["積立","tsumi"],["記録の一覧","list"],["カテゴリ","cats"],["設定","settings"]];
 // カテゴリーのアイコン（線だけのシンプルな絵）。カテゴリーの「アイコン」には "i:キー" で入る
@@ -679,7 +679,7 @@ function drawT() {
   </div>
   <div class="sec" style="margin-top:6px">支払</div>
   <div class="chips">${PAYS.map(p => `<button class="chip ${base === p ? "on" : ""}" data-a="tpay" data-v="${p}">${p}</button>`).join("")}</div>
-  ${base && base !== "毎月" ? `<div class="chips" style="margin-top:6px"><span class="small muted" style="align-self:center;margin-right:4px">支払う月</span>${Array.from({ length: 12 }, (_, i) => `<button class="chip sm ${+mon === i + 1 ? "on" : ""}" data-a="tmon" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>` : ""}
+  ${base && base !== "毎月" ? `<div class="chips" style="margin-top:6px"><span class="small muted" style="align-self:center;margin-right:4px">支払う月</span><button class="chip sm ${!mon ? "on" : ""}" data-a="tmon" data-v="">未設定</button>${Array.from({ length: 12 }, (_, i) => `<button class="chip sm ${+mon === i + 1 ? "on" : ""}" data-a="tmon" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>` : ""}
   ${t.isNew ? "" : `<div class="sec">支払った（計から引きます）</div>
   <div class="card newrow"><input data-t="payAmt" inputmode="numeric" pattern="[0-9]*" value="${esc(t.payAmt)}" placeholder="${S.month.replace("-", "年")}月に払った金額"><button class="btn pri pink" data-a="tpaid">記録</button></div>
   ${pays.length ? `<div class="list">${pays.map(l => `<div class="item" style="grid-template-columns:1fr auto auto"><div class="t"><b>${+l["月"].slice(5)}月に支払い</b><span>${l["月"].slice(0, 4)}年</span></div><div class="v exp">${yen(-int(l["金額"]), true)}</div>
@@ -761,7 +761,7 @@ document.addEventListener("click", e => {
     case "tnew": tSheet(""); break;
     case "tedit": tSheet(b.dataset.id); break;
     case "tpay": tDraft["支払"] = v === "毎月" ? v : v + ((String(tDraft["支払"]).match(/（\d+月）/) || [""])[0]); drawT(); break;
-    case "tmon": tDraft["支払"] = String(tDraft["支払"]).replace(/（.*）/, "") + `（${v}月）`; drawT(); break;
+    case "tmon": tDraft["支払"] = String(tDraft["支払"]).replace(/（.*）/, "") + (v ? `（${v}月）` : ""); drawT(); break;
     case "tpaid": {
       const amt = int(tDraft.payAmt); if (amt <= 0) { toast("払った金額を入れてください"); return; }
       act({ type: "save_table", table: "積立記録", rows: [...D.tlog, { ID: uid(), 項目ID: tDraft.ID, 月: S.month, 種類: "支払", 金額: amt }] });
