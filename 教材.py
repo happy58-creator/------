@@ -6,7 +6,7 @@ from pathlib import Path
 # そのまま新しい home.py が動くと「ページが見つからない」などのエラーになるので、
 # .py ファイルが更新されていたら、部品を読み直す。
 _HERE = Path(__file__).resolve().parent
-_STAMP = max(p.stat().st_mtime for p in _HERE.glob("*.py"))
+_STAMP = max(p.stat().st_mtime for p in [*_HERE.glob("*.py"), *_HERE.glob("kakeibo/*.py")])   # 家計簿（kakeibo/）の部品も見る
 if getattr(sys, "_kyouzai_code_stamp", None) != _STAMP:
     for _name in ("common", "auth", "history", "pdfgen", "web_games",
                   "story_data", "story_logic", "story_assets", "story_battle", "story_profile",
