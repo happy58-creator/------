@@ -186,7 +186,10 @@ input,select{font:inherit;color:inherit}
 .rf0{color:#555;border-color:#d5d8de;background:#f4f5f7}
 .rf1{color:#2a8c4a;border-color:#bfe3c8;background:#eef7ee}
 .rf2{color:#3a5bd0;border-color:#c5d0fa;background:#eef2ff}
-.rf3{color:#b24d72;border-color:#f4c4d4;background:var(--pinkL)}
+.rf3{color:#8a5a12;border-color:#f0d49a;background:#fff6e2}
+.rf4{color:#b24d72;border-color:#f4c4d4;background:var(--pinkL)}
+.paybtn.is-furi{background:#fff6e2;color:#8a5a12;border-color:#f0d49a}
+.ptag.furi{color:#8a5a12;background:#fff6e2}
 /* 予算の設定：外す・もどす・新しい項目 */
 .bin3{display:grid;grid-template-columns:1fr 120px 34px;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
 .bin3:last-child{border-bottom:0}
@@ -226,6 +229,18 @@ input,select{font:inherit;color:inherit}
 .tmeyasu.short{color:var(--red)} .tmeyasu.ok{color:var(--green)}
 .lastpay{display:flex;align-items:center;gap:8px;margin:8px 2px 2px}
 .lastpay input{flex:1;min-width:0;height:40px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:15px;background:#fff}
+
+button.item.tap{width:100%;text-align:left;font:inherit;color:inherit;background:none;border:0;border-bottom:1px solid var(--line);cursor:pointer}
+button.item.tap:last-child{border-bottom:0}
+button.item.tap:active{background:#fdf2f6}
+.chev{font-style:normal;color:#c9a1b2;margin-left:6px;font-weight:400}
+.dhead{display:grid;grid-template-columns:44px 1fr auto;gap:10px;align-items:center;margin:4px 2px 6px}
+.dhead div b{display:block;font-size:17px}
+.dhead div span{font-size:12px;color:var(--sub)}
+.dhead > b{font-size:18px}
+.bic.big{width:44px;height:44px;border-radius:12px}
+.bic.big .li{width:24px;height:24px}
+.ipick{grid-template-columns:repeat(7,1fr)}
 </style>
 </head>
 <body>
@@ -266,9 +281,10 @@ const TOKEN = {
 
 // ===== 決まりごと =====
 const EXP = "支出", INC = "収入";
-const CASH = "現金", CARD = "クレカ", TSUMI = "積立";
-const RFILTER = ["全て", CASH, CARD, TSUMI];      // レポートの支出の切りかえ（全てに積立は入らない）
-const PAYS = ["毎月", "2か月ごと", "3か月ごと", "半年ごと", "年1回", "2年に1回", "3年に1回", "4年に1回", "5年に1回"];      // 積立の「支払」
+const CASH = "現金", CARD = "クレカ", FURI = "振替", TSUMI = "積立";
+const PAY_METHODS = [CASH, CARD, FURI];                 // 入力の支払方法（押すたびに切りかわる）
+const RFILTER = ["全て", CASH, CARD, FURI, TSUMI];      // レポートの支出の切りかえ（全てに振替は入る・積立は入らない）
+const PAYS = ["毎月", "2か月ごと", "3か月ごと", "4か月ごと", "5か月ごと", "半年ごと", "年1回", "2年に1回", "3年に1回", "4年に1回", "5年に1回"];      // 積立の「支払」
 const WEEK = "日月火水木金土";
 const TILES = [["入力","input"],["カレンダー","calendar"],["レポート","report"],["予算","budget"],["積立","tsumi"],["記録の一覧","list"],["カテゴリ","cats"],["設定","settings"]];
 // カテゴリーのアイコン（線だけのシンプルな絵）。カテゴリーの「アイコン」には "i:キー" で入る
@@ -299,12 +315,50 @@ const CAT_ICON = {
   sport: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17M6 6c3 2.5 3 9.5 0 12M18 6c-3 2.5-3 9.5 0 12"/>',
   cart: '<path d="M3 4h2.5l2.2 10.5h10.3L20 7H6.5"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
   tag: '<path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.5 1.5 0 0 1 0 2.1l-6.3 6.3a1.5 1.5 0 0 1-2.1 0z"/><circle cx="8" cy="8" r="1.4"/>',
+  water: '<path d="M12 3.5s-6 6.6-6 10.5a6 6 0 0 0 12 0c0-3.9-6-10.5-6-10.5z"/><path d="M9.5 14.5a2.5 2.5 0 0 0 2.5 2.5"/>',
+  flame: '<path d="M12 21c-3.6 0-6-2.5-6-5.8 0-3.4 2.6-5.3 3.6-8.7 2.3 1.5 3 3.4 3 5 .9-.6 1.6-1.6 1.8-3 1.9 1.6 3.6 3.9 3.6 6.7 0 3.3-2.4 5.8-6 5.8z"/>',
+  bolt: '<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>',
+  shield: '<path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6z"/><path d="M9 12l2 2 4-4"/>',
+  doc: '<path d="M6.5 3h8l4 4v14h-12z"/><path d="M14.5 3v4h4M9 12h6M9 15.5h6M9 8.5h3"/>',
+  bank: '<path d="M3.5 9.5L12 4l8.5 5.5z"/><path d="M5.5 10v7.5M9.8 10v7.5M14.2 10v7.5M18.5 10v7.5M3.5 20h17"/>',
+  credit: '<rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M2.5 10h19M6 14.5h4"/>',
+  cash: '<rect x="2.5" y="6.5" width="19" height="11" rx="1.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
+  coins: '<ellipse cx="9" cy="7" rx="5.5" ry="2.5"/><path d="M3.5 7v4c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5V7"/><path d="M9.5 15.4c.9 1.2 3 2.1 5.5 2.1 3 0 5.5-1.1 5.5-2.5v-4c0-1.2-1.7-2.2-4-2.4"/>',
+  music: '<path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
+  film: '<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M7.5 4v16M16.5 4v16M3.5 8.5h4M3.5 15.5h4M16.5 8.5h4M16.5 15.5h4M7.5 12h9"/>',
+  camera: '<path d="M3.5 8.5a1.5 1.5 0 0 1 1.5-1.5h2.5L9 4.5h6L16.5 7H19a1.5 1.5 0 0 1 1.5 1.5v9.5A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18z"/><circle cx="12" cy="13" r="3.5"/>',
+  gym: '<path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/>',
+  bike: '<circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l3.5-7h5l3.5 7M9.5 9L12 16h-6M13 6.5h2.5l1 2.5"/>',
+  bed: '<path d="M3 18.5V6.5M3 14h18v4.5M21 14v-2.5a3 3 0 0 0-3-3h-7V14"/><circle cx="7" cy="11" r="1.8"/>',
+  tooth: '<path d="M7.5 4C5 4 4 6 4.5 9c.4 2.4 1 3.8 1.5 6.5.4 2.5 1 4.5 2 4.5 1.4 0 1.4-4.5 4-4.5s2.6 4.5 4 4.5c1 0 1.6-2 2-4.5.5-2.7 1.1-4.1 1.5-6.5.5-3-.5-5-3-5-1.8 0-2.6 1-4.5 1S9.3 4 7.5 4z"/>',
+  glasses: '<circle cx="6.5" cy="14" r="3.5"/><circle cx="17.5" cy="14" r="3.5"/><path d="M10 14c1.2-1 2.8-1 4 0M3 14L4.5 7.5M21 14l-1.5-6.5"/>',
+  scissors: '<circle cx="6" cy="6.5" r="2.5"/><circle cx="6" cy="17.5" r="2.5"/><path d="M8.2 7.8L20 17M8.2 16.2L20 7"/>',
+  flower: '<circle cx="12" cy="9" r="2.2"/><path d="M12 6.8c0-2.5 3.5-2.5 3.5 0 2.4-.4 3 2.8.8 3.6 1.4 2-.9 4-2.8 2.6M12 6.8c0-2.5-3.5-2.5-3.5 0-2.4-.4-3 2.8-.8 3.6-1.4 2 .9 4 2.8 2.6M12 11.2V21M12 17c-2-2-4.5-2-5.5-1.5 1 2 3 2.5 5.5 1.5z"/>',
+  tool: '<path d="M14.5 6.5a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3l7.5-7.5a4 4 0 0 1-2-2z"/><path d="M14.5 6.5L17 4l3 3-2.5 2.5"/>',
+  fuel: '<path d="M4.5 20.5V5a1.5 1.5 0 0 1 1.5-1.5h6.5A1.5 1.5 0 0 1 14 5v15.5M3 20.5h12.5M4.5 10h9.5"/><path d="M14 8.5l3 0 2 2V17a1.5 1.5 0 0 0 3 0V8.5L19.5 6"/>',
+  laptop: '<rect x="4.5" y="5" width="15" height="10.5" rx="1.5"/><path d="M2.5 19h19l-1.5-3.5h-16z"/>',
+  tv: '<rect x="3" y="6.5" width="18" height="12" rx="2"/><path d="M8.5 3l3.5 3.5L15.5 3M8 21.5h8"/>',
+  toy: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5c-2 2.5-3 5.3-3 8.5s1 6 3 8.5M12 3.5c2 2.5 3 5.3 3 8.5s-1 6-3 8.5M3.5 12h17"/>',
+  beer: '<path d="M5.5 7.5h10v11.5a1.5 1.5 0 0 1-1.5 1.5H7A1.5 1.5 0 0 1 5.5 19z"/><path d="M15.5 10H18a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 18 16h-2.5M5.5 7.5C5 5 7 3.5 9 4.5c1-1.3 3.5-1.3 4.5.5 2-.3 3 1.3 2 2.5M9 11v6M12 11v6"/>',
+  bowl: '<path d="M3.5 11.5h17a8.5 8.5 0 0 1-17 0z"/><path d="M9 20.5h6M8 8.5c0-1.5 1-1.5 1-3M12 8.5c0-1.5 1-1.5 1-3M16 8.5c0-1.5 1-1.5 1-3"/>',
+  apple: '<path d="M12 7.5c-1.5-1-5.5-1.5-6.8 2C3.8 13.3 6.3 20.5 9 20.5c1.3 0 1.7-.6 3-.6s1.7.6 3 .6c2.7 0 5.2-7.2 3.8-11-1.3-3.5-5.3-3-6.8-2z"/><path d="M12 7.5c0-2 .8-3.5 2.5-4.5"/>',
+  cake: '<path d="M4 20.5h16v-7a1.5 1.5 0 0 0-1.5-1.5h-13A1.5 1.5 0 0 0 4 13.5z"/><path d="M4 16c1.3 1 2.7 1 4 0s2.7-1 4 0 2.7 1 4 0 2.7-1 4 0M8 12V9M12 12V9M16 12V9M8 6.5h.01M12 6.5h.01M16 6.5h.01"/>',
+  star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
   piggy: '<path d="M5 11.5c0-3.3 3.1-6 7-6 1.2 0 2.3.2 3.3.7l2.7-1.7-.6 3.3c1 1 1.6 2.3 1.6 3.7v.5h1.5v3H19c-.6 1.2-1.6 2.2-2.9 2.8l-.6 2.2h-2.6l-.3-1.5h-3.2l-.3 1.5H6.5l-.6-2.4C4.7 17.4 5 14 5 11.5z"/><path d="M15.5 10.5h.01M10 7.8h3.5"/>',
 };
+// アイコンの名前（レポートで、アイコン別にまとめたときの見出し）
+const ICON_LABEL = { food: "食費", daily: "日用品", clothes: "衣服", beauty: "美容", social: "交際費", medical: "医療費", education: "教育費", utility: "光熱費",
+  transport: "交通費", phone: "通信費", house: "住居費", subs: "サブスク", box: "その他", salary: "給与", gift: "賞与・プレゼント", work: "副収入・仕事",
+  pet: "ペット", car: "車", cafe: "カフェ・外食", baby: "子ども", travel: "旅行", game: "ゲーム・趣味", heart: "ハート", sport: "スポーツ", cart: "買い物", tag: "タグ",
+  water: "水道", flame: "ガス", bolt: "電気", shield: "保険", doc: "税金・書類", bank: "銀行", credit: "カード", cash: "お札", coins: "小銭・貯金",
+  music: "音楽", film: "映画・動画", camera: "写真", gym: "ジム", bike: "自転車", bed: "ホテル・寝具", tooth: "歯医者", glasses: "めがね", scissors: "美容院",
+  flower: "花・ガーデン", tool: "修理・工具", fuel: "ガソリン", laptop: "パソコン", tv: "テレビ・家電", toy: "おもちゃ・ボール", beer: "お酒", bowl: "ラーメン・ごはん",
+  apple: "くだもの", cake: "ケーキ・お祝い", star: "お気に入り", piggy: "積立" };
 // 名前からアイコンを決める（はじめから入っているカテゴリー）
 const NAME_ICON = { 食費: "food", 日用品: "daily", 衣服: "clothes", 美容: "beauty", 交際費: "social", 医療費: "medical", 教育費: "education", 光熱費: "utility",
   交通費: "transport", 通信費: "phone", 住居費: "house", サブスク: "subs", その他: "box", 給与: "salary", 賞与: "gift", 副収入: "work",
-  積立から: "piggy", 外食: "cafe", ペット: "pet", 車: "car", 旅行: "travel", 趣味: "game", 子ども: "baby", 医療: "medical", 買い物: "cart", スポーツ: "sport" };
+  積立から: "piggy", 外食: "cafe", 水道代: "water", 水道: "water", ガス代: "flame", ガス: "flame", 電気代: "bolt", 電気: "bolt", 保険: "shield", 保険料: "shield",
+  税金: "doc", 貯金: "coins", 音楽: "music", 映画: "film", ジム: "gym", 美容院: "scissors", ガソリン: "fuel", お酒: "beer", おやつ: "cake", 家電: "tv", ペット: "pet", 車: "car", 旅行: "travel", 趣味: "game", 子ども: "baby", 医療: "medical", 買い物: "cart", スポーツ: "sport" };
 const svgIcon = (k, cls) => `<svg class="${cls || "li"}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${CAT_ICON[k] || CAT_ICON.tag}</svg>`;
 function iconKey(c) {
   const v = String((c && c["アイコン"]) || "").trim();
@@ -397,7 +451,7 @@ function byCat(rs, kind = EXP) {
   return Object.entries(o).sort((a, b) => b[1] - a[1]);
 }
 
-const payOf = r => r["支払方法"] === CARD ? CARD : CASH;        // 前からの記録（空）は現金
+const payOf = r => PAY_METHODS.includes(r["支払方法"]) ? r["支払方法"] : CASH;        // 前からの記録（空）は現金
 
 // ---- 積立：項目ごとに「この月の積立額」は、その月かそれより前に入れた最後の金額（先月の金額が続く）----
 const tItems = () => [...D.tsumi].sort((a, b) => int(a["並び"]) - int(b["並び"]));
@@ -417,7 +471,7 @@ const tOut = id => D.tlog.filter(l => l["項目ID"] === id && (l["種類"] === "
 const tPaid = (it, m) => tOut(it.ID).filter(l => l["月"] <= m).reduce((a, l) => a + int(l["金額"]), 0);
 const tBal = (it, m) => tSaved(it, m) - tPaid(it, m);
 // 支払の間かくの月数
-const CYCLE_M = { 毎月: 1, "2か月ごと": 2, "3か月ごと": 3, 半年ごと: 6, 年1回: 12, "2年に1回": 24, "3年に1回": 36, "4年に1回": 48, "5年に1回": 60 };
+const CYCLE_M = { 毎月: 1, "2か月ごと": 2, "3か月ごと": 3, "4か月ごと": 4, "5か月ごと": 5, 半年ごと: 6, 年1回: 12, "2年に1回": 24, "3年に1回": 36, "4年に1回": 48, "5年に1回": 60 };
 const payBase = it => String((it && it["支払"]) || "").replace(/（.*）/, "");
 const payMon = it => +((String((it && it["支払"]) || "").match(/（(\d+)月）/) || [])[1] || 0);
 const cycleOf = it => CYCLE_M[payBase(it)] || 12;
@@ -442,16 +496,26 @@ function meyasu(it, m) {
 }
 
 // ---- レポートの支出（全て・現金・クレカ・積立）----
-function expItems(months, rf) {
-  const o = {};
-  if (rf === TSUMI) {
-    for (const it of tItems()) { const v = months.reduce((a, m) => a + tAmt(it, m), 0); if (v > 0) o[it["名前"]] = (o[it["名前"]] || 0) + v; }
-  } else {
-    const set = new Set(months);
-    for (const r of D.records) if (r["種類"] === EXP && set.has(ymOf(r["日付"])) && (rf === "全て" || payOf(r) === rf)) { const k = r["カテゴリ"] || "その他"; o[k] = (o[k] || 0) + int(r["金額"]); }
-  }
-  return Object.entries(o).sort((a, b) => b[1] - a[1]);
+// 記録のアイコン（そのカテゴリーのアイコン）
+const recIcon = r => iconKey(cats(r["種類"]).find(c => c["名前"] === r["カテゴリ"]) || { 名前: r["カテゴリ"] });
+// レポートで数える記録（kind：支出か収入。支出は 全て・現金・クレカ・振替 で分ける）
+function repRecs(months, kind, rf) {
+  const set = new Set(months);
+  return D.records.filter(r => r["種類"] === kind && set.has(ymOf(r["日付"])) && (kind !== EXP || rf === "全て" || payOf(r) === rf));
 }
+// アイコン別にまとめる：[{ key, label, sub, v }]（多い順）。積立は項目ごと
+function iconGroups(months, kind, rf) {
+  if (kind === EXP && rf === TSUMI) {
+    return tItems().map(it => ({ key: "piggy", label: it["名前"], sub: "", v: months.reduce((a, m) => a + tAmt(it, m), 0), tsumi: true })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  }
+  const o = {};
+  for (const r of repRecs(months, kind, rf)) {
+    const k = recIcon(r), g = o[k] = o[k] || { key: k, label: ICON_LABEL[k] || "その他", cats: new Set(), v: 0 };
+    g.v += int(r["金額"]); g.cats.add(r["カテゴリ"] || "その他");
+  }
+  return Object.values(o).map(g => ({ ...g, sub: [...g.cats].join("・") })).sort((a, b) => b.v - a.v);
+}
+function expItems(months, rf) { return iconGroups(months, EXP, rf).map(g => [g.label, g.v]); }
 const incOf = months => { const set = new Set(months); return D.records.filter(r => r["種類"] === INC && set.has(ymOf(r["日付"]))).reduce((a, r) => a + int(r["金額"]), 0); };
 
 // ===== 部品 =====
@@ -468,7 +532,7 @@ function monthNav() {
 function recItem(r, del) {
   const inc = r["種類"] === INC;
   return `<div class="item"><div class="ic">${iconOf(r["種類"], r["カテゴリ"])}</div>
-    <div class="t"><b>${esc(r["カテゴリ"])}${!inc && payOf(r) === CARD ? `<i class="ptag">クレカ</i>` : ""}</b><span>${esc(r["メモ"]) || "&nbsp;"}</span></div>
+    <div class="t"><b>${esc(r["カテゴリ"])}${!inc && payOf(r) !== CASH ? `<i class="ptag ${payOf(r) === FURI ? "furi" : ""}">${payOf(r)}</i>` : ""}</b><span>${esc(r["メモ"]) || "&nbsp;"}</span></div>
     <div class="v ${inc ? "inc" : "exp"}">${yen(int(r["金額"]) * (inc ? 1 : -1), true)}</div>
     ${del ? `<button class="del" data-a="delrec" data-id="${esc(r.ID)}" aria-label="消す">✕</button>` : "<span></span>"}</div>`;
 }
@@ -495,12 +559,12 @@ V.input = () => {
       <div class="d">${S.date.replaceAll("-", "/")}（${WEEK[parse(S.date).getDay()]}）<input type="date" data-b="date" value="${S.date}"></div>
       <button data-a="dnext">›</button></div></div>
     <div class="field"><label>メモ</label><input data-b="memo" value="${esc(S.memo)}" placeholder="未入力" maxlength="60"></div>
-    <div class="field"><label>${S.kind}</label><div class="amount"><input data-b="amount" inputmode="numeric" pattern="[0-9]*" value="${esc(S.amount)}" placeholder="0">円${isE ? `<button class="paybtn ${S.pay === CARD ? "is-card" : ""}" data-a="paym">${S.pay}</button>` : ""}</div></div>
+    <div class="field"><label>${S.kind}</label><div class="amount"><input data-b="amount" inputmode="numeric" pattern="[0-9]*" value="${esc(S.amount)}" placeholder="0">円${isE ? `<button class="paybtn ${S.pay === CARD ? "is-card" : S.pay === FURI ? "is-furi" : ""}" data-a="paym">${S.pay}</button>` : ""}</div></div>
   </div>
+  <button class="big ${isE ? "pink" : "blue"}" data-a="submit" style="margin-top:4px">${S.kind}を入力する</button>
   <div class="sec">カテゴリー<button class="link" data-go="cats">編集・追加 ›</button></div>
   <div class="cats">${list.map(c => `<button class="cat ${c["名前"] === S.cat[S.kind] ? "on" : ""}" data-a="cat" data-v="${esc(c["名前"])}">${svgIcon(iconKey(c), "ic")}<span>${esc(c["名前"])}</span></button>`).join("")}
-    <button class="cat add" data-go="cats"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>追加</span></button></div>
-  <button class="big ${isE ? "pink" : "blue"}" data-a="submit">${S.kind}を入力する</button>`;
+    <button class="cat add" data-go="cats"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>追加</span></button></div>`;
 };
 
 V.calendar = () => {
@@ -556,13 +620,25 @@ function barsFor(ms, cur) {
   return `<svg viewBox="0 0 ${W} ${H}">${g}</svg>`;
 }
 const legendBars = (label) => `<div class="small muted" style="display:flex;gap:14px;margin-bottom:6px"><span><span class="dot" style="display:inline-block;background:var(--green)"></span> 収入</span><span><span class="dot" style="display:inline-block;background:var(--orange)"></span> 支出${S.rf === "全て" ? "" : `（${S.rf}）`}</span><span style="margin-left:auto">${label}</span></div>`;
-function listBlock(items, label, iconFn, chart) {
-  const total = items.reduce((a, b) => a + b[1], 0);
-  if (!items.length) return chart ? `<div class="sec">${label}</div><div class="empty">まだありません</div>` : "";
+// アイコン別の一覧（押すと、そのアイコンの記録の一覧）
+function listBlock(groups, label, kind, chart) {
+  const total = groups.reduce((a, g) => a + g.v, 0);
+  if (!groups.length) return chart ? `<div class="sec">${label}</div><div class="empty">まだありません</div>` : "";
   return `<div class="sec">${label}</div>
-    ${chart ? `<div class="card chart">${donut(items, total)}</div>` : ""}
-    <div class="list legend">${items.map(([c, v], i) => `<div class="item">${chart ? `<span class="dot" style="background:${PALETTE[i % PALETTE.length]}"></span>` : `<span></span>`}<span class="lic">${iconFn(c)}</span>
-      <div class="t"><b>${esc(c)}</b><span>${Math.round(v / total * 100)}%</span></div><div class="v">${yen(v)}</div></div>`).join("")}</div>`;
+    ${chart ? `<div class="card chart">${donut(groups.map(g => [g.label, g.v]), total)}</div>` : ""}
+    <div class="list legend">${groups.map((g, i) => `<${g.tsumi ? "div" : "button"} class="item ${g.tsumi ? "" : "tap"}" ${g.tsumi ? "" : `data-a="rdetail" data-v="${g.key}" data-k="${kind}"`}>${chart ? `<span class="dot" style="background:${PALETTE[i % PALETTE.length]}"></span>` : `<span></span>`}<span class="lic">${svgIcon(g.key)}</span>
+      <div class="t"><b>${esc(g.label)}</b><span>${Math.round(g.v / total * 100)}%${g.sub ? "・" + esc(g.sub) : ""}</span></div><div class="v">${yen(g.v)}${g.tsumi ? "" : `<i class="chev">›</i>`}</div></${g.tsumi ? "div" : "button"}>`).join("")}</div>`;
+}
+// その月（年間なら、その年）の、そのアイコンの記録の一覧
+function repMonths() { return S.rep === "year" ? Array.from({ length: 12 }, (_, i) => `${S.month.slice(0, 4)}-${pad(i + 1)}`) : [S.month]; }
+function showDetail(key, kind) {
+  const rs = repRecs(repMonths(), kind, S.rf).filter(r => recIcon(r) === key);
+  const total = rs.reduce((a, r) => a + int(r["金額"]), 0);
+  const when = S.rep === "year" ? `${S.month.slice(0, 4)}年` : `${+S.month.slice(5)}月`;
+  modal(`<div class="dhead"><span class="bic big">${svgIcon(key)}</span><div><b>${esc(ICON_LABEL[key] || "その他")}</b><span>${when}の${kind}${kind === EXP && S.rf !== "全て" ? `（${S.rf}）` : ""}・${rs.length}件</span></div>
+    <b class="${kind === EXP ? "exp" : "inc"}">${yen(total)}</b></div>
+    ${rs.length ? groupByDay(rs, false) : `<div class="empty">記録はありません</div>`}
+    <button class="btn" style="margin-top:14px" data-a="mclose">閉じる</button>`);
 }
 // 参考画像のような「支出・収入」と「収支」（収支の横に、全て→現金→クレカ→積立 の切りかえ）
 function rsum(exp, inc) {
@@ -573,7 +649,6 @@ function rsum(exp, inc) {
     <div class="rbox wide"><span>収支</span><button class="rf rf${RFILTER.indexOf(S.rf)}" data-a="rf">${S.rf}</button><b class="${bal < 0 ? "exp" : ""}">${yenJ(bal, true)}<small>円</small></b></div></div>`;
 }
 const expLabel = (head) => S.rf === TSUMI ? `${head}の積立` : `${head}の支出${S.rf === "全て" ? "" : `（${S.rf}）`}`;
-const expIcon = c => S.rf === TSUMI ? svgIcon("piggy") : iconOf(EXP, c);
 V.report = () => {
   const yearMode = S.rep === "year";
   const seg = `<div class="seg"><button class="${!yearMode ? "on" : ""}" data-a="rmode" data-v="month">月間</button><button class="${yearMode ? "on" : ""}" data-a="rmode" data-v="year">年間</button></div>`;
@@ -582,7 +657,7 @@ V.report = () => {
     const prev = expItems([shiftM(S.month, -1)], S.rf).reduce((a, x) => a + x[1], 0), diff = exp - prev;
     const cmp = prev ? `<div class="small muted" style="text-align:center;margin:-2px 0 10px">先月の${S.rf === TSUMI ? "積立" : "支出"}より <b style="color:${diff > 0 ? "var(--red)" : "var(--green)"}">${yen(diff, true)}</b></div>` : "";
     return `<div class="title">レポート</div>${seg}${monthNav()}${rsum(exp, inc)}${cmp}
-      ${listBlock(items, expLabel("この月"), expIcon, true)}${listBlock(byCat(inMonth(S.month), INC), "この月の収入", c => iconOf(INC, c), false)}`;
+      ${listBlock(iconGroups(ms, EXP, S.rf), expLabel("この月"), EXP, true)}${listBlock(iconGroups(ms, INC), "この月の収入", INC, false)}`;
   }
   const y = S.month.slice(0, 4), ms = Array.from({ length: 12 }, (_, i) => `${y}-${pad(i + 1)}`);
   const upto = S.rf === TSUMI ? ms.filter(m => m <= ymOf(today())) : ms;        // 積立は今月まで
@@ -593,7 +668,7 @@ V.report = () => {
   ${rsum(exp, inc)}
   <div class="card sum" style="grid-template-columns:1fr 1fr"><div><span>1か月の平均 ${S.rf === TSUMI ? "積立" : "支出"}</span><b class="exp">${yen(exp / (S.rf === TSUMI ? (upto.length || 1) : used))}</b></div><div><span>1か月の平均 収入</span><b class="inc">${yen(inc / used)}</b></div></div>
   <div class="card chart">${legendBars(`${y}年の月ごと`)}${barsFor(ms, ymOf(today()))}</div>
-  ${listBlock(items, expLabel(`${y}年`), expIcon, true)}${listBlock(byCat(D.records.filter(r => String(r["日付"]).startsWith(y + "-")), INC), `${y}年の収入`, c => iconOf(INC, c), false)}`;
+  ${listBlock(iconGroups(upto, EXP, S.rf), expLabel(`${y}年`), EXP, true)}${listBlock(iconGroups(ms, INC), `${y}年の収入`, INC, false)}`;
 };
 
 // 予算に出さない項目（予算の表で「表示」が "0"）。はじめは全部「追加」されている
@@ -734,8 +809,8 @@ function drawT() {
   <div class="small muted" style="margin:0 4px 6px">${t["目安"] === "逆算" ? (int(t["合計額"]) > 0 ? "（合計額 − 今の計）÷ 次の支払までの残りの月数" : "逆算には合計額を入れてください（入れないときは月々の金額）") : "月々の金額をそのまま目安にします"}</div>
   ${t.isNew ? "" : `<div class="sec" style="align-items:center">積立から出す（計から引きます）<button class="pkind ${t.pkind === "補填" ? "fill" : ""}" data-a="tkind">${t.pkind || "支払い"}</button></div>
   <div class="card newrow"><input data-t="payAmt" inputmode="numeric" pattern="[0-9]*" value="${esc(t.payAmt)}" placeholder="${S.month.replace("-", "年")}月に${t.pkind === "補填" ? "補填した" : "払った"}金額"><button class="btn pri pink" data-a="tpaid">記録</button></div>
-  ${t.pkind === "補填" ? `<div class="small muted" style="margin:-4px 4px 8px">補填は計から引いて、「${esc(t["名前"])}から補填」として収入にも入ります</div>` : ""}
-  ${pays.length ? `<div class="list">${pays.map(l => `<div class="item" style="grid-template-columns:1fr auto auto"><div class="t"><b>${+l["月"].slice(5)}月に${l["種類"] === "補填" ? "補填" : "支払い"}</b><span>${l["月"].slice(0, 4)}年${l["種類"] === "補填" ? "・収入に入れました" : ""}</span></div><div class="v exp">${yen(-int(l["金額"]), true)}</div>
+  ${t.pkind === "補填" ? `<div class="small muted" style="margin:-4px 4px 8px">補填も計から引きます（収入には入りません）</div>` : ""}
+  ${pays.length ? `<div class="list">${pays.map(l => `<div class="item" style="grid-template-columns:1fr auto auto"><div class="t"><b>${+l["月"].slice(5)}月に${l["種類"] === "補填" ? "補填" : "支払い"}</b><span>${l["月"].slice(0, 4)}年</span></div><div class="v exp">${yen(-int(l["金額"]), true)}</div>
     <button class="del" data-a="tpdel" data-id="${esc(l.ID)}">✕</button></div>`).join("")}</div>` : ""}
   <div class="small muted" style="margin:8px 4px 0">${S.month.replace("-", "年")}月の計：${yen(tBal(it, S.month))}</div>`}
   <button class="big pink" data-a="tsave">${t.isNew ? "追加する" : "保存する"}</button>
@@ -783,7 +858,7 @@ document.addEventListener("click", e => {
       if (amt <= 0) { toast("金額を入れてください"); appEl.querySelector('[data-b="amount"]').focus(); return; }
       if (!S.cat[S.kind]) { toast("カテゴリーを選んでください"); return; }
       act({ type: "add_record", rec: { ID: uid(), 日付: S.date, 種類: S.kind, 金額: amt, カテゴリ: S.cat[S.kind], メモ: S.memo.trim(), 支払方法: S.kind === EXP ? S.pay : "", 登録日時: new Date().toISOString().slice(0, 16).replace("T", " ") } });
-      toast(`記録しました　${S.cat[S.kind]} ${yen(amt)}${S.kind === EXP && S.pay === CARD ? "（クレカ）" : ""}`);
+      toast(`記録しました　${S.cat[S.kind]} ${yen(amt)}${S.kind === EXP && S.pay !== CASH ? `（${S.pay}）` : ""}`);
       S.amount = ""; S.memo = ""; render(true);
       break;
     }
@@ -807,8 +882,9 @@ document.addEventListener("click", e => {
       const rows = names.map(n => ({ カテゴリ: n, 予算: int(dr.amt[n]), 表示: hid.has(n) ? "0" : "" })).filter(r => r["予算"] > 0 || r["表示"] === "0" || String(dr.amt[r["カテゴリ"]]) !== "");
       act({ type: "save_budgets", rows }); S.budEdit = false; S.budDraft = null; toast("予算を保存しました"); render(); break;
     }
-    case "paym": S.pay = S.pay === CASH ? CARD : CASH; render(true); break;
+    case "paym": S.pay = PAY_METHODS[(PAY_METHODS.indexOf(S.pay) + 1) % PAY_METHODS.length]; render(true); break;
     case "rf": S.rf = RFILTER[(RFILTER.indexOf(S.rf) + 1) % RFILTER.length]; render(true); break;
+    case "rdetail": showDetail(v, b.dataset.k); break;
     case "bhide": case "bshow": {
       saveBudInputs(); const h = new Set(S.budDraft.hidden);
       if (a === "bhide") h.add(v); else h.delete(v);
@@ -834,11 +910,7 @@ document.addEventListener("click", e => {
       if (amt <= 0) { toast(fill ? "補填した金額を入れてください" : "払った金額を入れてください"); return; }
       const lid = uid();
       act({ type: "save_table", table: "積立記録", rows: [...D.tlog, { ID: lid, 項目ID: tDraft.ID, 月: S.month, 種類: fill ? "補填" : "支払", 金額: amt }] });
-      if (fill) {       // 補填：どの項目からいくらを、収入に入れる（日付はその月の今日。ほかの月なら1日）
-        const day = ymOf(today()) === S.month ? today() : S.month + "-01";
-        act({ type: "add_record", rec: { ID: "fill-" + lid, 日付: day, 種類: INC, 金額: amt, カテゴリ: "積立から", メモ: `${tDraft["名前"]}から補填`, 支払方法: "", 登録日時: new Date().toISOString().slice(0, 16).replace("T", " ") } });
-      }
-      tDraft.payAmt = ""; toast(fill ? `${tDraft["名前"]}から ${yen(amt)} を補填（収入に入れました）` : "支払いを記録しました"); drawT(); break;
+      tDraft.payAmt = ""; toast(fill ? `${tDraft["名前"]}から ${yen(amt)} を補填しました` : "支払いを記録しました"); drawT(); break;
     }
     case "tpdel": {
       const l = D.tlog.find(x => x.ID === b.dataset.id);
@@ -935,6 +1007,10 @@ window.addEventListener("message", e => {
   QUEUE = QUEUE.filter(a => !done.has(a.id));
   document.getElementById("sync").style.display = QUEUE.length ? "block" : "none";
   rebuild();
+  if (!window.__fillClean && SERVER.records.length) {       // 補填は収入に入れなくなったので、前に入れた分を消す
+    window.__fillClean = true;
+    SERVER.records.filter(r => String(r.ID).startsWith("fill-")).forEach(r => act({ type: "delete_record", rid: r.ID }));
+  }
   SL.height();
   const el = document.activeElement;
   if (!firstRender && el && /INPUT|SELECT|TEXTAREA/.test(el.tagName)) { pendingRender = true; return; }   // 入力中は書きかえない
