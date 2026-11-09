@@ -198,7 +198,7 @@ input,select{font:inherit;color:inherit}
 .newrow input{height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:16px;width:100%;min-width:0}
 .newrow .btn{height:44px}
 /* 積立：項目・積立・計・支払 */
-.tsumi .trow{display:grid;grid-template-columns:minmax(0,1fr) 88px 86px 62px;gap:6px;align-items:center;padding:9px 10px;border-bottom:1px solid var(--line);min-height:56px}
+.tsumi .trow{display:grid;grid-template-columns:minmax(0,1fr) 70px 74px 46px 64px;gap:4px;align-items:center;padding:9px 10px;border-bottom:1px solid var(--line);min-height:56px}
 .tsumi .trow:last-child{border-bottom:0}
 .tsumi .th{min-height:0;padding:8px 10px;background:#fbf3f6;font-size:12px;font-weight:800;color:#b24d72}
 .tsumi .th span:not(:first-child){text-align:center}
@@ -212,6 +212,20 @@ input,select{font:inherit;color:inherit}
 .chip{height:36px;padding:0 12px;border-radius:999px;background:#fff;border:1.5px solid #f0d3de;color:#8a5468;font-weight:700;font-size:13px}
 .chip.sm{height:32px;min-width:34px;padding:0 6px;font-size:12px}
 .chip.on{background:#d9658e;border-color:#d9658e;color:#fff}
+
+.pkind{margin-left:auto;height:30px;width:76px;border-radius:999px;font-size:13px;font-weight:800;line-height:1;display:inline-flex;align-items:center;justify-content:center;
+  background:#fff1f1;color:#d0503a;border:1.5px solid #f3c3b8}
+.pkind.fill{background:#eef2ff;color:#3a5bd0;border-color:#c5d0fa}
+
+.tsumi .trow{padding:9px 8px}
+.tsumi input{font-size:14px;padding:0 5px}
+.tsumi .trow > b{font-size:12.5px}
+.tpay{font-size:10px}
+.tmeyasu{text-align:right;font-weight:800;font-size:12.5px;line-height:1.15;white-space:nowrap}
+.tmeyasu small{display:block;font-size:9px;font-weight:600;color:var(--sub)}
+.tmeyasu.short{color:var(--red)} .tmeyasu.ok{color:var(--green)}
+.lastpay{display:flex;align-items:center;gap:8px;margin:8px 2px 2px}
+.lastpay input{flex:1;min-width:0;height:40px;border:1px solid var(--line);border-radius:10px;padding:0 10px;font-size:15px;background:#fff}
 </style>
 </head>
 <body>
@@ -290,7 +304,7 @@ const CAT_ICON = {
 // 名前からアイコンを決める（はじめから入っているカテゴリー）
 const NAME_ICON = { 食費: "food", 日用品: "daily", 衣服: "clothes", 美容: "beauty", 交際費: "social", 医療費: "medical", 教育費: "education", 光熱費: "utility",
   交通費: "transport", 通信費: "phone", 住居費: "house", サブスク: "subs", その他: "box", 給与: "salary", 賞与: "gift", 副収入: "work",
-  外食: "cafe", ペット: "pet", 車: "car", 旅行: "travel", 趣味: "game", 子ども: "baby", 医療: "medical", 買い物: "cart", スポーツ: "sport" };
+  積立から: "piggy", 外食: "cafe", ペット: "pet", 車: "car", 旅行: "travel", 趣味: "game", 子ども: "baby", 医療: "medical", 買い物: "cart", スポーツ: "sport" };
 const svgIcon = (k, cls) => `<svg class="${cls || "li"}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${CAT_ICON[k] || CAT_ICON.tag}</svg>`;
 function iconKey(c) {
   const v = String((c && c["アイコン"]) || "").trim();
@@ -399,8 +413,33 @@ function tSaved(it, m) {          // その月までに積み立てた合計
   for (let n = 0; k <= m && n < 600; n++, k = shiftM(k, 1)) sum += tAmt(it, k);
   return sum;
 }
-const tPaid = (it, m) => tLogs(it.ID, "支払").filter(l => l["月"] <= m).reduce((a, l) => a + int(l["金額"]), 0);
+const tOut = id => D.tlog.filter(l => l["項目ID"] === id && (l["種類"] === "支払" || l["種類"] === "補填"));     // どちらも計から引く
+const tPaid = (it, m) => tOut(it.ID).filter(l => l["月"] <= m).reduce((a, l) => a + int(l["金額"]), 0);
 const tBal = (it, m) => tSaved(it, m) - tPaid(it, m);
+// 支払の間かくの月数
+const CYCLE_M = { 毎月: 1, "2か月ごと": 2, "3か月ごと": 3, 半年ごと: 6, 年1回: 12, "2年に1回": 24, "3年に1回": 36, "4年に1回": 48, "5年に1回": 60 };
+const payBase = it => String((it && it["支払"]) || "").replace(/（.*）/, "");
+const payMon = it => +((String((it && it["支払"]) || "").match(/（(\d+)月）/) || [])[1] || 0);
+const cycleOf = it => CYCLE_M[payBase(it)] || 12;
+const mDiff = (a, b) => (+b.slice(0, 4) * 12 + +b.slice(5, 7)) - (+a.slice(0, 4) * 12 + +a.slice(5, 7));    // a から b までの月数
+// 次の支払の月：前回の支払日 → 支払う月 → 始めた月 の順で決める
+function nextPay(it, m) {
+  const N = cycleOf(it), last = String(it["前回支払日"] || "");
+  let k;
+  if (/^\d{4}-\d{2}/.test(last)) k = shiftM(last.slice(0, 7), N);
+  else if (payMon(it)) { k = `${m.slice(0, 4)}-${pad(payMon(it))}`; if (k < m) k = shiftM(k, 12); return k; }
+  else k = shiftM(String(it["開始月"] || m), N);
+  for (let n = 0; k < m && n < 200; n++) k = shiftM(k, N);
+  return k;
+}
+// 目安：固定＝月々の金額。逆算＝（合計額 − 先月までの計）÷ 次の支払までの残りの月数（今月をふくむ）
+function meyasu(it, m) {
+  if (it["目安"] === "逆算" && int(it["合計額"]) > 0) {
+    const rest = int(it["合計額"]) - tBal(it, shiftM(m, -1)), left = Math.max(1, mDiff(m, nextPay(it, m)));
+    return { v: Math.max(0, Math.ceil(rest / left)), mode: "逆算", left };
+  }
+  return { v: int(it["月額"]), mode: "固定" };
+}
 
 // ---- レポートの支出（全て・現金・クレカ・積立）----
 function expItems(months, rf) {
@@ -563,13 +602,13 @@ V.budget = () => {
   const all = cats(EXP), have = {};
   D.budgets.forEach(b => have[b["カテゴリ"]] = int(b["予算"]));
   if (S.budEdit) {
-    if (!S.budDraft) S.budDraft = { amt: Object.fromEntries(all.map(c => [c["名前"], have[c["名前"]] || ""])), hidden: [...budHidden()], added: [] };
+    if (!S.budDraft) S.budDraft = { amt: Object.fromEntries(all.map(c => [c["名前"], have[c["名前"]] || 0])), hidden: [...budHidden()], added: [] };
     const dr = S.budDraft, names = [...all.map(c => c["名前"]), ...dr.added], hid = new Set(dr.hidden);
     const shown = names.filter(n => !hid.has(n)), off = names.filter(n => hid.has(n));
     const ic = n => svgIcon(iconKey(all.find(c => c["名前"] === n) || { 名前: n }));
-    return `<div class="title">予算を設定</div><div class="small muted" style="margin:0 4px 8px">1か月の予算。空か 0 なら「未設定」。✕ で予算の画面から外せます</div>
+    return `<div class="title">予算を設定</div><div class="small muted" style="margin:0 4px 8px">1か月の予算（空のときは 0円）。✕ で予算の画面から外せます</div>
     <div class="list">${shown.map(n => `<div class="bin3"><div class="bname"><span class="bic">${ic(n)}</span>${esc(n)}</div>
-      <input inputmode="numeric" pattern="[0-9]*" data-bud="${esc(n)}" value="${dr.amt[n] || ""}" placeholder="未設定">
+      <input inputmode="numeric" pattern="[0-9]*" data-bud="${esc(n)}" value="${dr.amt[n] === "" || dr.amt[n] === undefined ? 0 : dr.amt[n]}" placeholder="0">
       <button class="bx" data-a="bhide" data-v="${esc(n)}" aria-label="外す">✕</button></div>`).join("") || `<div class="empty">項目がありません</div>`}</div>
     ${off.length ? `<div class="sec">外している項目</div><div class="list">${off.map(n => `<div class="bin3"><div class="bname muted"><span class="bic">${ic(n)}</span>${esc(n)}</div><span></span>
       <button class="bx add" data-a="bshow" data-v="${esc(n)}" aria-label="もどす">＋</button></div>`).join("")}</div>` : ""}
@@ -581,16 +620,14 @@ V.budget = () => {
   const hid = budHidden(), list = all.filter(c => !hid.has(c["名前"]));
   const used = Object.fromEntries(byCat(inMonth(S.month)));
   let tb = 0, tu = 0;
-  list.forEach(c => { if (have[c["名前"]] > 0) { tb += have[c["名前"]]; tu += used[c["名前"]] || 0; } });
+  list.forEach(c => { tb += have[c["名前"]] || 0; tu += used[c["名前"]] || 0; });
   const row = (title, b, u, total) => {
     let right, bar, bot;
-    if (b > 0) {
-      const left = b - u, rate = u / b, col = left < 0 ? "var(--red)" : rate > .8 ? "var(--orange)" : "var(--green)";
+    {
+      const left = b - u, rate = b > 0 ? u / b : (u > 0 ? 1.01 : 0), col = left < 0 ? "var(--red)" : rate > .8 ? "var(--orange)" : "var(--green)";
       right = left < 0 ? `<b class="exp">${yen(-left)} オーバー</b>` : `<b>残り ${yen(left)}</b>`;
       bar = `<div class="bar"><i style="width:${Math.min(100, rate * 100)}%;background:${col}"></i></div>`;
-      bot = `<span>${Math.round(rate * 100)}% 使用</span><span>${yen(u)} / ${yen(b)}</span>`;
-    } else {
-      right = `<span class="muted">未設定</span>`; bar = `<div class="bar"></div>`; bot = `<span></span><span>${u ? yen(u) + " 使用" : ""}</span>`;
+      bot = `<span>${b > 0 ? Math.round(rate * 100) + "% 使用" : ""}</span><span>${yen(u)} / ${yen(b)}</span>`;
     }
     return `<div class="brow ${total ? "total" : ""}"><div class="top"><b>${title}</b>${right}</div>${bar}<div class="bot">${bot}</div></div>`;
   };
@@ -601,21 +638,27 @@ V.budget = () => {
 };
 
 // 項目・積立・計・支払。積立の欄はこの月の積立額（入れなければ先月の金額のまま）。計はこの月までの残高（積み立てた合計 − 支払った分）
+function meyasuCell(it, m, amt, before) {
+  const g = meyasu(it, m);
+  if (before || (!g.v && g.mode === "固定" && !int(it["月額"]))) return `<span class="tmeyasu muted">—</span>`;
+  const short = !before && amt < g.v;
+  return `<span class="tmeyasu ${short ? "short" : "ok"}">${g.v.toLocaleString("ja-JP")}<small>${g.mode === "逆算" ? `逆算・あと${g.left}か月` : "固定"}</small></span>`;
+}
 V.tsumi = () => {
   const items = tItems(), m = S.month;
   const sumM = items.reduce((a, it) => a + tAmt(it, m), 0), sumB = items.reduce((a, it) => a + tBal(it, m), 0);
   return `<div class="title">積立</div>${monthNav()}
   <div class="card sum" style="grid-template-columns:1fr 1fr"><div><span>この月の積立</span><b>${yen(sumM)}</b></div><div><span>積立の合計</span><b class="inc">${yen(sumB)}</b></div></div>
   <div class="list tsumi">
-    <div class="trow th"><span>項目</span><span>積立</span><span>計</span><span>支払</span></div>
+    <div class="trow th"><span>項目</span><span>積立</span><span>計</span><span>支払</span><span>目安</span></div>
     ${items.length ? items.map(it => {
       const amt = tAmt(it, m), own = tLogs(it.ID, TSUMI).some(l => l["月"] === m), before = m < String(it["開始月"]);
       return `<div class="trow"><button class="tname" data-a="tedit" data-id="${esc(it.ID)}">${esc(it["名前"])}<i>›</i></button>
         <input data-tsumi="${esc(it.ID)}" inputmode="numeric" pattern="[0-9]*" value="${before ? "" : amt || ""}" placeholder="${before ? "—" : "0"}" class="${own ? "own" : ""}" ${before ? "disabled" : ""}>
-        <b>${yen(tBal(it, m))}</b><span class="tpay">${esc(String(it["支払"] || "").replace(/（.*）/, ""))}${(String(it["支払"] || "").match(/（(\d+)月）/) || [])[1] ? `<br>${String(it["支払"]).match(/（(\d+)月）/)[1]}月` : ""}</span></div>`;
+        <b>${yen(tBal(it, m))}</b><span class="tpay">${esc(String(it["支払"] || "").replace(/（.*）/, ""))}${(String(it["支払"] || "").match(/（(\d+)月）/) || [])[1] ? `<br>${String(it["支払"]).match(/（(\d+)月）/)[1]}月` : ""}</span>${meyasuCell(it, m, amt, before)}</div>`;
     }).join("") : `<div class="empty">まだありません。下の「項目を追加」から作れます</div>`}
   </div>
-  <div class="small muted" style="margin:8px 4px 0">積立の金額を変えると、その月から先がその金額になります（変えない月は先月の金額のまま）。積立はレポートの「全て」には入りません</div>
+  <div class="small muted" style="margin:8px 4px 0">積立の金額を変えると、その月から先がその金額になります（変えない月は先月の金額のまま）。目安より少ない月は、目安が赤になります。積立はレポートの「全て」には入りません</div>
   <button class="big pink" data-a="tnew">＋ 項目を追加</button>`;
 };
 
@@ -668,29 +711,47 @@ function confirmBox(msg, ok, fn) {
 let tDraft = null;
 function tSheet(id) {
   const it = D.tsumi.find(x => x.ID === id);
-  tDraft = it ? { ...it, isNew: false, payAmt: "" } : { ID: "", 名前: "", 支払: "年1回", 開始月: S.month, 並び: D.tsumi.length, メモ: "", amt: "", isNew: true };
+  tDraft = it ? { ...it, isNew: false, payAmt: "", pkind: "支払い" } : { ID: "", 名前: "", 支払: "年1回", 開始月: S.month, 並び: D.tsumi.length, メモ: "", 合計額: "", 月額: "", 前回支払日: "", 目安: "固定", isNew: true };
   drawT();
 }
 function drawT() {
   const t = tDraft, base = String(t["支払"] || "").replace(/（.*）/, ""), mon = (String(t["支払"] || "").match(/（(\d+)月）/) || [])[1] || "";
-  const pays = t.isNew ? [] : tLogs(t.ID, "支払").sort((a, b) => b["月"].localeCompare(a["月"]));
+  const pays = t.isNew ? [] : tOut(t.ID).sort((a, b) => b["月"].localeCompare(a["月"]));
   const it = D.tsumi.find(x => x.ID === t.ID);
   modal(`<div class="title" style="margin-top:0">${t.isNew ? "積立の項目を追加" : "積立の項目"}</div>
   <div class="card" style="padding:4px 16px">
     <div class="field"><label>項目</label><input data-t="名前" value="${esc(t["名前"])}" placeholder="例：車検・固定資産税" maxlength="20"></div>
-    ${t.isNew ? `<div class="field"><label>毎月の積立</label><div class="amount" style="font-size:18px"><input data-t="amt" inputmode="numeric" pattern="[0-9]*" style="font-size:18px" value="${esc(t.amt)}" placeholder="0">円</div></div>` : ""}
+    <div class="field"><label>合計額</label><div class="amount" style="font-size:18px"><input data-t="合計額" inputmode="numeric" pattern="[0-9]*" style="font-size:18px" value="${esc(t["合計額"] || "")}" placeholder="任意">円</div></div>
+    <div class="field"><label>月々の金額</label><div class="amount" style="font-size:18px"><input data-t="月額" inputmode="numeric" pattern="[0-9]*" style="font-size:18px" value="${esc(t["月額"] || "")}" placeholder="0">円</div></div>
   </div>
+  <div class="small muted" id="avgNote" style="margin:-4px 4px 8px">${avgNote(t)}</div>
   <div class="sec" style="margin-top:6px">支払</div>
   <div class="chips">${PAYS.map(p => `<button class="chip ${base === p ? "on" : ""}" data-a="tpay" data-v="${p}">${p}</button>`).join("")}</div>
+  <div class="lastpay"><span class="small muted">前回の支払日（任意）</span><input type="date" data-t="前回支払日" value="${esc(t["前回支払日"] || "")}">${t["前回支払日"] ? `<button class="bx" data-a="tlastclr" aria-label="消す">✕</button>` : ""}</div>
   ${base && base !== "毎月" ? `<div class="chips" style="margin-top:6px"><span class="small muted" style="align-self:center;margin-right:4px">支払う月</span><button class="chip sm ${!mon ? "on" : ""}" data-a="tmon" data-v="">未設定</button>${Array.from({ length: 12 }, (_, i) => `<button class="chip sm ${+mon === i + 1 ? "on" : ""}" data-a="tmon" data-v="${i + 1}">${i + 1}</button>`).join("")}</div>` : ""}
-  ${t.isNew ? "" : `<div class="sec">支払った（計から引きます）</div>
-  <div class="card newrow"><input data-t="payAmt" inputmode="numeric" pattern="[0-9]*" value="${esc(t.payAmt)}" placeholder="${S.month.replace("-", "年")}月に払った金額"><button class="btn pri pink" data-a="tpaid">記録</button></div>
-  ${pays.length ? `<div class="list">${pays.map(l => `<div class="item" style="grid-template-columns:1fr auto auto"><div class="t"><b>${+l["月"].slice(5)}月に支払い</b><span>${l["月"].slice(0, 4)}年</span></div><div class="v exp">${yen(-int(l["金額"]), true)}</div>
+  <div class="sec">目安の出し方</div>
+  <div class="seg" style="margin-bottom:4px"><button class="${t["目安"] !== "逆算" ? "on" : ""}" data-a="tmode" data-v="固定">固定（月々の金額）</button><button class="${t["目安"] === "逆算" ? "on" : ""}" data-a="tmode" data-v="逆算">逆算（合計額から）</button></div>
+  <div class="small muted" style="margin:0 4px 6px">${t["目安"] === "逆算" ? (int(t["合計額"]) > 0 ? "（合計額 − 今の計）÷ 次の支払までの残りの月数" : "逆算には合計額を入れてください（入れないときは月々の金額）") : "月々の金額をそのまま目安にします"}</div>
+  ${t.isNew ? "" : `<div class="sec" style="align-items:center">積立から出す（計から引きます）<button class="pkind ${t.pkind === "補填" ? "fill" : ""}" data-a="tkind">${t.pkind || "支払い"}</button></div>
+  <div class="card newrow"><input data-t="payAmt" inputmode="numeric" pattern="[0-9]*" value="${esc(t.payAmt)}" placeholder="${S.month.replace("-", "年")}月に${t.pkind === "補填" ? "補填した" : "払った"}金額"><button class="btn pri pink" data-a="tpaid">記録</button></div>
+  ${t.pkind === "補填" ? `<div class="small muted" style="margin:-4px 4px 8px">補填は計から引いて、「${esc(t["名前"])}から補填」として収入にも入ります</div>` : ""}
+  ${pays.length ? `<div class="list">${pays.map(l => `<div class="item" style="grid-template-columns:1fr auto auto"><div class="t"><b>${+l["月"].slice(5)}月に${l["種類"] === "補填" ? "補填" : "支払い"}</b><span>${l["月"].slice(0, 4)}年${l["種類"] === "補填" ? "・収入に入れました" : ""}</span></div><div class="v exp">${yen(-int(l["金額"]), true)}</div>
     <button class="del" data-a="tpdel" data-id="${esc(l.ID)}">✕</button></div>`).join("")}</div>` : ""}
   <div class="small muted" style="margin:8px 4px 0">${S.month.replace("-", "年")}月の計：${yen(tBal(it, S.month))}</div>`}
   <button class="big pink" data-a="tsave">${t.isNew ? "追加する" : "保存する"}</button>
   ${t.isNew ? "" : `<button class="btn danger" style="margin-top:10px" data-a="tdel">この項目を消す</button>`}
   <button class="btn" style="margin-top:10px" data-a="mclose">閉じる</button>`);
+}
+// 合計額 ÷ 支払の間かく ＝ 月々の平均
+function avgNote(t) {
+  const tot = int(t["合計額"]), N = cycleOf(t);
+  return tot > 0 ? `合計額 ${yen(tot)} ÷ ${N}か月 ＝ 月々の平均 ${yen(Math.ceil(tot / N))}（月々の金額は変えられます）` : "合計額を入れると、支払の間かくから月々の平均を出します";
+}
+function fillAvg() {          // 合計額か支払を変えたら、月々の金額に平均を入れる（そのあと自由に変えられる）
+  const tot = int(tDraft["合計額"]); if (tot <= 0) return;
+  tDraft["月額"] = String(Math.ceil(tot / cycleOf(tDraft)));
+  const el = document.querySelector('#sheet [data-t="月額"]'); if (el) el.value = tDraft["月額"];
+  const n = document.getElementById("avgNote"); if (n) n.textContent = avgNote(tDraft);
 }
 // この月の積立額を入れる（その月から先に続く）
 function setTsumi(id, m, amt) {
@@ -743,7 +804,7 @@ document.addEventListener("click", e => {
         act({ type: "save_cats", rows });
       }
       const names = [...cats(EXP).map(c => c["名前"])];
-      const rows = names.map(n => ({ カテゴリ: n, 予算: int(dr.amt[n]), 表示: hid.has(n) ? "0" : "" })).filter(r => r["予算"] > 0 || r["表示"] === "0");
+      const rows = names.map(n => ({ カテゴリ: n, 予算: int(dr.amt[n]), 表示: hid.has(n) ? "0" : "" })).filter(r => r["予算"] > 0 || r["表示"] === "0" || String(dr.amt[r["カテゴリ"]]) !== "");
       act({ type: "save_budgets", rows }); S.budEdit = false; S.budDraft = null; toast("予算を保存しました"); render(); break;
     }
     case "paym": S.pay = S.pay === CASH ? CARD : CASH; render(true); break;
@@ -763,21 +824,36 @@ document.addEventListener("click", e => {
     }
     case "tnew": tSheet(""); break;
     case "tedit": tSheet(b.dataset.id); break;
-    case "tpay": tDraft["支払"] = v === "毎月" ? v : v + ((String(tDraft["支払"]).match(/（\d+月）/) || [""])[0]); drawT(); break;
+    case "tpay": tDraft["支払"] = v === "毎月" ? v : v + ((String(tDraft["支払"]).match(/（\d+月）/) || [""])[0]); fillAvg(); drawT(); break;
+    case "tmode": tDraft["目安"] = v; drawT(); break;
+    case "tlastclr": tDraft["前回支払日"] = ""; drawT(); break;
     case "tmon": tDraft["支払"] = String(tDraft["支払"]).replace(/（.*）/, "") + (v ? `（${v}月）` : ""); drawT(); break;
+    case "tkind": tDraft.pkind = tDraft.pkind === "補填" ? "支払い" : "補填"; drawT(); break;
     case "tpaid": {
-      const amt = int(tDraft.payAmt); if (amt <= 0) { toast("払った金額を入れてください"); return; }
-      act({ type: "save_table", table: "積立記録", rows: [...D.tlog, { ID: uid(), 項目ID: tDraft.ID, 月: S.month, 種類: "支払", 金額: amt }] });
-      tDraft.payAmt = ""; toast("支払いを記録しました"); drawT(); break;
+      const amt = int(tDraft.payAmt), fill = tDraft.pkind === "補填";
+      if (amt <= 0) { toast(fill ? "補填した金額を入れてください" : "払った金額を入れてください"); return; }
+      const lid = uid();
+      act({ type: "save_table", table: "積立記録", rows: [...D.tlog, { ID: lid, 項目ID: tDraft.ID, 月: S.month, 種類: fill ? "補填" : "支払", 金額: amt }] });
+      if (fill) {       // 補填：どの項目からいくらを、収入に入れる（日付はその月の今日。ほかの月なら1日）
+        const day = ymOf(today()) === S.month ? today() : S.month + "-01";
+        act({ type: "add_record", rec: { ID: "fill-" + lid, 日付: day, 種類: INC, 金額: amt, カテゴリ: "積立から", メモ: `${tDraft["名前"]}から補填`, 支払方法: "", 登録日時: new Date().toISOString().slice(0, 16).replace("T", " ") } });
+      }
+      tDraft.payAmt = ""; toast(fill ? `${tDraft["名前"]}から ${yen(amt)} を補填（収入に入れました）` : "支払いを記録しました"); drawT(); break;
     }
-    case "tpdel": act({ type: "save_table", table: "積立記録", rows: D.tlog.filter(l => l.ID !== b.dataset.id) }); drawT(); break;
+    case "tpdel": {
+      const l = D.tlog.find(x => x.ID === b.dataset.id);
+      act({ type: "save_table", table: "積立記録", rows: D.tlog.filter(x => x.ID !== b.dataset.id) });
+      if (l && l["種類"] === "補填" && D.records.some(r => r.ID === "fill-" + l.ID)) act({ type: "delete_record", rid: "fill-" + l.ID });   // 収入に入れた分も消す
+      drawT(); break;
+    }
     case "tsave": {
       const t = tDraft, name = String(t["名前"] || "").trim();
       if (!name) { toast("項目の名前を入れてください"); return; }
-      const row = { ID: t.ID || uid(), 名前: name, 支払: t["支払"] || "", 開始月: t["開始月"], 並び: t["並び"], メモ: t["メモ"] || "" };
+      const row = { ID: t.ID || uid(), 名前: name, 支払: t["支払"] || "", 開始月: t["開始月"], 並び: t["並び"], メモ: t["メモ"] || "",
+        合計額: int(t["合計額"]) || "", 月額: int(t["月額"]) || "", 前回支払日: t["前回支払日"] || "", 目安: t["目安"] === "逆算" ? "逆算" : "固定" };
       if (t.isNew) {
         act({ type: "save_table", table: "積立", rows: [...D.tsumi, row] });
-        if (int(t.amt) > 0) setTsumi(row.ID, row["開始月"], int(t.amt));
+        if (int(t["月額"]) > 0) setTsumi(row.ID, row["開始月"], int(t["月額"]));
       } else act({ type: "save_table", table: "積立", rows: D.tsumi.map(x => x.ID === row.ID ? row : x) });
       closeModal(); toast(t.isNew ? "追加しました" : "保存しました"); break;
     }
@@ -824,7 +900,11 @@ document.addEventListener("input", e => {
     S[t.dataset.b] = t.value;
     if (t.dataset.b === "date" && t.value) render(true);
   }
-  if (t.dataset.t && tDraft) { if (t.dataset.t !== "名前") t.value = t.value.replace(/[^0-9]/g, ""); tDraft[t.dataset.t] = t.value; }
+  if (t.dataset.t && tDraft) {
+    if (["合計額", "月額", "payAmt"].includes(t.dataset.t)) t.value = t.value.replace(/[^0-9]/g, "");
+    tDraft[t.dataset.t] = t.value;
+    if (t.dataset.t === "合計額") fillAvg();
+  }
   if (t.dataset.tsumi !== undefined) t.value = t.value.replace(/[^0-9]/g, "");
   if (t.dataset.c !== undefined && S.catDraft) S.catDraft[S.ck][+t.dataset.c][t.dataset.f] = t.value;
   if (t.dataset.bud !== undefined) t.value = t.value.replace(/[^0-9]/g, "");

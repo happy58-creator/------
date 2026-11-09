@@ -16,7 +16,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))      # このフォルダの kb_calc・kb_store を読む
 import kb_calc as calc  # noqa: E402
 import kb_store as store  # noqa: E402
-if "積立" not in getattr(store, "TABLES", {}):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
+if "目安" not in getattr(store, "TABLES", {}).get("積立", []):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
     import importlib
     store = importlib.reload(store)
 from kb_ui import ui  # noqa: E402
