@@ -10,11 +10,14 @@ from pathlib import Path
 import streamlit as st
 
 TABLES = {
-    "記録": ["ID", "日付", "種類", "金額", "カテゴリ", "メモ", "登録日時"],
-    "予算": ["カテゴリ", "予算"],
+    "記録": ["ID", "日付", "種類", "金額", "カテゴリ", "メモ", "登録日時", "支払方法"],     # 支払方法：現金・クレカ（支出だけ）
+    "予算": ["カテゴリ", "予算", "表示"],                                                  # 表示が "0" の項目は予算の画面に出さない
     "サブスク": ["ID", "名前", "金額", "周期", "次の支払日", "支払日の日", "カテゴリ", "メモ"],
     "カテゴリ": ["種類", "名前", "アイコン"],
+    "積立": ["ID", "名前", "支払", "開始月", "並び", "メモ"],
+    "積立記録": ["ID", "項目ID", "月", "種類", "金額"],        # 種類：積立（その月から先の毎月の額）・支払（払った額）
 }
+_CHECKED = set()      # 列見出しを確かめたシート
 LOCAL_DIR = Path(__file__).parent / "data"
 
 
@@ -35,11 +38,23 @@ def _sheet(name):
     import gspread
     book = _book()
     try:
-        return book.worksheet(name)
+        ws = book.worksheet(name)
     except gspread.WorksheetNotFound:
         ws = book.add_worksheet(title=name, rows=100, cols=len(TABLES[name]))
         ws.update([TABLES[name]], "A1")
+        _CHECKED.add(name)
         return ws
+    if name not in _CHECKED:
+        # 列がふえたとき（例：記録に「支払方法」）は、今のデータを新しい列の順に並べなおす（データは消えない）
+        values = ws.get_all_values()
+        cols = TABLES[name]
+        if values and values[0] != cols:
+            head = values[0]
+            rows = [[(r[head.index(c)] if c in head and head.index(c) < len(r) else "") for c in cols] for r in values[1:] if any(r)]
+            ws.clear()
+            ws.update([cols] + rows, "A1")
+        _CHECKED.add(name)
+    return ws
 
 
 @st.cache_data(ttl=300, show_spinner=False)

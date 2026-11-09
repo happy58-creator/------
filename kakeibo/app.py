@@ -1,7 +1,7 @@
 """かけいぼ（家計簿）
 教材アプリの中の、メニューに出ないページ（URL の最後が /kakeibo）。パスワードは secrets の KAKEIBO_PASSWORD。
 画面はぜんぶ JavaScript（ui/index.html）。Python は「データを渡す」「操作を受けとって保存する」だけ。
-  ・Python → 画面：記録・予算・サブスク・カテゴリ（args の data）と、保存が終わった操作の ID（done）
+  ・Python → 画面：記録・予算・カテゴリ・積立（args の data）と、保存が終わった操作の ID（done）
   ・画面 → Python：まだ保存されていない操作の列（queue）。同じ操作を2回保存しないよう ID で見分ける
 保存は kb_store.py（Google スプレッドシート）、計算は kb_calc.py。"""
 import hashlib
@@ -134,7 +134,10 @@ def apply(a):
     elif t == "delete_record":
         store.save("記録", [r for r in store.load("記録") if r["ID"] != a["rid"]])
     elif t == "save_budgets":
-        store.save("予算", [{"カテゴリ": r["カテゴリ"], "予算": calc.to_int(r["予算"])} for r in a["rows"] if calc.to_int(r["予算"]) > 0])
+        store.save("予算", [{"カテゴリ": r["カテゴリ"], "予算": calc.to_int(r.get("予算")), "表示": "0" if str(r.get("表示")) == "0" else ""}
+                            for r in a["rows"] if calc.to_int(r.get("予算")) > 0 or str(r.get("表示")) == "0"])
+    elif t == "save_table" and a.get("table") in ("積立", "積立記録"):        # 積立は表ごと書きかえる
+        store.save(a["table"], [pick(a["table"], r) for r in a.get("rows") or []])
     elif t == "add_sub":
         store.append("サブスク", pick("サブスク", a["row"]))
     elif t == "update_sub":
@@ -160,7 +163,8 @@ hide_badges()
 ss = st.session_state
 done = ss.setdefault("kb_done", [])
 data = {
-    "records": store.load("記録"), "budgets": store.load("予算"), "subs": store.load("サブスク"), "cats": categories(),
+    "records": store.load("記録"), "budgets": store.load("予算"), "cats": categories(),
+    "tsumi": store.load("積立"), "tlog": store.load("積立記録"),
     "sheets": store.using_sheets(), "password": bool(secret("KAKEIBO_PASSWORD")),
 }
 val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", key="kb_ui", default=None)
