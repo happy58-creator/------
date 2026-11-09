@@ -166,8 +166,11 @@ input,select{font:inherit;color:inherit}
 .ipick .li{width:24px;height:24px}
 
 /* 入力：現金・クレカ */
-.paybtn{margin-left:8px;flex:none;height:34px;padding:0 14px;border-radius:999px;font-size:14px;font-weight:800;background:#eef7ee;color:#2a8c4a;border:1.5px solid #bfe3c8}
-.paybtn.card{background:#eef2ff;color:#3a5bd0;border-color:#c5d0fa}
+.paybtn{margin-left:8px;flex:0 0 76px;width:76px;height:34px;padding:0;border-radius:999px;font-size:14px;line-height:1;font-weight:800;
+  display:inline-flex;align-items:center;justify-content:center;align-self:center;box-sizing:border-box;vertical-align:middle;
+  background:#eef7ee;color:#2a8c4a;border:1.5px solid #bfe3c8}
+.amount input{flex:1 1 auto;min-width:0}
+.paybtn.is-card{background:#eef2ff;color:#3a5bd0;border-color:#c5d0fa}
 .ptag{font-style:normal;font-size:10px;font-weight:800;color:#3a5bd0;background:#eef2ff;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:1px}
 /* レポート：支出・収入・収支 */
 .rsum{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
@@ -453,7 +456,7 @@ V.input = () => {
       <div class="d">${S.date.replaceAll("-", "/")}（${WEEK[parse(S.date).getDay()]}）<input type="date" data-b="date" value="${S.date}"></div>
       <button data-a="dnext">›</button></div></div>
     <div class="field"><label>メモ</label><input data-b="memo" value="${esc(S.memo)}" placeholder="未入力" maxlength="60"></div>
-    <div class="field"><label>${S.kind}</label><div class="amount"><input data-b="amount" inputmode="numeric" pattern="[0-9]*" value="${esc(S.amount)}" placeholder="0">円${isE ? `<button class="paybtn ${S.pay === CARD ? "card" : ""}" data-a="paym">${S.pay}</button>` : ""}</div></div>
+    <div class="field"><label>${S.kind}</label><div class="amount"><input data-b="amount" inputmode="numeric" pattern="[0-9]*" value="${esc(S.amount)}" placeholder="0">円${isE ? `<button class="paybtn ${S.pay === CARD ? "is-card" : ""}" data-a="paym">${S.pay}</button>` : ""}</div></div>
   </div>
   <div class="sec">カテゴリー<button class="link" data-go="cats">編集・追加 ›</button></div>
   <div class="cats">${list.map(c => `<button class="cat ${c["名前"] === S.cat[S.kind] ? "on" : ""}" data-a="cat" data-v="${esc(c["名前"])}">${svgIcon(iconKey(c), "ic")}<span>${esc(c["名前"])}</span></button>`).join("")}
