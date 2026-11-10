@@ -27,14 +27,19 @@ const MAYBE = 3000;     // 1km〜3km のお店は「もしかして？」に出�
 //   ・住所：国土地理院の住所検索（日本の住所に強い。店名を入れると、名前の一部が合う町の名前を出してしまうので、住所らしいときだけ先に出す）
 const ADDR_LIKE = /[0-9０-９]|丁目|番地|[都道府県](?!店)|[市区町村郡](?!店)/;
 const KIND_JA = { supermarket: "スーパー", convenience: "コンビニ", mall: "ショッピングモール", department_store: "デパート", chemist: "ドラッグストア", pharmacy: "薬局",
-  hardware: "ホームセンター", doityourself: "ホームセンター", greengrocer: "八百屋", butcher: "肉屋", bakery: "パン屋", alcohol: "酒屋", variety_store: "100円ショップ", general: "お店", wholesale: "業務用" };
+  hardware: "ホームセンター", doityourself: "ホームセンター", greengrocer: "八百屋", butcher: "肉屋", bakery: "パン屋", alcohol: "酒屋", variety_store: "雑貨・100円ショップ", general: "お店", wholesale: "業務用" };
 async function fetchJson(url, ms) {
   const c = new AbortController(), t = setTimeout(() => c.abort(), ms || 8000);
   try { const r = await fetch(url, { signal: c.signal }); return r.ok ? await r.json() : null; } catch (e) { return null; } finally { clearTimeout(t); }
 }
+const RANGE = 30000;        // 店名で探すときは、現在地から 30km 以内のお店だけ
+function rangeBox(near) {   // 現在地のまわり 30km の四角（[西, 南, 東, 北]）
+  const dLat = RANGE / 111000, dLng = RANGE / (111000 * Math.cos(near.lat * Math.PI / 180));
+  return [near.lng - dLng, near.lat - dLat, near.lng + dLng, near.lat + dLat];
+}
 async function searchPhoton(q, near) {
-  const bias = near ? `&lat=${near.lat}&lon=${near.lng}&location_bias_scale=0.3` : "&lat=35.68&lon=139.76&location_bias_scale=0.1";
-  const j = await fetchJson("https://photon.komoot.io/api/?limit=10&q=" + encodeURIComponent(q) + bias);
+  const bias = near ? `&lat=${near.lat}&lon=${near.lng}&location_bias_scale=0.3&bbox=${rangeBox(near).join(",")}` : "&lat=35.68&lon=139.76&location_bias_scale=0.1";
+  const j = await fetchJson("https://photon.komoot.io/api/?limit=30&q=" + encodeURIComponent(q) + bias);
   return ((j && j.features) || []).filter(f => !f.properties.countrycode || f.properties.countrycode === "JP").map(f => {
     const p = f.properties;
     const addr = [p.state, p.county, p.city, p.district, p.locality, p.street, p.housenumber].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(" ");
@@ -42,8 +47,8 @@ async function searchPhoton(q, near) {
   }).filter(r => r.title);
 }
 async function searchNominatim(q, near) {
-  const box = near ? `&viewbox=${near.lng - 0.4},${near.lat + 0.4},${near.lng + 0.4},${near.lat - 0.4}` : "";
-  const j = await fetchJson("https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=10&countrycodes=jp&accept-language=ja&q=" + encodeURIComponent(q) + box);
+  const b = near && rangeBox(near), box = near ? `&viewbox=${b[0]},${b[3]},${b[2]},${b[1]}&bounded=1` : "";
+  const j = await fetchJson("https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=30&countrycodes=jp&accept-language=ja&q=" + encodeURIComponent(q) + box);
   return (j || []).map(f => {
     const a = f.address || {};
     const addr = [a.province || a.state, a.county, a.city || a.town || a.village, a.suburb || a.quarter || a.neighbourhood, a.road].filter(Boolean).join(" ");
@@ -64,7 +69,8 @@ function nameScore(q, title) {
   let hit = 0; for (const ch of new Set(a)) if (b.includes(ch)) hit++;
   return hit / new Set(a).size;
 }
-async function geocode(q, near) {
+// near：現在地（わかれば、そのまわり 30km だけ・近い順）。skip：もう登録してある店舗の位置（一覧に出さない）
+async function geocode(q, near, skip) {
   const addrLike = ADDR_LIKE.test(q);
   const [ph, no, gs] = await Promise.all([searchPhoton(q, near), searchNominatim(q, near), addrLike ? searchGsi(q) : Promise.resolve([])]);
   let names = [...ph, ...no];
@@ -76,14 +82,19 @@ async function geocode(q, near) {
   const uniq = [];
   for (const r of names) if (!uniq.some(u => squash(u.title) === squash(r.title) && meters(u, r) < 150)) uniq.push(r);
   for (const r of uniq) { r.score = nameScore(q, r.title) + (r.shop ? 0.5 : 0); r.m = near ? meters(near, r) : null; }
+  if (near) uniq.splice(0, uniq.length, ...uniq.filter(r => r.m <= RANGE));
+  const registered = r => (skip || []).some(b => meters(b, r) < 150);
+  const hidden = uniq.filter(registered).length;
+  uniq.splice(0, uniq.length, ...uniq.filter(r => !registered(r)));
   // 名前がよく合うものを先に、同じくらいなら近い順。よく合うものがあれば、名前がほとんど合わないもの（近くの学校など）は出さない
   if (uniq.some(r => r.score >= 2)) uniq.splice(0, uniq.length, ...uniq.filter(r => r.score >= 1.5));
   uniq.sort((x, y) => (Math.round(y.score * 2) - Math.round(x.score * 2)) || ((x.m ?? 0) - (y.m ?? 0)));
   let gsi = gs;
   if (!uniq.length && !gsi.length && !addrLike) gsi = await searchGsi(q);        // 何もなければ、住所としても探す
-  const out = addrLike ? [...gsi, ...uniq] : [...uniq, ...gsi];
+  const out = (addrLike ? [...gsi, ...uniq] : [...uniq, ...gsi]).slice(0, 10);    // 住所は 30km をこえても出す（住所で入れたときのため）
   for (const r of out) if (near && r.m == null) r.m = meters(near, r);
-  return out.slice(0, 10);
+  out.hidden = hidden;
+  return out;
 }
 // 現在地をとる（携帯の位置情報）
 function locate(fresh) {
@@ -594,10 +605,13 @@ const App = {
       S.addrBusy = true; S.addrRes = null;
       let near = S.here;
       if (!near) { try { near = S.here = await locate(); } catch (e) { } }     // 現在地の近くを優先して探す（わからなければ全国から）
-      const res = await geocode(q, near);
+      // このお店の、もう登録してある店舗（いま編集している店舗はのぞく）は一覧に出さない
+      const skip = S.storeDraft && S.storeDraft.ID ? branchesOf(S.storeDraft.ID).filter(b => hasPos(b) && (!S.branchDraft || b.ID !== S.branchDraft.ID)).map(b => ({ lat: +b["緯度"], lng: +b["経度"] })) : [];
+      const res = await geocode(q, near, skip);
       S.addrBusy = false; S.addrRes = res;
       if (res.length === 1) pickAddr(res[0]);
-      else if (!res.length) toast("見つかりませんでした。店名を短くするか、住所で探すか、地図を押してください");
+      else if (!res.length && res.hidden) toast("見つかった店舗は、ぜんぶ登録ずみでした");
+      else if (!res.length) toast(near ? "30km 以内に見つかりませんでした。店名を短くするか、住所で探すか、地図を押してください" : "見つかりませんでした。店名を短くするか、住所で探すか、地図を押してください");
     }
     function pickAddr(r) {
       setPin(r.lat, r.lng, true); S.addrRes = null;
@@ -985,7 +999,7 @@ const App = {
       <button v-for="(r, i) in S.addrRes" :key="i" class="item" style="grid-template-columns:30px 1fr auto" @click="pickAddr(r)"><span class="bic" v-html="svg('pin')"></span><div class="t"><b>{{ r.title }}</b><span v-if="r.sub">{{ r.sub }}</span></div><span class="muted small">{{ r.m != null ? distText(r.m) : '›' }}</span></button>
     </div>
     <button class="btn" style="margin-top:8px" @click="useHere"><span style="display:inline-flex;gap:6px;align-items:center" v-html="svg('locate') + '現在地を使う'"></span></button>
-    <div class="small muted" style="margin:8px 4px 0">店名・住所で探す、現在地を使う、下の地図でお店の場所を押す、のどれかで位置を決めます（近い順に出ます）</div>
+    <div class="small muted" style="margin:8px 4px 0">店名・住所で探す、現在地を使う、下の地図でお店の場所を押す、のどれかで位置を決めます（店名は現在地から 30km 以内を近い順に。登録ずみの店舗は出ません）</div>
     <div id="map" class="map"></div>
     <div class="coord"><span v-html="svg('pin')"></span><span class="cv">{{ S.branchDraft['緯度'] !== '' ? S.branchDraft['緯度'] + ', ' + S.branchDraft['経度'] : 'まだ位置がありません' }}</span><button v-if="S.branchDraft['緯度'] !== ''" class="clearpin" @click="clearPin">位置を消す</button></div>
     <button class="big" @click="saveBranch">決定</button>
