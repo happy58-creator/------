@@ -160,9 +160,20 @@ const App = {
       QUEUE = QUEUE.filter(a => a.table !== table);         // 同じ表は、最後のものだけ送る
       QUEUE.push({ id: uid(), type: "save_table", table, rows });
       S[KEY[table]] = rows; S.saving = QUEUE.length;
-      SL.value({ queue: QUEUE });
+      clearTimeout(sendTimer);                                // 続けて押したときは、最後に押してから3秒たってまとめて1回送る
+      sendTimer = setTimeout(flush, SEND_WAIT);
     }
-    function logout() { TOKEN.clear(); SL.value({ queue: QUEUE, logout: uid() }); }
+    const SEND_WAIT = 3000;
+    let sendTimer = null;
+    function flush() {                                        // 待っている保存を、いますぐ送る
+      clearTimeout(sendTimer); sendTimer = null;
+      if (QUEUE.length) SL.value({ queue: QUEUE });
+    }
+    // 画面を閉じる・ほかのアプリに切りかえるときは、待たずに送る
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });
+    window.addEventListener("pagehide", flush);
+    try { parent.addEventListener("pagehide", flush); } catch (e) { }
+    function logout() { TOKEN.clear(); clearTimeout(sendTimer); SL.value({ queue: QUEUE, logout: uid() }); }
     window.addEventListener("message", e => {
       const m = e.data;
       if (!m || m.type !== "streamlit:render") return;
@@ -509,7 +520,7 @@ const App = {
     }
     const footOn = k => S.view === k || (k === "menu" && !FOOT.some(f => f[2] === S.view));
     const footIcon = k => k === "home" ? `<svg class="li" viewBox="0 0 24 24" fill="none">${ICON_FOOT.home}</svg>` : svg(k);
-    function toKakeibo() { SL.value({ queue: QUEUE, go: "kakeibo", gid: uid() }); }     // 家計簿のページへ（ログインはそのまま）
+    function toKakeibo() { clearTimeout(sendTimer); SL.value({ queue: QUEUE, go: "kakeibo", gid: uid() }); }     // 家計簿のページへ（ログインはそのまま）
 
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
