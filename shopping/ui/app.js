@@ -22,22 +22,68 @@ function meters(a, b) {
 const distText = m => m < 1000 ? `${Math.round(m / 10) * 10}m` : `${(m / 1000).toFixed(1)}km`;
 const NEAR = 1000;      // 現在地から 1km 以内のお店
 const MAYBE = 3000;     // 1km〜3km のお店は「もしかして？」に出す
-// 住所から位置をさがす：国土地理院の住所検索（日本の住所に強い）→ 見つからなければ OpenStreetMap（お店の名前でも探せる）
-async function geocode(q) {
-  const out = [];
-  try {
-    const r = await fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(q));
-    const j = await r.json();
-    for (const f of (j || []).slice(0, 6)) out.push({ title: f.properties.title, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] });
-  } catch (e) {}
-  if (!out.length) {
-    try {
-      const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=jp&accept-language=ja&q=" + encodeURIComponent(q));
-      const j = await r.json();
-      for (const f of j || []) out.push({ title: f.display_name, lat: +f.lat, lng: +f.lon });
-    } catch (e) {}
+// 店名・住所から位置をさがす（どれも無料・登録なし）
+//   ・店名：OpenStreetMap の検索 2つ（Photon・Nominatim）。現在地の近くを優先して、近い順に並べる
+//   ・住所：国土地理院の住所検索（日本の住所に強い。店名を入れると、名前の一部が合う町の名前を出してしまうので、住所らしいときだけ先に出す）
+const ADDR_LIKE = /[0-9０-９]|丁目|番地|[都道府県](?!店)|[市区町村郡](?!店)/;
+const KIND_JA = { supermarket: "スーパー", convenience: "コンビニ", mall: "ショッピングモール", department_store: "デパート", chemist: "ドラッグストア", pharmacy: "薬局",
+  hardware: "ホームセンター", doityourself: "ホームセンター", greengrocer: "八百屋", butcher: "肉屋", bakery: "パン屋", alcohol: "酒屋", variety_store: "100円ショップ", general: "お店", wholesale: "業務用" };
+async function fetchJson(url, ms) {
+  const c = new AbortController(), t = setTimeout(() => c.abort(), ms || 8000);
+  try { const r = await fetch(url, { signal: c.signal }); return r.ok ? await r.json() : null; } catch (e) { return null; } finally { clearTimeout(t); }
+}
+async function searchPhoton(q, near) {
+  const bias = near ? `&lat=${near.lat}&lon=${near.lng}&location_bias_scale=0.3` : "&lat=35.68&lon=139.76&location_bias_scale=0.1";
+  const j = await fetchJson("https://photon.komoot.io/api/?limit=10&q=" + encodeURIComponent(q) + bias);
+  return ((j && j.features) || []).filter(f => !f.properties.countrycode || f.properties.countrycode === "JP").map(f => {
+    const p = f.properties;
+    const addr = [p.state, p.county, p.city, p.district, p.locality, p.street, p.housenumber].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(" ");
+    return { title: p.name || addr, sub: [KIND_JA[p.osm_value], addr].filter(Boolean).join("・"), lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], shop: p.osm_key === "shop" || p.osm_key === "amenity" };
+  }).filter(r => r.title);
+}
+async function searchNominatim(q, near) {
+  const box = near ? `&viewbox=${near.lng - 0.4},${near.lat + 0.4},${near.lng + 0.4},${near.lat - 0.4}` : "";
+  const j = await fetchJson("https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=10&countrycodes=jp&accept-language=ja&q=" + encodeURIComponent(q) + box);
+  return (j || []).map(f => {
+    const a = f.address || {};
+    const addr = [a.province || a.state, a.county, a.city || a.town || a.village, a.suburb || a.quarter || a.neighbourhood, a.road].filter(Boolean).join(" ");
+    return { title: f.name || String(f.display_name).split(",")[0], sub: [KIND_JA[f.type], addr].filter(Boolean).join("・"), lat: +f.lat, lng: +f.lon, shop: f.category === "shop" || f.category === "amenity" };
+  }).filter(r => r.title);
+}
+async function searchGsi(q) {
+  const j = await fetchJson("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(q));
+  return (j || []).slice(0, 6).map(f => ({ title: f.properties.title, sub: "住所", lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], addr: true }));
+}
+const squash = t => String(t || "").normalize("NFKC").replace(/[\s・　]/g, "").toLowerCase();
+// 名前がどれだけ合っているか（入れた文字がぜんぶ名前に入っている＞一部だけ）
+function nameScore(q, title) {
+  const a = squash(q), b = squash(title);
+  if (!a || !b) return 0;
+  if (b === a) return 3;
+  if (b.includes(a) || a.includes(b)) return 2;
+  let hit = 0; for (const ch of new Set(a)) if (b.includes(ch)) hit++;
+  return hit / new Set(a).size;
+}
+async function geocode(q, near) {
+  const addrLike = ADDR_LIKE.test(q);
+  const [ph, no, gs] = await Promise.all([searchPhoton(q, near), searchNominatim(q, near), addrLike ? searchGsi(q) : Promise.resolve([])]);
+  let names = [...ph, ...no];
+  if (!names.length && !addrLike) {          // 「〇〇 須恵店」のように細かく入れて見つからないときは、最初のことば（お店の名前）で近くを探す
+    const head = q.split(/[\s　]+/)[0].replace(/(本店|支店|[^\s]{1,8}店)$/, "");
+    if (head && head !== q) names = [...await searchPhoton(head, near), ...await searchNominatim(head, near)];
   }
-  return out;
+  // 同じ場所（100m 以内・同じ名前）は1つにまとめる
+  const uniq = [];
+  for (const r of names) if (!uniq.some(u => squash(u.title) === squash(r.title) && meters(u, r) < 150)) uniq.push(r);
+  for (const r of uniq) { r.score = nameScore(q, r.title) + (r.shop ? 0.5 : 0); r.m = near ? meters(near, r) : null; }
+  // 名前がよく合うものを先に、同じくらいなら近い順。よく合うものがあれば、名前がほとんど合わないもの（近くの学校など）は出さない
+  if (uniq.some(r => r.score >= 2)) uniq.splice(0, uniq.length, ...uniq.filter(r => r.score >= 1.5));
+  uniq.sort((x, y) => (Math.round(y.score * 2) - Math.round(x.score * 2)) || ((x.m ?? 0) - (y.m ?? 0)));
+  let gsi = gs;
+  if (!uniq.length && !gsi.length && !addrLike) gsi = await searchGsi(q);        // 何もなければ、住所としても探す
+  const out = addrLike ? [...gsi, ...uniq] : [...uniq, ...gsi];
+  for (const r of out) if (near && r.m == null) r.m = meters(near, r);
+  return out.slice(0, 10);
 }
 // 現在地をとる（携帯の位置情報）
 function locate(fresh) {
@@ -464,14 +510,21 @@ const App = {
       S.storeDraft["緯度"] = lat.toFixed(6); S.storeDraft["経度"] = lng.toFixed(6);
       if (map && window.L) { if (marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng], { icon: pinIcon() }).addTo(map); if (move) map.setView([lat, lng], 17); }
     }
+    function clearPin() {                       // 登録した位置を消す（お店は「位置なし」になり、現在地の表示に出なくなる）
+      S.storeDraft["緯度"] = ""; S.storeDraft["経度"] = "";
+      if (marker) { marker.remove(); marker = null; }
+      toast("位置を消しました（「保存する」で確定）");
+    }
     async function searchAddr() {
       const q = S.addrQ.trim();
       if (!q) { toast("住所を入れてください"); return; }
       S.addrBusy = true; S.addrRes = null;
-      const res = await geocode(q);
+      let near = S.here;
+      if (!near) { try { near = S.here = await locate(); } catch (e) { } }     // 現在地の近くを優先して探す（わからなければ全国から）
+      const res = await geocode(q, near);
       S.addrBusy = false; S.addrRes = res;
       if (res.length === 1) pickAddr(res[0]);
-      else if (!res.length) toast("見つかりませんでした。住所を短くするか、地図を押してください");
+      else if (!res.length) toast("見つかりませんでした。店名を短くするか、住所で探すか、地図を押してください");
     }
     function pickAddr(r) {
       setPin(r.lat, r.lng, true); S.addrRes = null;
@@ -527,7 +580,7 @@ const App = {
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
       taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
-      editStore, useHere, saveStore, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
+      editStore, useHere, clearPin, distText, saveStore, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
   template: `
 <div v-if="S.phase === 'loading'" class="loading">読み込み中…</div>
@@ -789,14 +842,14 @@ const App = {
       <div class="field"><label>店名</label><input v-model="S.storeDraft['店名']" placeholder="例：〇〇スーパー 駅前店" maxlength="30"></div>
     </div>
     <div class="sec" style="margin-top:4px">店舗の位置</div>
-    <div class="addr"><input v-model="S.addrQ" placeholder="住所（例：東京都千代田区丸の内1-9-1）" @keydown.enter.prevent="searchAddr"><button class="btn pri" @click="searchAddr" :disabled="S.addrBusy">{{ S.addrBusy ? '…' : '探す' }}</button></div>
+    <div class="addr"><input v-model="S.addrQ" placeholder="店名か住所（例：イオンモール福岡）" @keydown.enter.prevent="searchAddr"><button class="btn pri" @click="searchAddr" :disabled="S.addrBusy">{{ S.addrBusy ? '…' : '探す' }}</button></div>
     <div class="list addrres" v-if="S.addrRes && S.addrRes.length > 1">
-      <button v-for="(r, i) in S.addrRes" :key="i" class="item" style="grid-template-columns:30px 1fr auto" @click="pickAddr(r)"><span class="bic" v-html="svg('pin')"></span><div class="t"><b>{{ r.title }}</b></div><span class="muted">›</span></button>
+      <button v-for="(r, i) in S.addrRes" :key="i" class="item" style="grid-template-columns:30px 1fr auto" @click="pickAddr(r)"><span class="bic" v-html="svg('pin')"></span><div class="t"><b>{{ r.title }}</b><span v-if="r.sub">{{ r.sub }}</span></div><span class="muted small">{{ r.m != null ? distText(r.m) : '›' }}</span></button>
     </div>
     <button class="btn" style="margin-top:8px" @click="useHere"><span style="display:inline-flex;gap:6px;align-items:center" v-html="svg('locate') + '現在地を使う'"></span></button>
-    <div class="small muted" style="margin:8px 4px 0">住所で探す・現在地を使う・下の地図でお店の場所を押す、のどれかで位置を決めます</div>
+    <div class="small muted" style="margin:8px 4px 0">店名・住所で探す、現在地を使う、下の地図でお店の場所を押す、のどれかで位置を決めます（近い順に出ます）</div>
     <div id="map" class="map"></div>
-    <div class="coord"><span v-html="svg('pin')"></span>{{ S.storeDraft['緯度'] !== '' ? S.storeDraft['緯度'] + ', ' + S.storeDraft['経度'] : 'まだ位置がありません（任意）' }}</div>
+    <div class="coord"><span v-html="svg('pin')"></span><span class="cv">{{ S.storeDraft['緯度'] !== '' ? S.storeDraft['緯度'] + ', ' + S.storeDraft['経度'] : 'まだ位置がありません（任意）' }}</span><button v-if="S.storeDraft['緯度'] !== ''" class="clearpin" @click="clearPin">位置を消す</button></div>
     <button class="big" @click="saveStore">{{ S.storeDraft.ID ? '保存する' : '登録する' }}</button>
     <div class="row2" style="margin-top:10px"><button class="btn" @click="go('storeList')">もどる</button><button v-if="S.storeDraft.ID" class="btn danger" @click="deleteStore">このお店を消す</button></div>
   </template>
