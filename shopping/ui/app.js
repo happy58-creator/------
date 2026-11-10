@@ -2,7 +2,7 @@
 // 買い物リストの画面（Vue 3）。画面は 入力・一覧・店舗別・計算・メニュー。
 // 教材アプリ（Streamlit）の部品として動く。データは Python から受けとり、保存の操作を Python に送る（家計簿と同じしくみ）。
 // 押したらすぐ画面を変えて、保存は後ろで行う。
-const { createApp, reactive, computed, nextTick } = Vue;
+const { createApp, reactive, computed, nextTick, watch } = Vue;
 
 // ---------- 小さな道具 ----------
 const uid = () => Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 6);
@@ -10,6 +10,8 @@ const svg = (k, cls) => `<svg class="${cls || "li"}" viewBox="0 0 24 24" fill="n
 const iconKey = g => { const v = String((g && g["アイコン"]) || ""); return v.startsWith("i:") && CAT_ICON[v.slice(2)] ? v.slice(2) : "box"; };
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
+// 品名をそろえる（全角・半角、カタカナ・ひらがな、空白のちがいを無視）。「玉ねぎ」と「玉ネギ」は同じ
+const normName = s => String(s || "").normalize("NFKC").toLowerCase().replace(/\s+/g, "").replace(/[\u30a1-\u30f6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
 // 2点の距離（m）
 function meters(a, b) {
   const R = 6371000, r = x => x * Math.PI / 180;
@@ -91,10 +93,16 @@ const TOKEN = {
 function keyboardHelper(getScroller) {
   const vv = () => { try { return window.parent.visualViewport || window.visualViewport; } catch (e) { return window.visualViewport; } };
   const typing = el => el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["date", "checkbox", "radio", "button", "submit"].includes(el.type)));
+  function kbHeight() {          // 画面の下からキーボードの上までの高さ（キーボードが出ていなければ 0）
+    const v = vv(); if (!v) return 0;
+    return Math.max(0, Math.round(window.innerHeight - (v.offsetTop + v.height)));
+  }
   function fit() {
+    document.documentElement.style.setProperty("--kb", kbHeight() + "px");
     const el = document.activeElement, sc = getScroller();
     if (!typing(el) || !sc) return;
-    const v = vv(), top = (v ? v.offsetTop : 0) + 12, bottom = (v ? v.offsetTop + v.height : window.innerHeight) - 16;
+    const strip = document.querySelector(".gstrip"), stripH = strip ? strip.offsetHeight : 0;
+    const v = vv(), top = (v ? v.offsetTop : 0) + 12, bottom = (v ? v.offsetTop + v.height : window.innerHeight) - 16 - stripH;
     const r = el.getBoundingClientRect();
     if (r.bottom > bottom) sc.scrollTop += r.bottom - bottom;
     else if (r.top < top) sc.scrollTop -= top - r.top;
@@ -106,7 +114,7 @@ function keyboardHelper(getScroller) {
     clearTimeout(t1); clearTimeout(t2);
     t1 = setTimeout(fit, 320); t2 = setTimeout(fit, 650);        // キーボードが出おわるのを待つ
   });
-  document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) document.body.classList.remove("kbd"); }, 120));
+  document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) { document.body.classList.remove("kbd"); document.documentElement.style.setProperty("--kb", kbHeight() + "px"); } }, 120));
   const v = vv();
   if (v) { v.addEventListener("resize", fit); v.addEventListener("scroll", fit); }
 }
@@ -118,7 +126,7 @@ const App = {
   setup() {
     const S = reactive({
       phase: "loading", password: false,
-      view: "input", items: [], stores: [], genres: [], sheets: false,
+      view: "input", items: [], stores: [], genres: [], memory: [], sheets: false, autoGenre: false,
       // 入力
       genre: "", name: "", memo: "", storeId: "", prio: "0",
       // 一覧・店舗別
@@ -137,12 +145,12 @@ const App = {
     const toast = m => { S.toast = m; S.toastOn = true; clearTimeout(tt); tt = setTimeout(() => S.toastOn = false, 2200); };
 
     // ---- 読み込み・保存（保存は Python に送る。届くまでは画面の中で先に変えておく） ----
-    const KEY = { 買い物: "items", 店舗: "stores", 買い物ジャンル: "genres" };
+    const KEY = { 買い物: "items", 店舗: "stores", 買い物ジャンル: "genres", 買い物の記憶: "memory" };
     let QUEUE = [];           // Python にまだ届いていない保存
     let SERVER = null;
     function apply() {        // サーバーのデータ ＋ まだ届いていない保存
       if (!SERVER) return;
-      const d = { items: SERVER.items, stores: SERVER.stores, genres: SERVER.genres };
+      const d = { items: SERVER.items, stores: SERVER.stores, genres: SERVER.genres, memory: SERVER.memory || [] };
       for (const a of QUEUE) d[KEY[a.table]] = a.rows;
       Object.assign(S, d, { sheets: SERVER.sheets, password: SERVER.password });
       if (!S.genre && S.genres[0]) S.genre = S.genres[0]["名前"];
@@ -183,13 +191,70 @@ const App = {
     const todo = computed(() => S.items.filter(i => !i["済"]));
 
     // ---- 入力 ----
+    // ---- 品名とジャンルの組み合わせを覚える（同じ品名を入れたら、前のジャンルを選ぶ。ちがうジャンルで入れたら上書き） ----
+    const memOf = name => { const k = normName(name); return k ? S.memory.find(m => m["キー"] === k) : null; };
+    function remember(name, genre) {
+      const k = normName(name); if (!k) return;
+      const old = S.memory.find(m => m["キー"] === k);
+      if (old && old["ジャンル"] === genre) return;
+      const rows = S.memory.filter(m => m["キー"] !== k);
+      rows.push({ キー: k, 品名: name, ジャンル: genre, 更新: new Date().toISOString().slice(0, 10) });
+      save("買い物の記憶", rows.slice(-800));
+    }
+    // ジャンルの帯で、選んだジャンルを真ん中に
+    // ---- ダイヤル：真ん中の枠に来たジャンルが選ばれる。真ん中から離れるほど小さく・薄く ----
+    let dialLock = 0;        // こちらで動かしている間は、途中のジャンルを選ばない
+    function centerGenre(smooth = true) {
+      nextTick(() => {
+        const strip = document.querySelector(".gstrip .gscroll"), el = strip && strip.querySelector(".gbtn.on");
+        if (!strip || !el) return;
+        dialLock = Date.now() + (smooth ? 600 : 50);
+        strip.scrollTo({ left: el.offsetLeft - (strip.clientWidth - el.offsetWidth) / 2, behavior: smooth ? "smooth" : "auto" });
+        requestAnimationFrame(dialLook);
+      });
+    }
+    function dialLook() {            // 見た目（大きさ・うすさ）を、真ん中からの距離で決める
+      const strip = document.querySelector(".gstrip .gscroll"); if (!strip) return null;
+      const r = strip.getBoundingClientRect(), mid = r.left + r.width / 2;
+      let best = null, bd = 1e9;
+      for (const el of strip.querySelectorAll(".gbtn")) {
+        const e = el.getBoundingClientRect(), d = Math.abs(e.left + e.width / 2 - mid), k = Math.min(1, d / 160);
+        el.style.transform = `scale(${(1.28 - k * 0.5).toFixed(3)})`;
+        el.style.opacity = (1 - Math.min(1, d / 230) * 0.6).toFixed(3);
+        if (d < bd) { bd = d; best = el; }
+      }
+      return best;
+    }
+    let dialT = 0;
+    function onDial() {              // 回しているあいだ：見た目を更新。止まったら、真ん中のジャンルを選ぶ
+      requestAnimationFrame(() => {
+        const best = dialLook();
+        clearTimeout(dialT);
+        dialT = setTimeout(() => {
+          if (Date.now() < dialLock) return;
+          const b = dialLook(), name = b && b.dataset.g;
+          if (name && name !== S.genre) { S.genre = name; S.autoGenre = false; keep(); }
+          if (b) centerGenre(true);       // ぴったり真ん中にそろえる
+        }, 140);
+        return best;
+      });
+    }
+    function pickGenre(name) { S.genre = name; S.autoGenre = false; keep(); centerGenre(); }
+    watch(() => S.name, name => {
+      const m = memOf(name);
+      if (m && S.genres.some(g => g["名前"] === m["ジャンル"])) { if (S.genre !== m["ジャンル"] || !S.autoGenre) { S.genre = m["ジャンル"]; S.autoGenre = true; centerGenre(); } }
+      else if (S.autoGenre) S.autoGenre = false;
+    });
+    watch(() => S.view, v => { if (v === "input") centerGenre(false); });
+    watch(() => S.phase, v => { if (v === "app" && S.view === "input") centerGenre(false); });
     function addItem() {
       const name = S.name.trim();
       if (!name) { toast("品名を入れてください"); return; }
+      remember(name, S.genre || "その他");
       const row = { ID: uid(), 品名: name, ジャンル: S.genre || "その他", メモ: S.memo.trim(), 店舗ID: S.storeId, 済: "", 優先: S.prio === "0" ? "" : S.prio, 登録日時: new Date().toISOString().slice(0, 16).replace("T", " ") };
       save("買い物", [...S.items, row]);
       toast(`追加しました：${name}${S.storeId ? "（" + storeName(S.storeId) + "）" : ""}`);
-      S.name = ""; S.memo = ""; S.prio = "0";
+      S.name = ""; S.memo = ""; S.prio = "0"; S.autoGenre = false;
       nextTick(() => { const el = document.getElementById("nameIn"); if (el) el.focus(); });
     }
     const recent = computed(() => [...S.items].filter(i => !i["済"]).sort((a, b) => String(b["登録日時"]).localeCompare(a["登録日時"])).slice(0, 5));
@@ -389,7 +454,7 @@ const App = {
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
-      taxRate, calcTotal, storeName, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
+      taxRate, calcTotal, storeName, pickGenre, memOf, onDial, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, saveStore, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
@@ -407,7 +472,8 @@ const App = {
   <template v-if="S.view === 'input'">
     <div class="title">買い物リスト</div>
     <div class="card" style="padding:4px 16px">
-      <div class="field"><label>品名</label><input id="nameIn" v-model="S.name" placeholder="例：たまねぎ" maxlength="40" @keydown.enter.prevent="addItem"></div>
+      <div class="field"><label>品名</label><div class="namebox"><input id="nameIn" v-model="S.name" placeholder="例：たまねぎ" maxlength="40" @keydown.enter.prevent="addItem" autocomplete="off">
+        <span v-if="S.autoGenre" class="memtag" v-html="svg(iconKey(sortedGenres.find(g => g['名前'] === S.genre))) + 'いつもの ' + S.genre"></span></div></div>
       <div class="field"><label>メモ</label><input v-model="S.memo" placeholder="任意（例：2個・特売）" maxlength="60"></div>
       <div class="field"><label>優先</label><div class="prios"><button v-for="(l, k) in ['ふつう', '優先', '最優先']" :key="k" class="pchip" :class="['p' + k, { on: S.prio === String(k) }]" @click="S.prio = String(k)">{{ l }}</button></div></div>
     </div>
@@ -417,12 +483,6 @@ const App = {
       <button v-for="s in sortedStores" :key="s.ID" class="chip" :class="{ on: S.storeId === s.ID }" @click="S.storeId = s.ID; keep()">{{ s['店名'] }}</button>
     </div>
     <button class="big" @click="addItem">{{ S.genre || 'その他' }} に追加する</button>
-    <div class="sec">ジャンル<button class="link" @click="editGenres">編集・追加 ›</button></div>
-    <div class="genres">
-      <button v-for="g in sortedGenres" :key="g['名前']" class="genre" :class="{ on: S.genre === g['名前'] }" @click="S.genre = g['名前']; keep()">
-        <span v-html="svg(iconKey(g))" style="padding:0"></span><span>{{ g['名前'] }}</span></button>
-      <button class="genre add" @click="editGenres"><span v-html="svg('box')" style="padding:0"></span><span>追加</span></button>
-    </div>
     <template v-if="recent.length">
       <div class="sec">最近入れたもの</div>
       <div class="list">
@@ -657,6 +717,18 @@ const App = {
 
 </div>
 
+<!-- ジャンルの帯（入力画面だけ。画面の下、キーボードが出ているときはキーボードのすぐ上に固定。横にスクロール） -->
+<div v-if="S.view === 'input'" class="gstrip">
+  <button class="gedit" @mousedown.prevent @click="editGenres" aria-label="ジャンルの編集"><span v-html="svg('pencil')"></span></button>
+  <div class="gdial">
+    <div class="glens"></div>
+    <div class="gscroll" @scroll.passive="onDial">
+      <button v-for="g in sortedGenres" :key="g['名前']" class="gbtn" :data-g="g['名前']" :class="{ on: S.genre === g['名前'], auto: S.autoGenre && S.genre === g['名前'] }" @mousedown.prevent @click="pickGenre(g['名前'])">
+        <span v-html="svg(iconKey(g))"></span><small>{{ g['名前'] }}</small></button>
+    </div>
+  </div>
+  <button class="gadd" @mousedown.prevent @click="addItem"><b>追加</b><small>{{ S.genre }}</small></button>
+</div>
 <!-- フッター（家計簿と同じ形） -->
 <nav class="foot"><button v-for="[l, ic, v] in FOOT" :key="v" :class="{ on: footOn(v) }" @click="go(v)"><span v-html="footIcon(ic === 'home' ? 'home' : ic)"></span>{{ l }}</button></nav>
 

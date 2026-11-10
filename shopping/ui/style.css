@@ -180,3 +180,48 @@ body.kbd #app, body.kbd .wrap { padding-bottom:55vh !important; }
 .addrres .t b{white-space:normal;font-size:13px;line-height:1.35}
 .sec.maybe{margin-top:22px;color:var(--blue);align-items:center;justify-content:flex-start}
 .maybelist{opacity:.92;box-shadow:0 0 0 1.5px #cfe0f6, var(--shadow)}
+/* ジャンルの帯（下に固定・横スクロール）。キーボードが出ているときは、キーボードのすぐ上 */
+:root{--kb:0px}
+.gstrip{position:fixed;left:0;right:0;bottom:calc(86px + env(safe-area-inset-bottom));z-index:9;padding:6px 0 4px;
+  background:linear-gradient(to top, rgba(245,246,248,.98) 70%, rgba(245,246,248,0))}
+body.kbd .gstrip{bottom:var(--kb);background:rgba(245,246,248,.98);box-shadow:0 -2px 10px rgba(20,30,60,.08)}
+.gscroll{display:flex;gap:6px;overflow-x:auto;padding:4px calc(50% - 29px) 6px;scrollbar-width:none;scroll-snap-type:x proximity;max-width:560px;margin:0 auto}
+.gscroll::-webkit-scrollbar{display:none}
+.gbtn{flex:none;width:58px;height:54px;border-radius:12px;background:#fff;border:1.5px solid #f2d3de;color:var(--rose);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;scroll-snap-align:center;transition:transform .15s, background .15s}
+.gbtn .li{width:20px;height:20px}
+.gbtn small{font-size:9.5px;font-weight:700;max-width:54px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gbtn.on{background:linear-gradient(160deg,#e889a9,#d9658e);border-color:#d9658e;color:#fff;transform:scale(1.12);box-shadow:0 4px 12px rgba(217,101,142,.35)}
+.gbtn.on.auto{animation:pop .45s ease-out}
+@keyframes pop{0%{transform:scale(.9)}60%{transform:scale(1.22)}100%{transform:scale(1.12)}}
+.gbtn.edit{color:var(--sub);border-style:dashed;border-color:#d5d8de}
+.wrap{padding-bottom:calc(180px + env(safe-area-inset-bottom))}
+body.kbd .wrap{padding-bottom:calc(55vh + 70px) !important}
+/* 品名の横の「いつもの」 */
+.namebox{display:flex;align-items:center;gap:6px;min-width:0}
+.namebox input{flex:1;min-width:0}
+.memtag{flex:none;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;color:#fff;background:var(--pink);border-radius:999px;padding:3px 8px 3px 6px}
+.memtag .li{width:14px;height:14px}
+/* キーボードが出ているときだけ、帯の右に「追加」（キーボードを閉じずに追加できる） */
+.gstrip{display:flex;align-items:center}
+.gscroll{flex:1;min-width:0}
+.gadd{display:none;flex:none;width:64px;height:54px;margin:0 10px 2px 2px;border-radius:12px;background:linear-gradient(#e889a9,#d9658e);color:#fff;
+  flex-direction:column;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(217,101,142,.35)}
+.gadd b{font-size:14px}
+.gadd small{font-size:9px;max-width:58px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.9}
+body.kbd .gadd{display:flex}
+body.kbd .gscroll{padding-left:calc(50% - 61px);padding-right:calc(50% - 61px)}
+/* ===== ダイヤル式（v147）：真ん中の枠が選択。ボタンの大きさ・うすさは JavaScript で真ん中からの距離に合わせる ===== */
+.gdial{position:relative;flex:1;min-width:0;height:74px;display:flex;align-items:center}
+.gdial .gscroll{flex:1;height:74px;align-items:center;padding:0 calc(50% - 29px);scroll-snap-type:x mandatory;gap:14px;
+  -webkit-mask-image:linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);mask-image:linear-gradient(to right, transparent, #000 18%, #000 82%, transparent)}
+body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
+.gbtn{transition:background .15s, color .15s, border-color .15s;transform-origin:center;will-change:transform}
+.gbtn.on{transform:none;background:linear-gradient(160deg,#e889a9,#d9658e);color:#fff;border-color:#d9658e}
+.gbtn.on.auto{animation:none}
+.glens{position:absolute;left:50%;top:50%;width:80px;height:72px;transform:translate(-50%,-50%);border-radius:18px;border:2.5px solid var(--pink);
+  box-shadow:0 0 0 4px rgba(217,101,142,.15);pointer-events:none;z-index:2}
+.glens::after{content:"";position:absolute;left:50%;top:-8px;transform:translateX(-50%);border:6px solid transparent;border-top-color:var(--pink)}
+.gedit{flex:none;width:36px;height:36px;margin-left:8px;border-radius:10px;background:#fff;border:1.5px dashed #d5d8de;color:var(--sub);display:grid;place-items:center}
+.gedit .li{width:18px;height:18px}
+.gstrip{padding:2px 0 2px}
