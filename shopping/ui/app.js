@@ -302,7 +302,7 @@ const App = {
 
     function go(v) {
       if (map) { map.remove(); map = null; marker = null; }
-      S.view = v; S.storeDraft = null; S.genreDraft = null; keep(); window.scrollTo(0, 0);
+      S.view = v; S.storeDraft = null; S.genreDraft = null; keep(); const sc = document.getElementById("app"); if (sc) sc.scrollTop = 0;
       if (v === "stores" && S.storeMode === "here") findHere();
     }
     const footOn = k => S.view === k || (k === "menu" && !FOOT.some(f => f[2] === S.view));
@@ -324,13 +324,7 @@ const App = {
   <!-- ===== 入力 ===== -->
   <template v-if="S.view === 'input'">
     <div class="title">買い物リスト</div>
-    <div class="sec" style="margin-top:0">ジャンル<button class="link" @click="editGenres">編集・追加 ›</button></div>
-    <div class="genres">
-      <button v-for="g in sortedGenres" :key="g['名前']" class="genre" :class="{ on: S.genre === g['名前'] }" @click="S.genre = g['名前']; keep()">
-        <span v-html="svg(iconKey(g))" style="padding:0"></span><span>{{ g['名前'] }}</span></button>
-      <button class="genre add" @click="editGenres"><span v-html="svg('box')" style="padding:0"></span><span>追加</span></button>
-    </div>
-    <div class="card" style="padding:4px 16px;margin-top:14px">
+    <div class="card" style="padding:4px 16px">
       <div class="field"><label>品名</label><input id="nameIn" v-model="S.name" placeholder="例：たまねぎ" maxlength="40" @keydown.enter.prevent="addItem"></div>
       <div class="field"><label>メモ</label><input v-model="S.memo" placeholder="任意（例：2個・特売）" maxlength="60"></div>
     </div>
@@ -340,6 +334,12 @@ const App = {
       <button v-for="s in sortedStores" :key="s.ID" class="chip" :class="{ on: S.storeId === s.ID }" @click="S.storeId = s.ID; keep()">{{ s['店名'] }}</button>
     </div>
     <button class="big" @click="addItem">{{ S.genre || 'その他' }} に追加する</button>
+    <div class="sec">ジャンル<button class="link" @click="editGenres">編集・追加 ›</button></div>
+    <div class="genres">
+      <button v-for="g in sortedGenres" :key="g['名前']" class="genre" :class="{ on: S.genre === g['名前'] }" @click="S.genre = g['名前']; keep()">
+        <span v-html="svg(iconKey(g))" style="padding:0"></span><span>{{ g['名前'] }}</span></button>
+      <button class="genre add" @click="editGenres"><span v-html="svg('box')" style="padding:0"></span><span>追加</span></button>
+    </div>
     <template v-if="recent.length">
       <div class="sec">最近入れたもの</div>
       <div class="list">

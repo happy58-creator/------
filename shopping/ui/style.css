@@ -144,3 +144,6 @@ input,select,textarea{font:inherit;color:inherit}
 .big-in input{font-size:26px}
 .taxres{text-align:center}
 .taxres b{display:block;font-size:34px;color:var(--pink);margin:2px 0}
+/* iPhone でも画面の中をスクロールできるように（家計簿と同じ：画面いっぱいの箱の中だけがスクロールする） */
+html,body{height:100%;overflow:hidden}
+#app{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
