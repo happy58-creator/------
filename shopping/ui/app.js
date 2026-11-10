@@ -219,8 +219,14 @@ const App = {
       let best = null, bd = 1e9;
       for (const el of strip.querySelectorAll(".gbtn")) {
         const e = el.getBoundingClientRect(), d = Math.abs(e.left + e.width / 2 - mid), k = Math.min(1, d / 160);
-        el.style.transform = `scale(${(1.28 - k * 0.5).toFixed(3)})`;
+        // 真ん中のピンクの枠に重なっている割合（0〜1）。重なるほど、白い文字・透明な背景になって、枠のピンクが見える
+        const t = Math.max(0, Math.min(1, 1 - d / 64));
+        el.style.transform = `scale(${(1.22 - k * 0.45).toFixed(3)})`;
         el.style.opacity = (1 - Math.min(1, d / 230) * 0.6).toFixed(3);
+        el.style.color = `rgb(${Math.round(178 + 77 * t)},${Math.round(77 + 178 * t)},${Math.round(114 + 141 * t)})`;
+        el.style.background = `rgba(255,255,255,${(1 - t).toFixed(3)})`;
+        el.style.borderColor = `rgba(242,211,222,${(1 - t).toFixed(3)})`;
+        el.style.boxShadow = "none";
         if (d < bd) { bd = d; best = el; }
       }
       return best;

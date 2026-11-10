@@ -226,3 +226,8 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .gedit .li{width:18px;height:18px}
 .gstrip{padding:2px 0 2px}
 .gbtn{transition:background .08s, color .08s, border-color .08s}
+/* ===== なめらかなダイヤル（v149）：ピンクは真ん中に固定した枠。ジャンルはその上を通りぬけて、重なった分だけ白くなる ===== */
+.gbtn, .gbtn.on{transition:none !important;background:#fff;color:var(--rose);border-color:#f2d3de;box-shadow:none}
+.glens{z-index:0;background:linear-gradient(160deg,#e889a9,#d9658e);border:0;width:76px;height:66px;border-radius:16px;
+  box-shadow:0 4px 14px rgba(217,101,142,.38), 0 0 0 4px rgba(217,101,142,.14)}
+.gdial .gscroll{position:relative;z-index:1}
