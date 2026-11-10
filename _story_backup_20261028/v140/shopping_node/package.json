@@ -1,0 +1,9 @@
+{
+  "name": "kaimono-list",
+  "version": "1.0.0",
+  "private": true,
+  "description": "買い物リスト（家計簿と同じパスワード・同じスプレッドシート）",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" }
+}

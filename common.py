@@ -197,8 +197,9 @@ html, body, [class*="st-"]:not([data-testid="stIconMaterial"]), .stApp { font-fa
    サイドバーを開くボタンも stToolbar の中にあるので、stToolbar ごと消さない */
 [data-testid="stToolbarActions"], [data-testid="stToolbarActionButton"], [data-testid="stMainMenu"],
 .stAppDeployButton, [data-testid="stDecoration"] { display: none !important; }
-/* 家計簿のページ（/kakeibo）は、メニューに出さない */
-[data-testid="stSidebarNav"] a[href$="/kakeibo"], [data-testid="stSidebarNavLink"][href$="/kakeibo"] { display: none !important; }
+/* 家計簿（/kakeibo）と買い物リスト（/kaimono）のページは、メニューに出さない */
+[data-testid="stSidebarNav"] a[href$="/kakeibo"], [data-testid="stSidebarNavLink"][href$="/kakeibo"],
+[data-testid="stSidebarNav"] a[href$="/kaimono"], [data-testid="stSidebarNavLink"][href$="/kaimono"] { display: none !important; }
 [data-testid="stHeader"] { background: transparent; }
 
 /* トップのカード全体をクリックで開く：リンクの当たり判定をカード全体に広げる */
@@ -371,6 +372,8 @@ def build_navigation():
     nav = {names.get(section, section): [PAGES[k] for k in keys] for section, keys in SECTIONS.items()}
     # 家計簿（大人用）：メニューには出さないページ。URL の最後に /kakeibo を付けて開く（パスワードは kakeibo/app.py）
     nav[names.get("きろく", "きろく")].append(st.Page(page_file("kakeibo/app.py"), title="家計簿", icon="💴", url_path="kakeibo"))
+    # 買い物リスト（大人用）：家計簿と同じく、メニューには出さないページ。URL の最後に /kaimono（ログインは家計簿と共通）
+    nav[names.get("きろく", "きろく")].append(st.Page(page_file("shopping/app.py"), title="買い物リスト", icon="🛒", url_path="kaimono"))
     return st.navigation(nav, position=position)
 
 

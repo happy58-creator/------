@@ -5,3 +5,5 @@ generated/
 history/
 .auth_secret
 kakeibo/data/
+shopping/data/
+shopping/node_modules/
