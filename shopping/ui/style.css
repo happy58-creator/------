@@ -225,3 +225,4 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .gedit{flex:none;width:36px;height:36px;margin-left:8px;border-radius:10px;background:#fff;border:1.5px dashed #d5d8de;color:var(--sub);display:grid;place-items:center}
 .gedit .li{width:18px;height:18px}
 .gstrip{padding:2px 0 2px}
+.gbtn{transition:background .08s, color .08s, border-color .08s}

@@ -226,17 +226,18 @@ const App = {
       return best;
     }
     let dialT = 0;
-    function onDial() {              // 回しているあいだ：見た目を更新。止まったら、真ん中のジャンルを選ぶ
+    function onDial() {              // 回しているあいだも、枠に入ったジャンルをその場で選ぶ（ピンクがすぐ移る）。止まったら、ぴったり真ん中にそろえる
       requestAnimationFrame(() => {
-        const best = dialLook();
+        const best = dialLook(), name = best && best.dataset.g;
+        if (name && name !== S.genre && Date.now() >= dialLock) { S.genre = name; S.autoGenre = false; }
         clearTimeout(dialT);
         dialT = setTimeout(() => {
           if (Date.now() < dialLock) return;
-          const b = dialLook(), name = b && b.dataset.g;
-          if (name && name !== S.genre) { S.genre = name; S.autoGenre = false; keep(); }
-          if (b) centerGenre(true);       // ぴったり真ん中にそろえる
+          const b = dialLook();
+          if (b && b.dataset.g !== S.genre) S.genre = b.dataset.g;
+          keep();
+          if (b) centerGenre(true);
         }, 140);
-        return best;
       });
     }
     function pickGenre(name) { S.genre = name; S.autoGenre = false; keep(); centerGenre(); }
