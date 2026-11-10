@@ -253,6 +253,10 @@ button.item.tap:active{background:#fdf2f6}
 .nrow1 input{height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font-size:17px;width:100%;min-width:0}
 .rename{margin-left:8px;font-size:11px;font-weight:700;color:var(--accent);vertical-align:2px}
 .legend .item .t b, .dhead div b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* キーボードが出ているあいだは、フッターを隠して、下に余白を足す（入力欄を上まで動かせるように） */
+body.kbd #foot, body.kbd .foot { display:none !important; }
+body.kbd #app, body.kbd .wrap { padding-bottom:55vh !important; }
 </style>
 </head>
 <body>
@@ -1077,6 +1081,31 @@ window.addEventListener("message", e => {
 document.addEventListener("focusout", () => setTimeout(() => { if (pendingRender && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || "")) { pendingRender = false; render(true); } }, 50));
 window.addEventListener("resize", () => SL.height());
 render();
+// ===== キーボードが入力欄を隠さないように =====
+// キーボードが出ると見える範囲がせまくなる（visualViewport）。フッターを隠して、入力中の欄が見える範囲に入るように画面を動かす
+function keyboardHelper(getScroller) {
+  const vv = () => { try { return window.parent.visualViewport || window.visualViewport; } catch (e) { return window.visualViewport; } };
+  const typing = el => el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["date", "checkbox", "radio", "button", "submit"].includes(el.type)));
+  function fit() {
+    const el = document.activeElement, sc = getScroller();
+    if (!typing(el) || !sc) return;
+    const v = vv(), top = (v ? v.offsetTop : 0) + 12, bottom = (v ? v.offsetTop + v.height : window.innerHeight) - 16;
+    const r = el.getBoundingClientRect();
+    if (r.bottom > bottom) sc.scrollTop += r.bottom - bottom;
+    else if (r.top < top) sc.scrollTop -= top - r.top;
+  }
+  let t1, t2;
+  document.addEventListener("focusin", e => {
+    if (!typing(e.target)) return;
+    document.body.classList.add("kbd");
+    clearTimeout(t1); clearTimeout(t2);
+    t1 = setTimeout(fit, 320); t2 = setTimeout(fit, 650);        // キーボードが出おわるのを待つ
+  });
+  document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) document.body.classList.remove("kbd"); }, 120));
+  const v = vv();
+  if (v) { v.addEventListener("resize", fit); v.addEventListener("scroll", fit); }
+}
+keyboardHelper(() => document.getElementById("scroll"));
 SL.ready();
 SL.height();
 </script>

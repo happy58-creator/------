@@ -11,7 +11,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))                       # km_ui
 sys.path.insert(0, str(HERE.parent / "kakeibo"))    # 家計簿の kb_store・kb_auth を使う
 import kb_store as store  # noqa: E402
-if "買い物" not in getattr(store, "TABLES", {}):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
+if "優先" not in getattr(store, "TABLES", {}).get("買い物", []):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
     import importlib
     store = importlib.reload(store)
 import kb_auth as auth  # noqa: E402

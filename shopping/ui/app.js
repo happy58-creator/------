@@ -19,6 +19,24 @@ function meters(a, b) {
 }
 const distText = m => m < 1000 ? `${Math.round(m / 10) * 10}m` : `${(m / 1000).toFixed(1)}km`;
 const NEAR = 1000;      // 現在地から 1km 以内のお店
+const MAYBE = 3000;     // 1km〜3km のお店は「もしかして？」に出す
+// 住所から位置をさがす：国土地理院の住所検索（日本の住所に強い）→ 見つからなければ OpenStreetMap（お店の名前でも探せる）
+async function geocode(q) {
+  const out = [];
+  try {
+    const r = await fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + encodeURIComponent(q));
+    const j = await r.json();
+    for (const f of (j || []).slice(0, 6)) out.push({ title: f.properties.title, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] });
+  } catch (e) {}
+  if (!out.length) {
+    try {
+      const r = await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=jp&accept-language=ja&q=" + encodeURIComponent(q));
+      const j = await r.json();
+      for (const f of j || []) out.push({ title: f.display_name, lat: +f.lat, lng: +f.lon });
+    } catch (e) {}
+  }
+  return out;
+}
 // 現在地をとる（携帯の位置情報）
 function locate() {
   return new Promise((ok, ng) => {
@@ -68,6 +86,31 @@ const TOKEN = {
   },
 };
 
+// ===== キーボードが入力欄を隠さないように =====
+// キーボードが出ると見える範囲がせまくなる（visualViewport）。フッターを隠して、入力中の欄が見える範囲に入るように画面を動かす
+function keyboardHelper(getScroller) {
+  const vv = () => { try { return window.parent.visualViewport || window.visualViewport; } catch (e) { return window.visualViewport; } };
+  const typing = el => el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["date", "checkbox", "radio", "button", "submit"].includes(el.type)));
+  function fit() {
+    const el = document.activeElement, sc = getScroller();
+    if (!typing(el) || !sc) return;
+    const v = vv(), top = (v ? v.offsetTop : 0) + 12, bottom = (v ? v.offsetTop + v.height : window.innerHeight) - 16;
+    const r = el.getBoundingClientRect();
+    if (r.bottom > bottom) sc.scrollTop += r.bottom - bottom;
+    else if (r.top < top) sc.scrollTop -= top - r.top;
+  }
+  let t1, t2;
+  document.addEventListener("focusin", e => {
+    if (!typing(e.target)) return;
+    document.body.classList.add("kbd");
+    clearTimeout(t1); clearTimeout(t2);
+    t1 = setTimeout(fit, 320); t2 = setTimeout(fit, 650);        // キーボードが出おわるのを待つ
+  });
+  document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) document.body.classList.remove("kbd"); }, 120));
+  const v = vv();
+  if (v) { v.addEventListener("resize", fit); v.addEventListener("scroll", fit); }
+}
+
 const FOOT = [["入力", "pencil", "input"], ["一覧", "list", "list"], ["店舗別", "store", "stores"], ["計算", "calc", "calc"], ["メニュー", "home", "menu"]];
 const ICON_FOOT = { home: '<circle cx="5.5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18.5" cy="12" r="1.6" fill="currentColor"/>' };
 
@@ -77,14 +120,14 @@ const App = {
       phase: "loading", password: false,
       view: "input", items: [], stores: [], genres: [], sheets: false,
       // 入力
-      genre: "", name: "", memo: "", storeId: "",
+      genre: "", name: "", memo: "", storeId: "", prio: "0",
       // 一覧・店舗別
       listMode: "todo", storeMode: "all", storeSel: "", here: null, hereErr: "", hereBusy: false,
       // 計算
       price: "", qty: "1", lines: [], tax: "込",
       ctab: "cmp", cmp: [], taxIn: "", taxRateT: "8", taxDir: "in",
       // 店舗の登録・ジャンル
-      storeDraft: null, genreDraft: null, pickFor: -1,
+      storeDraft: null, genreDraft: null, pickFor: -1, addrQ: "", addrRes: null, addrBusy: false,
       toast: "", toastOn: false, saving: 0, confirm: null,
     });
     try { Object.assign(S, JSON.parse(sessionStorage.getItem("sh_state") || "{}"), { storeDraft: null, genreDraft: null, confirm: null }); } catch (e) {}
@@ -143,10 +186,10 @@ const App = {
     function addItem() {
       const name = S.name.trim();
       if (!name) { toast("品名を入れてください"); return; }
-      const row = { ID: uid(), 品名: name, ジャンル: S.genre || "その他", メモ: S.memo.trim(), 店舗ID: S.storeId, 済: "", 登録日時: new Date().toISOString().slice(0, 16).replace("T", " ") };
+      const row = { ID: uid(), 品名: name, ジャンル: S.genre || "その他", メモ: S.memo.trim(), 店舗ID: S.storeId, 済: "", 優先: S.prio === "0" ? "" : S.prio, 登録日時: new Date().toISOString().slice(0, 16).replace("T", " ") };
       save("買い物", [...S.items, row]);
       toast(`追加しました：${name}${S.storeId ? "（" + storeName(S.storeId) + "）" : ""}`);
-      S.name = ""; S.memo = "";
+      S.name = ""; S.memo = ""; S.prio = "0";
       nextTick(() => { const el = document.getElementById("nameIn"); if (el) el.focus(); });
     }
     const recent = computed(() => [...S.items].filter(i => !i["済"]).sort((a, b) => String(b["登録日時"]).localeCompare(a["登録日時"])).slice(0, 5));
@@ -157,7 +200,22 @@ const App = {
       for (const it of list) (o[it["ジャンル"] || "その他"] = o[it["ジャンル"] || "その他"] || []).push(it);
       return Object.entries(o).sort((a, b) => (order.indexOf(a[0]) + 999 * (order.indexOf(a[0]) < 0)) - (order.indexOf(b[0]) + 999 * (order.indexOf(b[0]) < 0)));
     };
-    const listGroups = computed(() => byGenre(S.listMode === "todo" ? todo.value : S.items));
+    // ---- 優先：1＝優先（一覧・店舗別でいちばん上。現在地では別のお店でも出す）、2＝最優先（さらに全ページの上にバナー） ----
+    const prio = it => Math.min(2, Math.max(0, +it["優先"] || 0));
+    const byPrio = list => [...list].sort((a, b) => prio(b) - prio(a) || String(a["登録日時"]).localeCompare(b["登録日時"]));
+    const top2 = computed(() => todo.value.filter(i => prio(i) === 2));
+    function cyclePrio(it) {
+      const n = (prio(it) + 1) % 3;
+      save("買い物", S.items.map(x => x.ID === it.ID ? { ...x, 優先: n ? String(n) : "" } : x));
+      toast(n === 2 ? `「${it["品名"]}」を最優先にしました` : n === 1 ? `「${it["品名"]}」を優先にしました` : `「${it["品名"]}」の優先をはずしました`);
+    }
+    const PRIO_KEY = "__prio";
+    const listGroups = computed(() => {
+      const list = S.listMode === "todo" ? todo.value : S.items;
+      const top = byPrio(list.filter(i => prio(i) && !i["済"]));
+      const rest = list.filter(i => !(prio(i) && !i["済"]));
+      return (top.length ? [[PRIO_KEY, top]] : []).concat(byGenre(rest));
+    });
     function toggle(it) {
       save("買い物", S.items.map(x => x.ID === it.ID ? { ...x, 済: x["済"] ? "" : "1" } : x));
     }
@@ -180,8 +238,13 @@ const App = {
         .map(s => ({ s, m: meters(S.here, { lat: +s["緯度"], lng: +s["経度"] }) })).sort((a, b) => a.m - b.m);
     });
     // 表示するお店のまとまり：[{ id, name, dist, items }]
+    // 優先のもの：全店舗・現在地はぜんぶ（現在地では別のお店のものも出す）。お店を選んでいるときは、そのお店のもの
+    // 1km〜3km のお店（もしかして？）
+    const maybeGroups = computed(() => S.storeMode !== "here" ? [] : nearStores.value.filter(x => x.m > NEAR && x.m <= MAYBE)
+      .map(x => ({ id: x.s.ID, name: x.s["店名"], dist: x.m, items: todo.value.filter(i => !prio(i) && i["店舗ID"] === x.s.ID) })));
+    const prioStore = computed(() => byPrio(todo.value.filter(i => prio(i) && (S.storeMode === "here" || !S.storeSel || i["店舗ID"] === S.storeSel))));
     const storeGroups = computed(() => {
-      const items = todo.value;
+      const items = todo.value.filter(i => !prio(i));
       if (S.storeMode === "here") {
         return nearStores.value.filter(x => x.m <= NEAR).map(x => ({ id: x.s.ID, name: x.s["店名"], dist: x.m, items: items.filter(i => i["店舗ID"] === x.s.ID) }));
       }
@@ -241,7 +304,7 @@ const App = {
     let map = null, marker = null;
     function editStore(s) {
       S.storeDraft = s ? { ...s } : { ID: "", 店名: "", 緯度: "", 経度: "", 並び: String(S.stores.length) };
-      S.view = "storeEdit"; keep();
+      S.view = "storeEdit"; S.addrQ = ""; S.addrRes = null; keep();
       nextTick(drawMap);
     }
     async function drawMap() {
@@ -264,6 +327,20 @@ const App = {
     function setPin(lat, lng, move) {
       S.storeDraft["緯度"] = lat.toFixed(6); S.storeDraft["経度"] = lng.toFixed(6);
       if (map && window.L) { if (marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng], { icon: pinIcon() }).addTo(map); if (move) map.setView([lat, lng], 17); }
+    }
+    async function searchAddr() {
+      const q = S.addrQ.trim();
+      if (!q) { toast("住所を入れてください"); return; }
+      S.addrBusy = true; S.addrRes = null;
+      const res = await geocode(q);
+      S.addrBusy = false; S.addrRes = res;
+      if (res.length === 1) pickAddr(res[0]);
+      else if (!res.length) toast("見つかりませんでした。住所を短くするか、地図を押してください");
+    }
+    function pickAddr(r) {
+      setPin(r.lat, r.lng, true); S.addrRes = null;
+      if (!String(S.storeDraft["店名"] || "").trim()) { /* 店名はそのまま */ }
+      toast("その場所にピンを立てました");
     }
     async function useHere() {
       toast("現在地をさがしています…");
@@ -309,9 +386,10 @@ const App = {
     const footIcon = k => k === "home" ? `<svg class="li" viewBox="0 0 24 24" fill="none">${ICON_FOOT.home}</svg>` : svg(k);
     function toKakeibo() { SL.value({ queue: QUEUE, go: "kakeibo", gid: uid() }); }     // 家計簿のページへ（ログインはそのまま）
 
+    keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
-      taxRate, calcTotal, storeName, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
+      taxRate, calcTotal, storeName, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, saveStore, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
@@ -320,6 +398,10 @@ const App = {
 
 <template v-else>
 <div class="wrap">
+  <button v-if="top2.length && !['storeEdit', 'genres'].includes(S.view)" class="banner" @click="go('list')">
+    <span class="bstar" v-html="svg('star')"></span>
+    <span class="btext"><small>最優先 {{ top2.length }}件</small><b>{{ top2.map(i => i['品名']).join('・') }}</b></span><span class="bgo">›</span>
+  </button>
 
   <!-- ===== 入力 ===== -->
   <template v-if="S.view === 'input'">
@@ -327,6 +409,7 @@ const App = {
     <div class="card" style="padding:4px 16px">
       <div class="field"><label>品名</label><input id="nameIn" v-model="S.name" placeholder="例：たまねぎ" maxlength="40" @keydown.enter.prevent="addItem"></div>
       <div class="field"><label>メモ</label><input v-model="S.memo" placeholder="任意（例：2個・特売）" maxlength="60"></div>
+      <div class="field"><label>優先</label><div class="prios"><button v-for="(l, k) in ['ふつう', '優先', '最優先']" :key="k" class="pchip" :class="['p' + k, { on: S.prio === String(k) }]" @click="S.prio = String(k)">{{ l }}</button></div></div>
     </div>
     <div class="sec" style="margin-top:4px">お店<button class="link" @click="go('storeList')">お店の登録 ›</button></div>
     <div class="chips scroll">
@@ -359,11 +442,13 @@ const App = {
     <div class="card count"><div><span>のこり</span><b>{{ todo.length }}</b></div><div><span>買った</span><b>{{ S.items.length - todo.length }}</b></div><div><span>お店未定</span><b>{{ todo.filter(i => !i['店舗ID']).length }}</b></div></div>
     <div v-if="!listGroups.length" class="empty">{{ S.listMode === 'todo' ? '買うものはありません' : 'まだありません' }}</div>
     <template v-for="[g, list] in listGroups" :key="g">
-      <div class="day"><span class="bic" v-html="gIcon(g)"></span>{{ g }}<b>{{ list.length }}件</b></div>
-      <div class="list">
-        <div v-for="it in list" :key="it.ID" class="item" :class="{ done: it['済'] }" style="grid-template-columns:34px 1fr auto">
+      <div v-if="g === PRIO_KEY" class="day prio"><span class="bic" v-html="svg('star')"></span>優先<b>{{ list.length }}件</b></div>
+      <div v-else class="day"><span class="bic" v-html="gIcon(g)"></span>{{ g }}<b>{{ list.length }}件</b></div>
+      <div class="list" :class="{ priolist: g === PRIO_KEY }">
+        <div v-for="it in list" :key="it.ID" class="item" :class="{ done: it['済'] }" style="grid-template-columns:34px 1fr auto auto">
           <button class="mark" @click="toggle(it)" :aria-label="it['済'] ? 'もどす' : '買った'"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
-          <button class="t" style="text-align:left" @click="toggle(it)"><b>{{ it['品名'] }}</b><span>{{ storeName(it['店舗ID']) }}{{ it['メモ'] ? '・' + it['メモ'] : '' }}</span></button>
+          <button class="t" style="text-align:left" @click="toggle(it)"><b>{{ it['品名'] }}</b><span>{{ g === PRIO_KEY ? it['ジャンル'] + '・' : '' }}{{ storeName(it['店舗ID']) }}{{ it['メモ'] ? '・' + it['メモ'] : '' }}</span></button>
+          <button class="star" :class="'p' + prio(it)" @click="cyclePrio(it)" :aria-label="'優先：' + ['ふつう','優先','最優先'][prio(it)]"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" :fill="prio(it) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><i v-if="prio(it) === 2">2</i></button>
           <button class="del" @click="removeItem(it)" aria-label="消す">✕</button>
         </div>
       </div>
@@ -389,24 +474,48 @@ const App = {
         <div style="flex:1;min-width:0" class="small">
           <template v-if="S.hereBusy">現在地をさがしています…</template>
           <template v-else-if="S.hereErr"><span style="color:var(--red)">{{ S.hereErr }}</span></template>
-          <template v-else-if="S.here">現在地から {{ NEAR / 1000 }}km 以内のお店：<b>{{ storeGroups.length }}件</b></template>
+          <template v-else-if="S.here">1km 以内のお店：<b>{{ storeGroups.length }}件</b>　1〜3km：<b>{{ maybeGroups.length }}件</b></template>
         </div>
         <button class="chip" @click="findHere">更新</button>
       </div>
       <div v-if="S.here && !S.hereBusy && !storeGroups.length" class="card small muted">
-        1km 以内に登録したお店はありません。<template v-if="nearStores.length">いちばん近いのは「{{ nearStores[0].s['店名'] }}」（{{ distText(nearStores[0].m) }}）です。</template>
+        1km 以内に登録したお店はありません。<template v-if="nearStores.length && !maybeGroups.length">いちばん近いのは「{{ nearStores[0].s['店名'] }}」（{{ distText(nearStores[0].m) }}）です。</template>
+      </div>
+    </template>
+    <template v-if="prioStore.length">
+      <div class="day prio"><span class="bic" v-html="svg('star')"></span>優先{{ S.storeMode === 'here' ? '（どのお店でも）' : '' }}<b>{{ prioStore.length }}件</b></div>
+      <div class="list priolist">
+        <div v-for="it in prioStore" :key="it.ID" class="item" style="grid-template-columns:34px 1fr auto">
+          <button class="mark" @click="toggle(it)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+          <button class="t" style="text-align:left" @click="toggle(it)"><b>{{ it['品名'] }}</b><span>{{ storeName(it['店舗ID']) }}・{{ it['ジャンル'] }}{{ it['メモ'] ? '・' + it['メモ'] : '' }}</span></button>
+          <button class="star" :class="'p' + prio(it)" @click="cyclePrio(it)" :aria-label="'優先：' + ['ふつう','優先','最優先'][prio(it)]"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" :fill="prio(it) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><i v-if="prio(it) === 2">2</i></button>
+        </div>
       </div>
     </template>
     <template v-for="g in storeGroups" :key="g.id">
       <div class="day"><span class="bic" v-html="svg(g.id ? 'store' : 'box')"></span>{{ g.name }}<span v-if="g.dist !== null" class="dist">{{ distText(g.dist) }}</span><b>{{ g.items.length }}件</b></div>
       <div class="list">
         <div v-if="!g.items.length" class="empty small" style="padding:16px 0">このお店で買うものはありません</div>
-        <div v-for="it in g.items" :key="it.ID" class="item" :class="{ done: it['済'] }">
+        <div v-for="it in g.items" :key="it.ID" class="item" :class="{ done: it['済'] }" style="grid-template-columns:34px 1fr auto">
           <button class="mark" @click="toggle(it)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
           <button class="t" style="text-align:left" @click="toggle(it)"><b>{{ it['品名'] }}</b><span>{{ it['ジャンル'] }}{{ it['メモ'] ? '・' + it['メモ'] : '' }}</span></button>
-          <span class="bic" v-html="gIcon(it['ジャンル'])"></span>
+          <button class="star" :class="'p' + prio(it)" @click="cyclePrio(it)" :aria-label="'優先：' + ['ふつう','優先','最優先'][prio(it)]"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" :fill="prio(it) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><i v-if="prio(it) === 2">2</i></button>
         </div>
       </div>
+    </template>
+    <template v-if="maybeGroups.length">
+      <div class="sec maybe">もしかして？<span class="small muted">1〜3km のお店</span></div>
+      <template v-for="g in maybeGroups" :key="'m' + g.id">
+        <div class="day"><span class="bic" v-html="svg('store')"></span>{{ g.name }}<span class="dist">{{ distText(g.dist) }}</span><b>{{ g.items.length }}件</b></div>
+        <div class="list maybelist">
+          <div v-if="!g.items.length" class="empty small" style="padding:16px 0">このお店で買うものはありません</div>
+          <div v-for="it in g.items" :key="it.ID" class="item" style="grid-template-columns:34px 1fr auto">
+            <button class="mark" @click="toggle(it)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+            <button class="t" style="text-align:left" @click="toggle(it)"><b>{{ it['品名'] }}</b><span>{{ it['ジャンル'] }}{{ it['メモ'] ? '・' + it['メモ'] : '' }}</span></button>
+            <button class="star" :class="'p' + prio(it)" @click="cyclePrio(it)"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg></button>
+          </div>
+        </div>
+      </template>
     </template>
   </template>
 
@@ -519,8 +628,12 @@ const App = {
       <div class="field"><label>店名</label><input v-model="S.storeDraft['店名']" placeholder="例：〇〇スーパー 駅前店" maxlength="30"></div>
     </div>
     <div class="sec" style="margin-top:4px">店舗の位置</div>
-    <button class="btn pri" @click="useHere"><span style="display:inline-flex;gap:6px;align-items:center" v-html="svg('locate') + '現在地を使う'"></span></button>
-    <div class="small muted" style="margin:8px 4px 0">または、下の地図でお店の場所を押すと、そこにピンを立てます</div>
+    <div class="addr"><input v-model="S.addrQ" placeholder="住所（例：東京都千代田区丸の内1-9-1）" @keydown.enter.prevent="searchAddr"><button class="btn pri" @click="searchAddr" :disabled="S.addrBusy">{{ S.addrBusy ? '…' : '探す' }}</button></div>
+    <div class="list addrres" v-if="S.addrRes && S.addrRes.length > 1">
+      <button v-for="(r, i) in S.addrRes" :key="i" class="item" style="grid-template-columns:30px 1fr auto" @click="pickAddr(r)"><span class="bic" v-html="svg('pin')"></span><div class="t"><b>{{ r.title }}</b></div><span class="muted">›</span></button>
+    </div>
+    <button class="btn" style="margin-top:8px" @click="useHere"><span style="display:inline-flex;gap:6px;align-items:center" v-html="svg('locate') + '現在地を使う'"></span></button>
+    <div class="small muted" style="margin:8px 4px 0">住所で探す・現在地を使う・下の地図でお店の場所を押す、のどれかで位置を決めます</div>
     <div id="map" class="map"></div>
     <div class="coord"><span v-html="svg('pin')"></span>{{ S.storeDraft['緯度'] !== '' ? S.storeDraft['緯度'] + ', ' + S.storeDraft['経度'] : 'まだ位置がありません（任意）' }}</div>
     <button class="big" @click="saveStore">{{ S.storeDraft.ID ? '保存する' : '登録する' }}</button>
