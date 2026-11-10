@@ -40,12 +40,12 @@ async function geocode(q) {
   return out;
 }
 // 現在地をとる（携帯の位置情報）
-function locate() {
+function locate(fresh) {
   return new Promise((ok, ng) => {
     if (!navigator.geolocation) return ng(new Error("この端末では位置情報が使えません"));
     navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy }),
       e => ng(new Error(e.code === 1 ? "位置情報の使用が許可されていません（設定で許可してください）" : "現在地がわかりませんでした")),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: fresh ? 0 : 30000 });
   });
 }
 // 地図（Leaflet）は使うときだけ読む。vendor になければネットから
@@ -126,7 +126,8 @@ const App = {
   setup() {
     const S = reactive({
       phase: "loading", password: false,
-      view: "input", items: [], stores: [], genres: [], memory: [], sheets: false, autoGenre: false,
+      view: "input", items: [], stores: [], genres: [], memory: [], history: [], sheets: false, autoGenre: false,
+      calMonth: "", calDay: "", hereAt: 0,
       // 入力
       genre: "", name: "", memo: "", storeId: "", prio: "0",
       // 一覧・店舗別
@@ -145,12 +146,12 @@ const App = {
     const toast = m => { S.toast = m; S.toastOn = true; clearTimeout(tt); tt = setTimeout(() => S.toastOn = false, 2200); };
 
     // ---- 読み込み・保存（保存は Python に送る。届くまでは画面の中で先に変えておく） ----
-    const KEY = { 買い物: "items", 店舗: "stores", 買い物ジャンル: "genres", 買い物の記憶: "memory" };
+    const KEY = { 買い物: "items", 店舗: "stores", 買い物ジャンル: "genres", 買い物の記憶: "memory", 購入記録: "history" };
     let QUEUE = [];           // Python にまだ届いていない保存
     let SERVER = null;
     function apply() {        // サーバーのデータ ＋ まだ届いていない保存
       if (!SERVER) return;
-      const d = { items: SERVER.items, stores: SERVER.stores, genres: SERVER.genres, memory: SERVER.memory || [] };
+      const d = { items: SERVER.items, stores: SERVER.stores, genres: SERVER.genres, memory: SERVER.memory || [], history: SERVER.history || [] };
       for (const a of QUEUE) d[KEY[a.table]] = a.rows;
       Object.assign(S, d, { sheets: SERVER.sheets, password: SERVER.password });
       if (!S.genre && S.genres[0]) S.genre = S.genres[0]["名前"];
@@ -288,9 +289,61 @@ const App = {
       const rest = list.filter(i => !(prio(i) && !i["済"]));
       return (top.length ? [[PRIO_KEY, top]] : []).concat(byGenre(rest));
     });
-    function toggle(it) {
-      save("買い物", S.items.map(x => x.ID === it.ID ? { ...x, 済: x["済"] ? "" : "1" } : x));
+    // ---- 買った記録（カレンダー）：「買った」にしたときの日時・品名と、そのとき近くにあった登録店（500m 以内）を残す ----
+    const BOUGHT_NEAR = 500;
+    const pad2 = n => String(n).padStart(2, "0");
+    const nowLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+    async function storeHere() {         // いまいる登録店（なければ null）
+      let p;
+      try { p = await locate(true); S.here = p; S.hereAt = Date.now(); } catch (e) { return null; }       // 買ったその時の位置（前の位置は使わない）
+      let best = null;
+      for (const s of S.stores) {
+        if (s["緯度"] === "" || s["経度"] === "") continue;
+        const m = meters(p, { lat: +s["緯度"], lng: +s["経度"] });
+        if (m <= BOUGHT_NEAR && (!best || m < best.m)) best = { s, m };
+      }
+      return best && best.s;
     }
+    function toggle(it) {
+      const done = !it["済"];
+      save("買い物", S.items.map(x => x.ID === it.ID ? { ...x, 済: done ? "1" : "" } : x));
+      if (done) {
+        const rec = { ID: uid(), 日時: nowLocal(), 品ID: it.ID, 品名: it["品名"], ジャンル: it["ジャンル"], 店舗ID: "", 店名: "" };
+        save("購入記録", [...S.history, rec]);
+        storeHere().then(st => {            // 位置がわかったら、お店を書きたす
+          if (!st) return;
+          save("購入記録", S.history.map(h => h.ID === rec.ID ? { ...h, 店舗ID: st.ID, 店名: st["店名"] } : h));
+        });
+      } else {                               // 「買った」を取りけしたら、その記録も消す（いちばん新しいもの）
+        const last = [...S.history].reverse().find(h => h["品ID"] === it.ID);
+        if (last) save("購入記録", S.history.filter(h => h.ID !== last.ID));
+      }
+    }
+    // ---- カレンダー ----
+    const ymNow = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; };
+    const calMonth = computed(() => S.calMonth || ymNow());
+    const calShift = n => { const [y, m] = calMonth.value.split("-").map(Number), d = new Date(y, m - 1 + n, 1); S.calMonth = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; S.calDay = ""; };
+    const histByDay = computed(() => {
+      const o = {};
+      for (const h of S.history) { const day = String(h["日時"]).slice(0, 10); (o[day] = o[day] || []).push(h); }
+      for (const k in o) o[k].sort((a, b) => String(b["日時"]).localeCompare(a["日時"]));
+      return o;
+    });
+    const calCells = computed(() => {
+      const [y, m] = calMonth.value.split("-").map(Number), first = new Date(y, m - 1, 1), last = new Date(y, m, 0).getDate();
+      const weeks = Math.max(5, Math.ceil((first.getDay() + last) / 7)), out = [], today = nowLocal().slice(0, 10);
+      for (let k = 0; k < weeks * 7; k++) {
+        const d = new Date(y, m - 1, 1 - first.getDay() + k), key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+        out.push({ key, day: d.getDate(), wd: d.getDay(), out: d.getMonth() !== m - 1, today: key === today, n: (histByDay.value[key] || []).length });
+      }
+      return out;
+    });
+    const calList = computed(() => {      // 下の一覧：日を選んでいればその日、なければその月（新しい日から）
+      const days = Object.keys(histByDay.value).filter(k => S.calDay ? k === S.calDay : k.startsWith(calMonth.value)).sort().reverse();
+      return days.map(k => [k, histByDay.value[k]]);
+    });
+    const dayLabel = k => { const d = new Date(k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10)); return `${d.getMonth() + 1}月${d.getDate()}日（${"日月火水木金土"[d.getDay()]}）`; };
+    function removeHist(h) { save("購入記録", S.history.filter(x => x.ID !== h.ID)); toast("記録を消しました"); }
     function removeItem(it) { save("買い物", S.items.filter(x => x.ID !== it.ID)); toast("消しました"); }
     function clearDone() {
       const n = S.items.filter(i => i["済"]).length;
@@ -461,7 +514,7 @@ const App = {
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
-      taxRate, calcTotal, storeName, pickGenre, memOf, onDial, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
+      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, saveStore, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
@@ -661,10 +714,40 @@ const App = {
     </template>
   </template>
 
+  <!-- ===== カレンダー（いつ・どこで・何を買ったか） ===== -->
+  <template v-else-if="S.view === 'calendar'">
+    <div class="title">カレンダー</div>
+    <div class="mnav"><button class="arrow" @click="calShift(-1)">‹</button>
+      <div class="head">{{ +calMonth.slice(0, 4) }}年{{ +calMonth.slice(5) }}月<small>買ったもの {{ calCells.filter(c => !c.out).reduce((a, c) => a + c.n, 0) }}品</small></div>
+      <button class="arrow" @click="calShift(1)">›</button></div>
+    <div class="cal">
+      <div v-for="(w, i) in '日月火水木金土'" :key="w" class="w" :class="{ sun: i === 0, sat: i === 6 }">{{ w }}</div>
+      <button v-for="c in calCells" :key="c.key" class="c" :class="{ out: c.out, today: c.today, pick: S.calDay === c.key, has: c.n }" @click="S.calDay = S.calDay === c.key ? '' : c.key">
+        <span class="n" :class="{ sun: c.wd === 0, sat: c.wd === 6 }">{{ c.day }}</span>
+        <span v-if="c.n" class="cnt">{{ c.n }}品</span>
+      </button>
+    </div>
+    <div class="sec" v-if="S.calDay">{{ dayLabel(S.calDay) }}<button class="link" @click="S.calDay = ''">月全体を見る</button></div>
+    <div v-if="!calList.length" class="empty">{{ S.calDay ? 'この日に買ったものはありません' : 'この月に買ったものはありません' }}</div>
+    <template v-for="[k, list] in calList" :key="k">
+      <div class="day" v-if="!S.calDay">{{ dayLabel(k) }}<b>{{ list.length }}品</b></div>
+      <div class="list">
+        <div v-for="h in list" :key="h.ID" class="item" style="grid-template-columns:34px 1fr auto auto">
+          <span class="bic" v-html="gIcon(h['ジャンル'])"></span>
+          <div class="t"><b>{{ h['品名'] }}</b><span :class="{ noplace: !h['店名'] }"><span v-if="h['店名']" class="place" v-html="svg('pin') + h['店名']"></span><template v-else>場所の記録なし</template></span></div>
+          <span class="time">{{ String(h['日時']).slice(11, 16) }}</span>
+          <button class="del" @click="removeHist(h)" aria-label="記録を消す">✕</button>
+        </div>
+      </div>
+    </template>
+    <div class="small muted" style="margin:10px 4px 0">一覧や店舗別で「買った」にすると、ここに残ります。そのとき 500m 以内に登録したお店があれば、そのお店を場所として記録します</div>
+  </template>
+
   <!-- ===== メニュー ===== -->
   <template v-else-if="S.view === 'menu'">
     <div class="title">メニュー</div>
     <div class="tiles">
+      <button class="tile" @click="go('calendar')"><span v-html="svg('calendar')"></span>カレンダー</button>
       <button class="tile" @click="go('storeList')"><span v-html="svg('store')"></span>お店の登録</button>
       <button class="tile" @click="editGenres"><span v-html="svg('tag')"></span>ジャンル</button>
       <button class="tile" @click="toKakeibo"><span v-html="svg('wallet')"></span>家計簿へ</button>

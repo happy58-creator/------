@@ -11,7 +11,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))                       # km_ui
 sys.path.insert(0, str(HERE.parent / "kakeibo"))    # 家計簿の kb_store・kb_auth を使う
 import kb_store as store  # noqa: E402
-if "買い物の記憶" not in getattr(store, "TABLES", {}):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
+if "購入記録" not in getattr(store, "TABLES", {}):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
     import importlib
     store = importlib.reload(store)
 import kb_auth as auth  # noqa: E402
@@ -26,7 +26,7 @@ except Exception:
 DEFAULT_GENRES = [("肉", "meat"), ("野菜", "carrot"), ("魚", "fish"), ("果物", "apple"), ("卵・乳製品", "egg"), ("豆腐・納豆", "tofu"), ("米・麺", "rice"),
                   ("パン", "bread"), ("ラーメン", "bowl"), ("調味料", "bottle"), ("冷凍", "snow"), ("お菓子", "candy"), ("ジュース", "juice"),
                   ("お酒", "beer"), ("日用品", "daily"), ("その他", "box")]
-TABLES = ("買い物", "店舗", "買い物ジャンル", "買い物の記憶")
+TABLES = ("買い物", "店舗", "買い物ジャンル", "買い物の記憶", "購入記録")
 
 
 def genres():
@@ -40,7 +40,7 @@ st.markdown(auth.hide_css("kaimono_ui"), unsafe_allow_html=True)
 auth.hide_badges()
 ss = st.session_state
 done = ss.setdefault("kb_done", [])
-data = {"items": store.load("買い物"), "stores": store.load("店舗"), "genres": genres(), "memory": store.load("買い物の記憶"),
+data = {"items": store.load("買い物"), "stores": store.load("店舗"), "genres": genres(), "memory": store.load("買い物の記憶"), "history": store.load("購入記録"),
         "sheets": store.using_sheets(), "password": bool(auth.secret("KAKEIBO_PASSWORD"))}
 val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", key="km_ui", default=None)
 if isinstance(val, dict):

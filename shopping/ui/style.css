@@ -231,3 +231,26 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .glens{z-index:0;background:linear-gradient(160deg,#e889a9,#d9658e);border:0;width:76px;height:66px;border-radius:16px;
   box-shadow:0 4px 14px rgba(217,101,142,.38), 0 0 0 4px rgba(217,101,142,.14)}
 .gdial .gscroll{position:relative;z-index:1}
+/* カレンダー（家計簿と同じ形） */
+.mnav{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;margin-bottom:var(--gap)}
+.mnav .arrow{height:44px;font-size:26px;color:var(--sub)}
+.mnav .head{background:#fdf3df;border-radius:12px;text-align:center;padding:9px 4px;font-weight:800;font-size:17px}
+.mnav .head small{display:block;font-weight:500;font-size:11px;color:var(--sub)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);background:var(--line);gap:1px;border-radius:12px;overflow:hidden;margin-bottom:var(--gap)}
+.cal .w{background:#eceef2;text-align:center;font-size:12px;padding:5px 0;font-weight:700}
+.cal .c{background:#fff;height:56px;padding:3px 4px;font-size:12px;display:flex;flex-direction:column;align-items:flex-start;overflow:hidden;text-align:left}
+.cal .c.out{background:#f7f8fa;color:#bbb}
+.cal .c.today{background:#fdf3df}
+.cal .c.today .n{background:var(--orange);color:#fff;border-radius:999px;width:20px;height:20px;display:grid;place-items:center}
+.cal .c.pick{outline:2px solid var(--pink);outline-offset:-2px}
+.cal .n{font-weight:700;font-size:12px}
+.cal .cnt{margin-top:auto;align-self:flex-end;font-size:10px;font-weight:800;color:#fff;background:var(--pink);border-radius:999px;padding:1px 6px}
+.cal .c.out .cnt{opacity:.5}
+.sun{color:var(--red)} .sat{color:var(--blue)}
+.cal .c.out .sun,.cal .c.out .sat{color:#ccc}
+.place{display:inline-flex;align-items:center;gap:2px;color:var(--blue);font-weight:700}
+.place .li{width:13px;height:13px}
+.noplace{color:#b4b8c2}
+.time{font-size:12px;color:var(--sub);font-weight:700}
+.item .t .place{display:inline-flex;align-items:center;gap:2px}
+.item .t .place .li{display:inline-block;width:13px;height:13px}
