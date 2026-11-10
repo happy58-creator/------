@@ -256,3 +256,9 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .time{font-size:12px;color:var(--sub);font-weight:700}
 .item .t .place{display:inline-flex;align-items:center;gap:2px}
 .item .t .place .li{display:inline-block;width:13px;height:13px}
+
+/* 未登録の店舗のおしらせ（現在地） */
+.card.suggest{border:1.5px solid #f3c6d6;background:#fff7fa}
+.suggest .sg-t{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px}
+.suggest .sg-t b{display:block;font-size:15px}
+.suggest .sg-t span.small{display:block;margin-top:2px;line-height:1.5}

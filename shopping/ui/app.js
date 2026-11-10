@@ -172,8 +172,8 @@ const App = {
   setup() {
     const S = reactive({
       phase: "loading", password: false,
-      view: "input", items: [], stores: [], genres: [], memory: [], history: [], sheets: false, autoGenre: false,
-      calMonth: "", calDay: "", hereAt: 0,
+      view: "input", items: [], stores: [], branches: [], genres: [], memory: [], history: [], sheets: false, autoGenre: false,
+      calMonth: "", calDay: "", hereAt: 0, branchDraft: null, suggest: [], dismissed: {},
       // 入力
       genre: "", name: "", memo: "", storeId: "", prio: "0",
       // 一覧・店舗別
@@ -192,12 +192,12 @@ const App = {
     const toast = m => { S.toast = m; S.toastOn = true; clearTimeout(tt); tt = setTimeout(() => S.toastOn = false, 2200); };
 
     // ---- 読み込み・保存（保存は Python に送る。届くまでは画面の中で先に変えておく） ----
-    const KEY = { 買い物: "items", 店舗: "stores", 買い物ジャンル: "genres", 買い物の記憶: "memory", 購入記録: "history" };
+    const KEY = { 買い物: "items", 店舗: "stores", 支店: "branches", 買い物ジャンル: "genres", 買い物の記憶: "memory", 購入記録: "history" };
     let QUEUE = [];           // Python にまだ届いていない保存
     let SERVER = null;
     function apply() {        // サーバーのデータ ＋ まだ届いていない保存
       if (!SERVER) return;
-      const d = { items: SERVER.items, stores: SERVER.stores, genres: SERVER.genres, memory: SERVER.memory || [], history: SERVER.history || [] };
+      const d = { items: SERVER.items, stores: SERVER.stores, branches: SERVER.branches || [], genres: SERVER.genres, memory: SERVER.memory || [], history: SERVER.history || [] };
       for (const a of QUEUE) d[KEY[a.table]] = a.rows;
       Object.assign(S, d, { sheets: SERVER.sheets, password: SERVER.password });
       if (!S.genre && S.genres[0]) S.genre = S.genres[0]["名前"];
@@ -246,6 +246,26 @@ const App = {
     const storeName = id => (storeOf(id) || {})["店名"] || "お店未定";
     const sortedGenres = computed(() => [...S.genres].sort((a, b) => (+a["並び"] || 0) - (+b["並び"] || 0)));
     const sortedStores = computed(() => [...S.stores].sort((a, b) => (+a["並び"] || 0) - (+b["並び"] || 0)));
+    // ---- お店（店名）と店舗（支店）：1つのお店に、いくつも店舗を登録できる（例：無印良品 → イオンモール福岡店・かやの森店）
+    // 前の版でお店に直接入れた位置は、そのお店の「名前なしの店舗」として扱う（編集して保存すると、店舗の表に移る）
+    const hasPos = x => x && x["緯度"] !== "" && x["経度"] !== "" && x["緯度"] != null;
+    const branchesOf = sid => {
+      const real = S.branches.filter(b => b["店舗ID"] === sid);
+      const st = storeOf(sid);
+      return st && hasPos(st) ? [{ ID: "L" + sid, 店舗ID: sid, 支店名: "", 緯度: st["緯度"], 経度: st["経度"], legacy: true }, ...real] : real;
+    };
+    const fullName = (st, b) => (st ? st["店名"] : "") + (b && b["支店名"] ? " " + b["支店名"] : "");
+    const branchLabel = b => b["支店名"] || "（店舗名なし）";
+    // お店ごとに、いちばん近い店舗：[{ s, b, m }]（近い順）
+    function nearestBranches(p) {
+      const out = [];
+      for (const st of S.stores) {
+        let best = null;
+        for (const b of branchesOf(st.ID)) if (hasPos(b)) { const m = meters(p, { lat: +b["緯度"], lng: +b["経度"] }); if (!best || m < best.m) best = { s: st, b, m }; }
+        if (best) out.push(best);
+      }
+      return out.sort((a, b) => a.m - b.m);
+    }
     const todo = computed(() => S.items.filter(i => !i["済"]));
 
     // ---- 入力 ----
@@ -350,16 +370,12 @@ const App = {
     const BOUGHT_NEAR = 1000;      // 買ったときに、このきょり（m）以内の登録店を「場所」にする（広いお店もあるので 1km）
     const pad2 = n => String(n).padStart(2, "0");
     const nowLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
-    async function storeHere() {         // いまいる登録店（なければ null）
+    async function storeHere(it) {         // いまいる登録店 { s, b }（なければ null）
       let p;
       try { p = await locate(true); S.here = p; S.hereAt = Date.now(); } catch (e) { return null; }       // 買ったその時の位置（前の位置は使わない）
-      let best = null;
-      for (const s of S.stores) {
-        if (s["緯度"] === "" || s["経度"] === "") continue;
-        const m = meters(p, { lat: +s["緯度"], lng: +s["経度"] });
-        if (m <= BOUGHT_NEAR && (!best || m < best.m)) best = { s, m };
-      }
-      return best && best.s;
+      const near = nearestBranches(p).filter(x => x.m <= BOUGHT_NEAR);
+      // その品に決めてあるお店の店舗が 1km 以内にあれば、そのお店（同じモールの中の別のお店とまちがえない）。なければ、いちばん近いお店
+      return near.find(x => x.s.ID === it["店舗ID"]) || near[0] || null;
     }
     function toggle(it) {
       const done = !it["済"];
@@ -367,9 +383,9 @@ const App = {
       if (done) {
         const rec = { ID: uid(), 日時: nowLocal(), 品ID: it.ID, 品名: it["品名"], ジャンル: it["ジャンル"], 店舗ID: "", 店名: "" };
         save("購入記録", [...S.history, rec]);
-        storeHere().then(st => {            // 位置がわかったら、お店を書きたす
-          if (!st) return;
-          save("購入記録", S.history.map(h => h.ID === rec.ID ? { ...h, 店舗ID: st.ID, 店名: st["店名"] } : h));
+        storeHere(it).then(x => {            // 位置がわかったら、お店を書きたす（店名＋店舗名）
+          if (!x) return;
+          save("購入記録", S.history.map(h => h.ID === rec.ID ? { ...h, 店舗ID: x.s.ID, 店名: fullName(x.s, x.b) } : h));
         });
       } else {                               // 「買った」を取りけしたら、その記録も消す（いちばん新しいもの）
         const last = [...S.history].reverse().find(h => h["品ID"] === it.ID);
@@ -409,26 +425,75 @@ const App = {
     }
 
     // ---- 店舗別 ----
-    async function findHere() {
+    async function findHere(fresh) {           // 「更新」を押したときは、前の位置を使わず今の位置をとる
       S.hereBusy = true; S.hereErr = "";
-      try { S.here = await locate(); } catch (e) { S.hereErr = e.message; S.here = null; }
+      try { S.here = await locate(fresh === true); } catch (e) { S.hereErr = e.message; S.here = null; }
       S.hereBusy = false;
+      if (S.here) findUnregistered(S.here);
     }
-    const nearStores = computed(() => {
-      if (!S.here) return [];
-      return sortedStores.value.filter(s => s["緯度"] !== "" && s["経度"] !== "")
-        .map(s => ({ s, m: meters(S.here, { lat: +s["緯度"], lng: +s["経度"] }) })).sort((a, b) => a.m - b.m);
-    });
+    // ---- 未登録の店舗：買うものがあるお店で、1km 以内に登録した店舗がないとき、地図で同じ名前のお店を近くに探す ----
+    // （例：無印良品は「イオンモール福岡店」だけ登録 → かやの森店の近くで「未登録の店舗です。登録しますか？」）
+    const SUGGEST_MAX = 5;         // 一度に調べるお店の数（地図の検索の回数をおさえる）
+    const looked = {};             // 同じ場所で同じお店を何度も調べない（約100m ごと）
+    try { S.dismissed = JSON.parse(localStorage.getItem("sh_dismiss") || "{}"); } catch (e) { }
+    const cell = p => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`;
+    async function findUnregistered(p) {
+      const want = [...new Set(todo.value.map(i => i["店舗ID"]).filter(Boolean))].map(storeOf).filter(Boolean);
+      const near = new Set(nearestBranches(p).filter(x => x.m <= NEAR).map(x => x.s.ID));
+      const targets = want.filter(st => !near.has(st.ID)).slice(0, SUGGEST_MAX);
+      const found = [];
+      await Promise.all(targets.map(async st => {
+        const key = st.ID + "@" + cell(p);
+        if (!(key in looked)) looked[key] = await nearbyPoi(st["店名"], p);
+        const r = looked[key];
+        if (!r) return;
+        if (branchesOf(st.ID).some(b => hasPos(b) && meters(r, { lat: +b["緯度"], lng: +b["経度"] }) < 200)) return;     // もう登録してある
+        if (S.dismissed[st.ID + "@" + r.lat.toFixed(4) + "," + r.lng.toFixed(4)]) return;
+        found.push({ s: st, ...r });
+      }));
+      S.suggest = found.sort((a, b) => a.m - b.m);
+    }
+    async function nearbyPoi(name, p) {          // p のまわり 1km で、名前に name が入っているお店（いちばん近いもの）
+      const dLat = 0.0095, dLng = 0.0115;
+      const j = await fetchJson("https://photon.komoot.io/api/?limit=15&q=" + encodeURIComponent(name) + `&lat=${p.lat}&lon=${p.lng}&bbox=${p.lng - dLng},${p.lat - dLat},${p.lng + dLng},${p.lat + dLat}`);
+      let best = null;
+      for (const f of (j && j.features) || []) {
+        const pr = f.properties || {}, title = pr.name || "";
+        if (nameScore(name, title) < 2) continue;
+        const r = { title, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] };
+        r.m = meters(p, r);
+        if (r.m <= NEAR && (!best || r.m < best.m)) best = r;
+      }
+      return best;
+    }
+    // 地図の名前から、店舗名だけをとり出す（「無印良品 かやの森店」→「かやの森店」）
+    function branchFromTitle(storeName, title) {
+      const a = String(title).normalize("NFKC"), n = String(storeName).normalize("NFKC");
+      const rest = a.split(n).join(" ").replace(/[\s　・()（）]+/g, " ").trim();
+      return rest;
+    }
+    function addSuggest(x) {
+      const row = { ID: uid(), 店舗ID: x.s.ID, 支店名: branchFromTitle(x.s["店名"], x.title), 緯度: x.lat.toFixed(6), 経度: x.lng.toFixed(6) };
+      save("支店", [...S.branches, row]);
+      S.suggest = S.suggest.filter(y => y !== x);
+      toast(`「${fullName(x.s, row)}」を登録しました`);
+    }
+    function dismissSuggest(x) {
+      S.dismissed = { ...S.dismissed, [x.s.ID + "@" + x.lat.toFixed(4) + "," + x.lng.toFixed(4)]: 1 };
+      try { localStorage.setItem("sh_dismiss", JSON.stringify(S.dismissed)); } catch (e) { }
+      S.suggest = S.suggest.filter(y => y !== x);
+    }
+    const nearStores = computed(() => S.here ? nearestBranches(S.here) : []);
     // 表示するお店のまとまり：[{ id, name, dist, items }]
     // 優先のもの：全店舗・現在地はぜんぶ（現在地では別のお店のものも出す）。お店を選んでいるときは、そのお店のもの
     // 1km〜3km のお店（もしかして？）
     const maybeGroups = computed(() => S.storeMode !== "here" ? [] : nearStores.value.filter(x => x.m > NEAR && x.m <= MAYBE)
-      .map(x => ({ id: x.s.ID, name: x.s["店名"], dist: x.m, items: todo.value.filter(i => !prio(i) && i["店舗ID"] === x.s.ID) })));
+      .map(x => ({ id: x.s.ID, name: fullName(x.s, x.b), dist: x.m, items: todo.value.filter(i => !prio(i) && i["店舗ID"] === x.s.ID) })));
     const prioStore = computed(() => byPrio(todo.value.filter(i => prio(i) && (S.storeMode === "here" || !S.storeSel || i["店舗ID"] === S.storeSel))));
     const storeGroups = computed(() => {
       const items = todo.value.filter(i => !prio(i));
       if (S.storeMode === "here") {
-        return nearStores.value.filter(x => x.m <= NEAR).map(x => ({ id: x.s.ID, name: x.s["店名"], dist: x.m, items: items.filter(i => i["店舗ID"] === x.s.ID) }));
+        return nearStores.value.filter(x => x.m <= NEAR).map(x => ({ id: x.s.ID, name: fullName(x.s, x.b), dist: x.m, items: items.filter(i => i["店舗ID"] === x.s.ID) }));
       }
       const ids = S.storeSel ? [S.storeSel] : [...sortedStores.value.map(s => s.ID), ""];
       return ids.map(id => ({ id, name: storeName(id), dist: null, items: items.filter(i => (i["店舗ID"] || "") === id && (id === "" || storeOf(id))) .concat(id === "" ? items.filter(i => i["店舗ID"] && !storeOf(i["店舗ID"])) : []) }))
@@ -486,7 +551,15 @@ const App = {
     let map = null, marker = null;
     function editStore(s) {
       S.storeDraft = s ? { ...s } : { ID: "", 店名: "", 緯度: "", 経度: "", 並び: String(S.stores.length) };
-      S.view = "storeEdit"; S.addrQ = ""; S.addrRes = null; keep();
+      S.view = "storeEdit"; S.branchDraft = null; keep();
+    }
+    const draftBranches = computed(() => S.storeDraft ? (S.storeDraft.ID ? branchesOf(S.storeDraft.ID) : []) : []);
+    function editBranch(b) {                 // 店舗（支店）の追加・編集。位置は店名・住所で探す／現在地／地図のピン
+      const d = S.storeDraft, name = String(d["店名"] || "").trim();
+      if (!name) { toast("先に店名を入れてください"); return; }
+      S.branchDraft = b ? { ...b } : { ID: "", 店舗ID: d.ID, 支店名: "", 緯度: "", 経度: "" };
+      S.addrQ = b ? "" : name; S.addrRes = null; S.view = "branchEdit";
+      const sc = document.getElementById("app"); if (sc) sc.scrollTop = 0;
       nextTick(drawMap);
     }
     async function drawMap() {
@@ -495,7 +568,7 @@ const App = {
       try {
         const L = await loadLeaflet();
         if (map) { map.remove(); map = null; marker = null; }
-        const d = S.storeDraft, has = d["緯度"] !== "" && d["経度"] !== "";
+        const d = S.branchDraft, has = d["緯度"] !== "" && d["経度"] !== "";
         const center = has ? [+d["緯度"], +d["経度"]] : S.here ? [S.here.lat, S.here.lng] : [35.681, 139.767];
         map = L.map(el, { zoomControl: true, attributionControl: true }).setView(center, has || S.here ? 16 : 12);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
@@ -507,17 +580,17 @@ const App = {
     const pinIcon = () => L.divIcon({ className: "pin", iconSize: [34, 42], iconAnchor: [17, 40],
       html: '<svg viewBox="0 0 24 30" width="34" height="42"><path d="M12 29s-10-9.4-10-16.5a10 10 0 0 1 20 0C22 19.6 12 29 12 29z" fill="#d9658e" stroke="#fff" stroke-width="2"/><circle cx="12" cy="12.5" r="3.8" fill="#fff"/></svg>' });
     function setPin(lat, lng, move) {
-      S.storeDraft["緯度"] = lat.toFixed(6); S.storeDraft["経度"] = lng.toFixed(6);
+      S.branchDraft["緯度"] = lat.toFixed(6); S.branchDraft["経度"] = lng.toFixed(6);
       if (map && window.L) { if (marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng], { icon: pinIcon() }).addTo(map); if (move) map.setView([lat, lng], 17); }
     }
     function clearPin() {                       // 登録した位置を消す（お店は「位置なし」になり、現在地の表示に出なくなる）
-      S.storeDraft["緯度"] = ""; S.storeDraft["経度"] = "";
+      S.branchDraft["緯度"] = ""; S.branchDraft["経度"] = "";
       if (marker) { marker.remove(); marker = null; }
-      toast("位置を消しました（「保存する」で確定）");
+      toast("位置を消しました（「決定」で確定）");
     }
     async function searchAddr() {
       const q = S.addrQ.trim();
-      if (!q) { toast("住所を入れてください"); return; }
+      if (!q) { toast("店名か住所を入れてください"); return; }
       S.addrBusy = true; S.addrRes = null;
       let near = S.here;
       if (!near) { try { near = S.here = await locate(); } catch (e) { } }     // 現在地の近くを優先して探す（わからなければ全国から）
@@ -528,25 +601,65 @@ const App = {
     }
     function pickAddr(r) {
       setPin(r.lat, r.lng, true); S.addrRes = null;
-      if (!String(S.storeDraft["店名"] || "").trim()) { /* 店名はそのまま */ }
+      if (!String(S.branchDraft["支店名"] || "").trim() && S.storeDraft) {            // 店舗名が空なら、地図の名前から入れる（例：かやの森店）
+        const n = branchFromTitle(S.storeDraft["店名"], r.title);
+        if (n && n !== r.title.normalize("NFKC") && !r.addr) S.branchDraft["支店名"] = n;
+      }
       toast("その場所にピンを立てました");
     }
     async function useHere() {
       toast("現在地をさがしています…");
       try { const p = await locate(); S.here = p; setPin(p.lat, p.lng, true); toast("現在地を入れました"); } catch (e) { toast(e.message); }
     }
-    function saveStore() {
+    function storeRow() {                    // 編集中のお店を表に入れる形（新しいお店なら ID をつける）。前の版の位置は消す（店舗の表に移すので）
       const d = S.storeDraft, name = String(d["店名"] || "").trim();
-      if (!name) { toast("店名を入れてください"); return; }
-      const row = { ...d, 店名: name, ID: d.ID || uid() };
-      save("店舗", d.ID ? S.stores.map(s => s.ID === d.ID ? row : s) : [...S.stores, row]);
-      toast(d.ID ? "保存しました" : "お店を登録しました"); S.view = "storeList"; S.storeDraft = null;
+      if (!name) return null;
+      if (!d.ID) d.ID = uid();
+      return { ...d, 店名: name };
+    }
+    function putStore(row, clearLegacy) {
+      const r = clearLegacy ? { ...row, 緯度: "", 経度: "" } : row;
+      save("店舗", S.stores.some(s => s.ID === r.ID) ? S.stores.map(s => s.ID === r.ID ? r : s) : [...S.stores, r]);
+      S.storeDraft = { ...S.storeDraft, ...r };
+    }
+    function saveStore() {
+      const isNew = !S.storeDraft.ID || !storeOf(S.storeDraft.ID);
+      const row = storeRow();
+      if (!row) { toast("店名を入れてください"); return; }
+      putStore(row, false);
+      toast(isNew ? "お店を登録しました" : "保存しました"); S.view = "storeList"; S.storeDraft = null;
+    }
+    function saveBranch() {
+      const row = storeRow();
+      if (!row) { toast("店名を入れてください"); return; }
+      const b = S.branchDraft, legacy = String(b.ID).startsWith("L");
+      const old = storeOf(row.ID), hadLegacy = hasPos(old);
+      let list = S.branches;
+      if (hadLegacy && !legacy) list = [...list, { ID: uid(), 店舗ID: row.ID, 支店名: "", 緯度: old["緯度"], 経度: old["経度"] }];   // 前の版の位置も、店舗として残す
+      putStore(row, hadLegacy);                                        // お店も保存（新しいお店のときも、ここで登録される）
+      const nb = { ID: b.ID && !legacy ? b.ID : uid(), 店舗ID: row.ID, 支店名: String(b["支店名"] || "").trim(), 緯度: b["緯度"], 経度: b["経度"] };
+      list = list.some(x => x.ID === nb.ID) ? list.map(x => x.ID === nb.ID ? nb : x) : [...list, nb];
+      save("支店", list);
+      toast(`「${fullName(row, nb)}」を保存しました`); backToStore();
+    }
+    function deleteBranch() {
+      const b = S.branchDraft, st = storeOf(b["店舗ID"]);
+      S.confirm = { msg: `「${esc(fullName(st || S.storeDraft, b))}」を消しますか？`, ok: "消す", fn: () => {
+        if (String(b.ID).startsWith("L")) { if (st) putStore(st, true); }
+        else save("支店", S.branches.filter(x => x.ID !== b.ID));
+        toast("店舗を消しました"); backToStore();
+      } };
+    }
+    function backToStore() {
+      if (map) { map.remove(); map = null; marker = null; }
+      S.branchDraft = null; S.addrRes = null; S.view = "storeEdit";
     }
     function deleteStore() {
       const d = S.storeDraft;
-      S.confirm = { msg: `「${esc(d["店名"])}」を消しますか？<br><span class="small muted">このお店の商品は「お店未定」になります</span>`, ok: "消す", fn: () => {
+      S.confirm = { msg: `「${esc(d["店名"])}」を消しますか？<br><span class="small muted">店舗もぜんぶ消えます。このお店の商品は「お店未定」になります</span>`, ok: "消す", fn: () => {
         save("店舗", S.stores.filter(s => s.ID !== d.ID));
-        save("買い物", S.items.map(i => i["店舗ID"] === d.ID ? { ...i, 店舗ID: "" } : i));
+        if (S.branches.some(b => b["店舗ID"] === d.ID)) save("支店", S.branches.filter(b => b["店舗ID"] !== d.ID));
+        if (S.items.some(i => i["店舗ID"] === d.ID)) save("買い物", S.items.map(i => i["店舗ID"] === d.ID ? { ...i, 店舗ID: "" } : i));
         if (S.storeSel === d.ID) S.storeSel = "";
         if (S.storeId === d.ID) S.storeId = "";
         S.view = "storeList"; S.storeDraft = null; toast("消しました");
@@ -568,7 +681,7 @@ const App = {
 
     function go(v) {
       if (map) { map.remove(); map = null; marker = null; }
-      S.view = v; S.storeDraft = null; S.genreDraft = null; keep(); const sc = document.getElementById("app"); if (sc) sc.scrollTop = 0;
+      S.view = v; S.storeDraft = null; S.branchDraft = null; S.genreDraft = null; keep(); const sc = document.getElementById("app"); if (sc) sc.scrollTop = 0;
       if (v === "stores" && S.storeMode === "here") findHere();
     }
     const footOn = k => S.view === k || (k === "menu" && !FOOT.some(f => f[2] === S.view));
@@ -580,14 +693,14 @@ const App = {
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
       taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
-      editStore, useHere, clearPin, distText, saveStore, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
+      editStore, useHere, clearPin, saveStore, editBranch, saveBranch, deleteBranch, backToStore, draftBranches, branchesOf, branchLabel, addSuggest, dismissSuggest, hasPos, storeOf, meters, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
   template: `
 <div v-if="S.phase === 'loading'" class="loading">読み込み中…</div>
 
 <template v-else>
 <div class="wrap">
-  <button v-if="top2.length && !['storeEdit', 'genres'].includes(S.view)" class="banner" @click="go('list')">
+  <button v-if="top2.length && !['storeEdit', 'branchEdit', 'genres'].includes(S.view)" class="banner" @click="go('list')">
     <span class="bstar" v-html="svg('star')"></span>
     <span class="btext"><small>最優先 {{ top2.length }}件</small><b>{{ top2.map(i => i['品名']).join('・') }}</b></span><span class="bgo">›</span>
   </button>
@@ -660,10 +773,14 @@ const App = {
           <template v-else-if="S.hereErr"><span style="color:var(--red)">{{ S.hereErr }}</span></template>
           <template v-else-if="S.here">1km 以内のお店：<b>{{ storeGroups.length }}件</b>　1〜3km：<b>{{ maybeGroups.length }}件</b></template>
         </div>
-        <button class="chip" @click="findHere">更新</button>
+        <button class="chip" @click="findHere(true)">更新</button>
+      </div>
+      <div v-for="x in S.suggest" :key="x.s.ID + x.lat" class="card suggest">
+        <div class="sg-t"><span class="bic" v-html="svg('store')"></span><div><b>{{ x.title }}</b><span class="small muted">{{ distText(x.m) }}・{{ x.s['店名'] }}の未登録の店舗です。登録しますか？</span></div></div>
+        <div class="row2"><button class="btn" @click="dismissSuggest(x)">今はしない</button><button class="btn pri" @click="addSuggest(x)">登録する</button></div>
       </div>
       <div v-if="S.here && !S.hereBusy && !storeGroups.length" class="card small muted">
-        1km 以内に登録したお店はありません。<template v-if="nearStores.length && !maybeGroups.length">いちばん近いのは「{{ nearStores[0].s['店名'] }}」（{{ distText(nearStores[0].m) }}）です。</template>
+        1km 以内に登録したお店はありません。<template v-if="nearStores.length && !maybeGroups.length">いちばん近いのは「{{ nearStores[0].s['店名'] }}{{ nearStores[0].b['支店名'] ? ' ' + nearStores[0].b['支店名'] : '' }}」（{{ distText(nearStores[0].m) }}）です。</template>
       </div>
     </template>
     <template v-if="prioStore.length">
@@ -827,31 +944,52 @@ const App = {
     <div class="list" v-if="sortedStores.length">
       <button v-for="s in sortedStores" :key="s.ID" class="item" style="grid-template-columns:34px 1fr auto" @click="editStore(s)">
         <span class="bic" v-html="svg('store')"></span>
-        <div class="t"><b>{{ s['店名'] }}</b><span>{{ s['緯度'] !== '' ? '位置あり' : '位置なし（現在地の表示に出ません）' }}</span></div>
+        <div class="t"><b>{{ s['店名'] }}</b><span>{{ branchesOf(s.ID).length ? '店舗 ' + branchesOf(s.ID).length + '件：' + branchesOf(s.ID).map(branchLabel).join('・') : '店舗なし（現在地の表示に出ません）' }}</span></div>
         <span class="muted">›</span>
       </button>
     </div>
     <div v-else class="empty">まだありません</div>
     <button class="big" @click="editStore(null)">＋ お店を追加</button>
+    <div class="small muted" style="margin:8px 4px 0">お店（例：無印良品）の中に、店舗（例：イオンモール福岡店・かやの森店）をいくつも入れられます</div>
   </template>
 
   <!-- ===== お店の追加・編集 ===== -->
   <template v-else-if="S.view === 'storeEdit' && S.storeDraft">
-    <div class="title">{{ S.storeDraft.ID ? 'お店を編集' : 'お店を追加' }}</div>
+    <div class="title">{{ storeOf(S.storeDraft.ID) ? 'お店を編集' : 'お店を追加' }}</div>
     <div class="card" style="padding:4px 16px">
-      <div class="field"><label>店名</label><input v-model="S.storeDraft['店名']" placeholder="例：〇〇スーパー 駅前店" maxlength="30"></div>
+      <div class="field"><label>店名</label><input v-model="S.storeDraft['店名']" placeholder="例：無印良品" maxlength="30"></div>
+    </div>
+    <div class="sec" style="margin-top:4px">店舗<span class="small muted">位置を入れた店舗が、現在地の表示に出ます</span></div>
+    <div class="list" v-if="draftBranches.length">
+      <button v-for="b in draftBranches" :key="b.ID" class="item" style="grid-template-columns:34px 1fr auto" @click="editBranch(b)">
+        <span class="bic" v-html="svg('pin')"></span>
+        <div class="t"><b>{{ branchLabel(b) }}</b><span>{{ hasPos(b) ? (S.here ? 'ここから ' + distText(meters(S.here, { lat: +b['緯度'], lng: +b['経度'] })) : '位置あり') : '位置なし' }}</span></div>
+        <span class="muted">›</span>
+      </button>
+    </div>
+    <div v-else class="card small muted">まだ店舗がありません。「＋ 店舗を追加」で場所を入れてください</div>
+    <button class="btn" style="margin-top:8px" @click="editBranch(null)">＋ 店舗を追加</button>
+    <button class="big" @click="saveStore">{{ storeOf(S.storeDraft.ID) ? '保存する' : '登録する' }}</button>
+    <div class="row2" style="margin-top:10px"><button class="btn" @click="go('storeList')">もどる</button><button v-if="storeOf(S.storeDraft.ID)" class="btn danger" @click="deleteStore">このお店を消す</button></div>
+  </template>
+
+  <!-- ===== 店舗（支店）の追加・編集 ===== -->
+  <template v-else-if="S.view === 'branchEdit' && S.branchDraft && S.storeDraft">
+    <div class="title">{{ S.storeDraft['店名'] }}の店舗</div>
+    <div class="card" style="padding:4px 16px">
+      <div class="field"><label>店舗名</label><input v-model="S.branchDraft['支店名']" placeholder="例：イオンモール福岡店（なくてもOK）" maxlength="30"></div>
     </div>
     <div class="sec" style="margin-top:4px">店舗の位置</div>
-    <div class="addr"><input v-model="S.addrQ" placeholder="店名か住所（例：イオンモール福岡）" @keydown.enter.prevent="searchAddr"><button class="btn pri" @click="searchAddr" :disabled="S.addrBusy">{{ S.addrBusy ? '…' : '探す' }}</button></div>
+    <div class="addr"><input v-model="S.addrQ" placeholder="店名か住所（例：無印良品 かやの森）" @keydown.enter.prevent="searchAddr"><button class="btn pri" @click="searchAddr" :disabled="S.addrBusy">{{ S.addrBusy ? '…' : '探す' }}</button></div>
     <div class="list addrres" v-if="S.addrRes && S.addrRes.length > 1">
       <button v-for="(r, i) in S.addrRes" :key="i" class="item" style="grid-template-columns:30px 1fr auto" @click="pickAddr(r)"><span class="bic" v-html="svg('pin')"></span><div class="t"><b>{{ r.title }}</b><span v-if="r.sub">{{ r.sub }}</span></div><span class="muted small">{{ r.m != null ? distText(r.m) : '›' }}</span></button>
     </div>
     <button class="btn" style="margin-top:8px" @click="useHere"><span style="display:inline-flex;gap:6px;align-items:center" v-html="svg('locate') + '現在地を使う'"></span></button>
     <div class="small muted" style="margin:8px 4px 0">店名・住所で探す、現在地を使う、下の地図でお店の場所を押す、のどれかで位置を決めます（近い順に出ます）</div>
     <div id="map" class="map"></div>
-    <div class="coord"><span v-html="svg('pin')"></span><span class="cv">{{ S.storeDraft['緯度'] !== '' ? S.storeDraft['緯度'] + ', ' + S.storeDraft['経度'] : 'まだ位置がありません（任意）' }}</span><button v-if="S.storeDraft['緯度'] !== ''" class="clearpin" @click="clearPin">位置を消す</button></div>
-    <button class="big" @click="saveStore">{{ S.storeDraft.ID ? '保存する' : '登録する' }}</button>
-    <div class="row2" style="margin-top:10px"><button class="btn" @click="go('storeList')">もどる</button><button v-if="S.storeDraft.ID" class="btn danger" @click="deleteStore">このお店を消す</button></div>
+    <div class="coord"><span v-html="svg('pin')"></span><span class="cv">{{ S.branchDraft['緯度'] !== '' ? S.branchDraft['緯度'] + ', ' + S.branchDraft['経度'] : 'まだ位置がありません' }}</span><button v-if="S.branchDraft['緯度'] !== ''" class="clearpin" @click="clearPin">位置を消す</button></div>
+    <button class="big" @click="saveBranch">決定</button>
+    <div class="row2" style="margin-top:10px"><button class="btn" @click="backToStore">もどる</button><button v-if="S.branchDraft.ID" class="btn danger" @click="deleteBranch">この店舗を消す</button></div>
   </template>
 
   <!-- ===== ジャンル ===== -->
