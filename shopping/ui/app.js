@@ -289,8 +289,8 @@ const App = {
       const rest = list.filter(i => !(prio(i) && !i["済"]));
       return (top.length ? [[PRIO_KEY, top]] : []).concat(byGenre(rest));
     });
-    // ---- 買った記録（カレンダー）：「買った」にしたときの日時・品名と、そのとき近くにあった登録店（500m 以内）を残す ----
-    const BOUGHT_NEAR = 500;
+    // ---- 買った記録（カレンダー）：「買った」にしたときの日時・品名と、そのとき近くにあった登録店（1km 以内）を残す ----
+    const BOUGHT_NEAR = 1000;      // 買ったときに、このきょり（m）以内の登録店を「場所」にする（広いお店もあるので 1km）
     const pad2 = n => String(n).padStart(2, "0");
     const nowLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
     async function storeHere() {         // いまいる登録店（なければ null）
@@ -740,7 +740,7 @@ const App = {
         </div>
       </div>
     </template>
-    <div class="small muted" style="margin:10px 4px 0">一覧や店舗別で「買った」にすると、ここに残ります。そのとき 500m 以内に登録したお店があれば、そのお店を場所として記録します</div>
+    <div class="small muted" style="margin:10px 4px 0">一覧や店舗別で「買った」にすると、ここに残ります。そのとき 1km 以内に登録したお店があれば、そのお店を場所として記録します</div>
   </template>
 
   <!-- ===== メニュー ===== -->
