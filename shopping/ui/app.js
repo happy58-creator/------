@@ -91,8 +91,12 @@ async function geocode(q, near, skip) {
   uniq.sort((x, y) => (Math.round(y.score * 2) - Math.round(x.score * 2)) || ((x.m ?? 0) - (y.m ?? 0)));
   let gsi = gs;
   if (!uniq.length && !gsi.length && !addrLike) gsi = await searchGsi(q);        // 何もなければ、住所としても探す
-  const out = (addrLike ? [...gsi, ...uniq] : [...uniq, ...gsi]).slice(0, 10);    // 住所は 30km をこえても出す（住所で入れたときのため）
-  for (const r of out) if (near && r.m == null) r.m = meters(near, r);
+  let out = addrLike ? [...gsi, ...uniq] : [...uniq, ...gsi];          // 住所は 30km をこえても出す（住所で入れたときのため）
+  if (near) {                                                          // 現在地がわかれば、ぜんぶ近い順
+    for (const r of out) if (r.m == null) r.m = meters(near, r);
+    out.sort((x, y) => x.m - y.m);
+  }
+  out = out.slice(0, 10);
   out.hidden = hidden;
   return out;
 }
@@ -999,7 +1003,7 @@ const App = {
       <button v-for="(r, i) in S.addrRes" :key="i" class="item" style="grid-template-columns:30px 1fr auto" @click="pickAddr(r)"><span class="bic" v-html="svg('pin')"></span><div class="t"><b>{{ r.title }}</b><span v-if="r.sub">{{ r.sub }}</span></div><span class="muted small">{{ r.m != null ? distText(r.m) : '›' }}</span></button>
     </div>
     <button class="btn" style="margin-top:8px" @click="useHere"><span style="display:inline-flex;gap:6px;align-items:center" v-html="svg('locate') + '現在地を使う'"></span></button>
-    <div class="small muted" style="margin:8px 4px 0">店名・住所で探す、現在地を使う、下の地図でお店の場所を押す、のどれかで位置を決めます（店名は現在地から 30km 以内を近い順に。登録ずみの店舗は出ません）</div>
+    <div class="small muted" style="margin:8px 4px 0">店名・住所で探す、現在地を使う、下の地図でお店の場所を押す、のどれかで位置を決めます（現在地から近い順。店名は 30km 以内だけ。登録ずみの店舗は出ません）</div>
     <div id="map" class="map"></div>
     <div class="coord"><span v-html="svg('pin')"></span><span class="cv">{{ S.branchDraft['緯度'] !== '' ? S.branchDraft['緯度'] + ', ' + S.branchDraft['経度'] : 'まだ位置がありません' }}</span><button v-if="S.branchDraft['緯度'] !== ''" class="clearpin" @click="clearPin">位置を消す</button></div>
     <button class="big" @click="saveBranch">決定</button>
