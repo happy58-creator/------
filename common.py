@@ -198,6 +198,12 @@ html, body, [class*="st-"]:not([data-testid="stIconMaterial"]), .stApp { font-fa
    サイドバーを開くボタンも stToolbar の中にあるので、stToolbar ごと消さない */
 [data-testid="stToolbarActions"], [data-testid="stToolbarActionButton"], [data-testid="stMainMenu"],
 .stAppDeployButton, [data-testid="stDecoration"] { display: none !important; }
+/* サイドバーは使わない（開くボタンもかくす） */
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"],
+[data-testid="stSidebarCollapseButton"], [data-testid="stSidebarNav"] { display: none !important; }
+/* ページの上の「トップにもどる」：小さめのボタンに */
+.st-key-kz-back { width: fit-content; margin-bottom: -.4rem; }
+.st-key-kz-back a { background: #fff; border: 1px solid rgba(84,43,105,.18); border-radius: 999px; padding: .15rem .9rem; }
 /* 家計簿（/kakeibo）と買い物リスト（/kaimono）のページは、メニューに出さない */
 [data-testid="stSidebarNav"] a[href$="/kakeibo"], [data-testid="stSidebarNavLink"][href$="/kakeibo"],
 [data-testid="stSidebarNav"] a[href$="/kaimono"], [data-testid="stSidebarNavLink"][href$="/kaimono"] { display: none !important; }
@@ -265,20 +271,18 @@ div[data-testid="stMetric"] {
 
 
 def setup_page(title, icon, layout="centered", home_link=True):
-    """set_page_config + 共通CSS + サイドバーのトップへ戻るリンク。各ページの最初に呼ぶ。"""
-    st.set_page_config(page_title=title, page_icon=icon, layout=layout)
+    """set_page_config + 共通CSS + ページの上の「トップにもどる」。各ページの最初に呼ぶ。サイドバーは使わない（トップ画面の下のメニューで移動する）"""
+    st.set_page_config(page_title=title, page_icon=icon, layout=layout, initial_sidebar_state="collapsed")
     st.markdown(_CSS, unsafe_allow_html=True)
     import auth  # 循環importを避けるため関数内で読み込む
 
     # ログイン画面でも王冠マークなどを消すので、ログインの確認より先に出す（サイドバーに出すとログイン前もサイドバーが出てしまう）
     st.html(_HIDE_CLOUD_BADGES_JS, unsafe_allow_javascript=True)
     auth.gate(is_home=not home_link)
-    with st.sidebar:
-        if home_link:
-            if "home" in PAGES:
-                st.page_link(PAGES["home"], label="トップにもどる", icon="🏠")
-        auth.sidebar_user()
-        st.html(_PDF_OPEN_JS, unsafe_allow_javascript=True)
+    if home_link and "home" in PAGES:
+        with st.container(key="kz-back"):
+            st.page_link(PAGES["home"], label="トップにもどる", icon="🏠")
+    st.html(_PDF_OPEN_JS, unsafe_allow_javascript=True)     # 「PDFを見る」ボタンを動かす（見えない）
 
 
 _NO_KEYBOARD_JS = """
@@ -367,8 +371,8 @@ def build_navigation():
         PAGES[key] = st.Page(page_file(path), title=titles.get(key, title), icon=icon, url_path=url_path, default=(key == "home"))
     import auth
 
-    # ログイン前はサイドバーのメニューを出さない
-    position = "sidebar" if auth.session_alive() else "hidden"
+    # サイドバーのメニューは出さない（トップ画面の下のメニューと、各ページの「トップにもどる」で移動する）
+    position = "hidden"
     names = BAND_SECTIONS.get(band, {})
     adult_only = {"itpass"} if band == "小" else set()      # ITパスポートは大人向け（小学生のメニューには出さない）
     nav = {names.get(section, section): [PAGES[k] for k in keys if k not in adult_only] for section, keys in SECTIONS.items()}

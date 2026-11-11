@@ -248,8 +248,7 @@ def settings_tab():
         if st.button(by_band("ログアウト", "ログアウト"), key="home_logout", use_container_width=True):
             auth.logout()
             st.rerun()
-    st.caption(by_band("左のメニューからも 好きなページに いけるよ。", "左のメニューからも各ページに移動できます。")
-               + " AI" + by_band("つき", "搭載") + "のページを使うには GEMINI_API_KEY の設定が必要です。")
+    st.caption("AI" + by_band("つき", "搭載") + "のページを使うには GEMINI_API_KEY の設定が必要です。")
 
 
 SECTION = {"study": APPS[0][1], "game": APPS[1][1], "record": APPS[2][1]}
