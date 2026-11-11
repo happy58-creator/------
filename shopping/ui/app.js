@@ -693,7 +693,7 @@ const App = {
       const info = unitInfo(c);
       if (!info) { toast("値段と量を入れてください"); return; }
       const st = nearStoreNow();
-      const ps = S.priceSave = { c, name: c.name || "", sid: st ? st.ID : lastPriceSid, auto: !!st, touched: false };
+      const ps = S.priceSave = { c, name: c.name || "", memo: "", sid: st ? st.ID : lastPriceSid, auto: !!st, touched: false };
       // いまの位置をとりなおして、近くのお店を選ぶ（自分でお店を選んだあとは変えない）
       locate().then(p => { S.here = p; S.hereAt = Date.now(); const s2 = nearStoreNow(); if (s2 && S.priceSave === ps && !ps.touched) { ps.sid = s2.ID; ps.auto = true; } }).catch(() => {});
     }
@@ -703,7 +703,7 @@ const App = {
       if (!info) { toast("値段と量を入れてください"); return; }
       const st = storeOf(ps.sid), c = ps.c;
       const row = { ID: uid(), 品名: name, 店舗ID: ps.sid || "", 店名: st ? st["店名"] : "", 値段: String(Math.round(info.price)), 量: String(num(c.amt) || (isCount(c.unit) ? 1 : "")), 単位: c.unit,
-        入数: isCount(c.unit) ? "1" : String(Math.max(1, num(c.pack) || 1)), 単価: String(+info.v.toFixed(3)), 基準: info.base, 基準量: String(info.per), 日付: nowLocal().slice(0, 10) };
+        入数: isCount(c.unit) ? "1" : String(Math.max(1, num(c.pack) || 1)), 単価: String(+info.v.toFixed(3)), 基準: info.base, 基準量: String(info.per), 日付: nowLocal().slice(0, 10), メモ: String(ps.memo || "").trim() };
       save("価格記録", [...S.prices, row]);
       if (!c.name) c.name = name;
       lastPriceSid = ps.sid; S.priceSave = null;
@@ -713,7 +713,7 @@ const App = {
     function recRow(x) {
       const r = x.best;
       return { id: uid(), name: r["品名"], price: String(num(r["値段"])), amt: isCount(r["単位"]) && num(r["量"]) === 1 ? "" : String(num(r["量"]) || ""), unit: UNITS[r["単位"]] ? r["単位"] : "g",
-        pack: String(Math.max(1, num(r["入数"]) || 1)), tax: "込", from: { store: x.name, date: String(r["日付"]).slice(5).replace("-", "/"), rid: r.ID } };
+        pack: String(Math.max(1, num(r["入数"]) || 1)), tax: "込", from: { store: x.name, date: String(r["日付"]).slice(5).replace("-", "/"), rid: r.ID, memo: r["メモ"] || "" } };
     }
     function compareFromRec(name, base) {
       const book = priceBook(name), g = (base && book.find(b => b.base === base)) || book[0];
@@ -735,7 +735,7 @@ const App = {
     }
     const cmpLabel = c => (c.name || "") + (c.from ? `（${c.from.store}）` : S.cmp.some(x => x.from) ? "（いま）" : "");
     function removePrice(r) { save("価格記録", S.prices.filter(x => x.ID !== r.ID)); toast("記録を消しました"); }
-    const recDetail = r => `${Number(r["値段"]).toLocaleString()}円・${isCount(r["単位"]) ? (num(r["量"]) > 1 ? r["量"] + r["単位"] : "1" + r["単位"]) : r["量"] + r["単位"] + (num(r["入数"]) > 1 ? "×" + r["入数"] : "")}・${String(r["日付"]).slice(5).replace("-", "/")}`;
+    const recDetail = r => `${Number(r["値段"]).toLocaleString()}円・${isCount(r["単位"]) ? (num(r["量"]) > 1 ? r["量"] + r["単位"] : "1" + r["単位"]) : r["量"] + r["単位"] + (num(r["入数"]) > 1 ? "×" + r["入数"] : "")}・${String(r["日付"]).slice(5).replace("-", "/")}${r["メモ"] ? "・" + r["メモ"] : ""}`;
     const cycleTax = c => { c.tax = c.tax === "込" ? "8" : c.tax === "8" ? "10" : "込"; keep(); };
     const taxLabel = t => t === "込" ? "税込" : `税抜+${t}%`;
 
@@ -1044,7 +1044,7 @@ const App = {
         <div class="cmphead"><span class="letter">{{ LETTERS[i] }}</span>
           <input v-model="c.name" @input="keep()" placeholder="品名（記録するときに使います）" maxlength="20">
           <button class="del" v-if="S.cmp.length > 2" @click="S.cmp.splice(i, 1); keep()">✕</button></div>
-        <div v-if="c.from" class="fromtag"><span v-html="svg('store')"></span>記録：{{ c.from.store }}・{{ c.from.date }}</div>
+        <div v-if="c.from" class="fromtag"><span v-html="svg('store')"></span>記録：{{ c.from.store }}・{{ c.from.date }}<template v-if="c.from.memo">・{{ c.from.memo }}</template></div>
         <div class="cmpin">
           <label>値段<div class="unitbox"><input v-model="c.price" @input="keep()" inputmode="decimal" placeholder="0">円</div></label>
           <button class="taxchip" @click="cycleTax(c)">{{ taxLabel(c.tax) }}</button>
@@ -1273,7 +1273,8 @@ const App = {
 <div v-if="S.priceSave && S.priceSave.c" class="modal" @click.self="S.priceSave = null"><div class="sheet">
   <div style="font-weight:800;font-size:17px;margin-bottom:4px">値段を記録</div>
   <div class="small muted" style="margin-bottom:10px">{{ perText(unitInfo(S.priceSave.c)) }}（{{ Math.round(unitInfo(S.priceSave.c).price).toLocaleString() }}円）</div>
-  <div class="card" style="padding:4px 16px"><div class="field"><label>品名</label><input v-model="S.priceSave.name" placeholder="例：豚こま" maxlength="20"></div></div>
+  <div class="card" style="padding:4px 16px"><div class="field"><label>品名</label><input v-model="S.priceSave.name" placeholder="例：豚こま" maxlength="20"></div>
+    <div class="field"><label>メモ</label><input v-model="S.priceSave.memo" placeholder="任意（例：特売・国産・見切り品）" maxlength="40"></div></div>
   <div class="sec" style="margin-top:4px">お店<span v-if="S.priceSave.auto" class="small muted">いま近くのお店を選んでいます</span></div>
   <div class="chips" style="flex-wrap:wrap">
     <button v-for="s in sortedStores" :key="s.ID" class="chip" :class="{ on: S.priceSave.sid === s.ID }" @click="S.priceSave.sid = s.ID; S.priceSave.auto = false; S.priceSave.touched = true">{{ s['店名'] }}</button>
