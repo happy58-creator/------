@@ -709,6 +709,31 @@ const App = {
       lastPriceSid = ps.sid; S.priceSave = null;
       toast(`記録しました：${name}（${st ? st["店名"] : "お店未定"}）`); keep();
     }
+    // 記録から比べる：その品名の、お店ごとの最安の記録を「比べる」の行にして、いま見ている値段を入れる空の行も足す
+    function recRow(x) {
+      const r = x.best;
+      return { id: uid(), name: r["品名"], price: String(num(r["値段"])), amt: isCount(r["単位"]) && num(r["量"]) === 1 ? "" : String(num(r["量"]) || ""), unit: UNITS[r["単位"]] ? r["単位"] : "g",
+        pack: String(Math.max(1, num(r["入数"]) || 1)), tax: "込", from: { store: x.name, date: String(r["日付"]).slice(5).replace("-", "/"), rid: r.ID } };
+    }
+    function compareFromRec(name, base) {
+      const book = priceBook(name), g = (base && book.find(b => b.base === base)) || book[0];
+      if (!g) return;
+      const rows = g.list.slice(0, LETTERS.length - 1).map(recRow);
+      const here = nearStoreNow(), blank = newCmp(rows[0]); blank.name = name;
+      S.cmp = [...rows, blank]; S.ctab = "cmp"; keep();
+      toast(`${name}：記録 ${rows.length}件を並べました。${here ? here["店名"] + "の" : "いまの"}値段を下に入れてください`);
+      nextTick(() => { const sc = document.getElementById("app"); if (sc) sc.scrollTop = 0; const ins = document.querySelectorAll(".cmprow .cmpin input"); const el = ins[ins.length - 3] || ins[ins.length - 1]; if (el) el.focus({ preventScroll: true }); });
+    }
+    function addRecToCmp(c) {               // 比べている行の品名の記録を、いまの行に足して並べる（同じ記録は足さない）
+      const me = unitInfo(c), book = priceBook(c.name), g = (me && book.find(b => b.base === me.base)) || book[0];
+      if (!g) return;
+      const have = new Set(S.cmp.filter(x => x.from).map(x => x.from.rid));
+      const add = g.list.filter(x => !have.has(x.best.ID)).slice(0, LETTERS.length - S.cmp.length).map(recRow);
+      if (!add.length) { toast(have.size ? "記録はもう並んでいます" : "これ以上は並べられません"); return; }
+      S.cmp = [...S.cmp.filter(x => x.from || x === c || unitInfo(x) || x.name), ...add].slice(0, LETTERS.length); keep();
+      toast(`記録 ${add.length}件を足しました`);
+    }
+    const cmpLabel = c => (c.name || "") + (c.from ? `（${c.from.store}）` : S.cmp.some(x => x.from) ? "（いま）" : "");
     function removePrice(r) { save("価格記録", S.prices.filter(x => x.ID !== r.ID)); toast("記録を消しました"); }
     const recDetail = r => `${Number(r["値段"]).toLocaleString()}円・${isCount(r["単位"]) ? (num(r["量"]) > 1 ? r["量"] + r["単位"] : "1" + r["単位"]) : r["量"] + r["単位"] + (num(r["入数"]) > 1 ? "×" + r["入数"] : "")}・${String(r["日付"]).slice(5).replace("-", "/")}`;
     const cycleTax = c => { c.tax = c.tax === "込" ? "8" : c.tax === "8" ? "10" : "込"; keep(); };
@@ -869,7 +894,7 @@ const App = {
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
-      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, recDetail, num, normName, genreFor, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
+      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, recDetail, num, normName, genreFor, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, clearPin, saveStore, editBranch, saveBranch, deleteBranch, backToStore, draftBranches, branchesOf, branchLabel, addSuggest, dismissSuggest, hasPos, storeOf, meters, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
@@ -1008,9 +1033,9 @@ const App = {
       <div class="card cmpres" :class="{ win: cmpResult.ok }">
         <template v-if="cmpResult.ok">
           <div class="small">いちばん安いのは</div>
-          <div class="winner"><span class="letter">{{ LETTERS[cmpResult.best.i] }}</span><b>{{ cmpResult.best.c.name || LETTERS[cmpResult.best.i] }}</b></div>
+          <div class="winner"><span class="letter">{{ LETTERS[cmpResult.best.i] }}</span><b>{{ cmpLabel(cmpResult.best.c) || LETTERS[cmpResult.best.i] }}</b></div>
           <div class="small">{{ perText(cmpResult.best.info) }}</div>
-          <div class="small" v-if="cmpResult.diff > 0">いちばん高いもの（{{ cmpResult.worst.c.name || LETTERS[cmpResult.worst.i] }}）より <b>{{ Math.round(cmpResult.pct) }}%</b> お得</div>
+          <div class="small" v-if="cmpResult.diff > 0">いちばん高いもの（{{ cmpLabel(cmpResult.worst.c) || LETTERS[cmpResult.worst.i] }}）より <b>{{ Math.round(cmpResult.pct) }}%</b> お得</div>
           <div class="small" v-else>どれも同じ値段です</div>
         </template>
         <div v-else class="small muted">{{ cmpResult.msg }}</div>
@@ -1019,6 +1044,7 @@ const App = {
         <div class="cmphead"><span class="letter">{{ LETTERS[i] }}</span>
           <input v-model="c.name" @input="keep()" placeholder="品名（記録するときに使います）" maxlength="20">
           <button class="del" v-if="S.cmp.length > 2" @click="S.cmp.splice(i, 1); keep()">✕</button></div>
+        <div v-if="c.from" class="fromtag"><span v-html="svg('store')"></span>記録：{{ c.from.store }}・{{ c.from.date }}</div>
         <div class="cmpin">
           <label>値段<div class="unitbox"><input v-model="c.price" @input="keep()" inputmode="decimal" placeholder="0">円</div></label>
           <button class="taxchip" @click="cycleTax(c)">{{ taxLabel(c.tax) }}</button>
@@ -1029,8 +1055,9 @@ const App = {
           <label class="pack" v-if="!isCount(c.unit)">入数<div class="unitbox"><input v-model="c.pack" @input="keep()" inputmode="numeric" placeholder="1">こ</div></label>
         </div>
         <div class="per" :class="{ none: !unitInfo(c) }">{{ perText(unitInfo(c)) }}<span v-if="cmpResult.ok && cmpResult.best.i === i" class="besttag">いちばん安い</span>
-          <button v-if="unitInfo(c)" class="recbtn" @click="openSave(c)">記録</button></div>
-        <div v-if="rowHint(c)" class="hint" :class="{ good: rowHint(c).cheaper }">{{ rowHint(c).text }}<b v-if="rowHint(c).vs">{{ rowHint(c).vs }}</b></div>
+          <button v-if="unitInfo(c) && !c.from" class="recbtn" @click="openSave(c)">記録</button></div>
+        <div v-if="!c.from && rowHint(c)" class="hint" :class="{ good: rowHint(c).cheaper }">{{ rowHint(c).text }}<b v-if="rowHint(c).vs">{{ rowHint(c).vs }}</b>
+          <button class="hintbtn" @click="addRecToCmp(c)">記録と並べる</button></div>
       </div>
       <div class="row2"><button class="btn" @click="addCmp" :disabled="S.cmp.length >= LETTERS.length">＋ 比べるものを足す</button><button class="btn" @click="clearCmp">ぜんぶ消す</button></div>
       <div class="small muted" style="margin:10px 4px 0">例：A は 298円で 500g、B は 548円で 1kg → 100gあたりで比べます。入数は「3個パック」などのときに入れます。グラムがわからないものは、単位を「個」「パック」などにすると、1個あたりで比べます（数を空けると1）。「記録」でお店ごとの値段を残すと、別のお店で比べられます。値段の横のボタンで「税込・税抜+8%・税抜+10%」を切りかえると、税込にそろえて比べます</div>
@@ -1042,9 +1069,10 @@ const App = {
       <div v-if="!S.prices.length" class="card small muted" style="margin-top:10px">まだ記録がありません。「比べる」で値段を入れて、行の「記録」を押すと、お店ごとに残ります</div>
       <div v-else-if="!priceNames.length" class="card small muted" style="margin-top:10px">「{{ S.priceQ }}」の記録はありません</div>
       <template v-for="nm in priceNames" :key="nm">
-        <div class="day recname" @click="S.priceOpen = S.priceOpen === nm ? '' : nm"><span class="bic" v-html="gIcon(genreFor(nm))"></span>{{ nm }}<span class="muted small" style="margin-left:auto">{{ S.priceOpen === nm ? '閉じる' : 'くわしく' }}</span></div>
+        <div class="day recname" @click="S.priceOpen = S.priceOpen === nm ? '' : nm"><span class="bic" v-html="gIcon(genreFor(nm))"></span>{{ nm }}<span class="muted small" style="margin-left:auto">{{ S.priceOpen === nm ? '閉じる' : 'くわしく' }}</span>
+          <button class="cmpgo" @click.stop="compareFromRec(nm)">比べる</button></div>
         <div v-for="g in priceBook(nm)" :key="nm + g.base" class="list">
-          <div class="small muted recbase" v-if="priceBook(nm).length > 1">{{ g.per === 1 ? '1' + g.base : g.per + g.base }}あたりで比べた記録</div>
+          <div class="small muted recbase" v-if="priceBook(nm).length > 1">{{ g.per === 1 ? '1' + g.base : g.per + g.base }}あたりで比べた記録<button class="link" @click="compareFromRec(nm, g.base)">この単位で比べる ›</button></div>
           <div v-for="(x, k) in g.list" :key="x.sid + x.name" class="item recrow" :class="{ top: k === 0 && g.list.length > 1 }" style="grid-template-columns:1fr auto">
             <div class="t"><b>{{ x.name }}<em v-if="k === 0 && g.list.length > 1" class="besttag">最安</em></b><span>{{ recDetail(x.best) }}{{ x.n > 1 ? '（記録 ' + x.n + '件の最安）' : '' }}</span></div>
             <div class="recv">{{ fmtPer(num(x.best['単価']), g.base, g.per) }}<small v-if="k > 0">+{{ Math.round((num(x.best['単価']) / num(g.list[0].best['単価']) - 1) * 100) }}%</small></div>

@@ -286,3 +286,8 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .recall{opacity:.85;background:#fafbfc}
 .recall .del{width:30px;height:30px;color:#b4b8c2}
 .recrow em.besttag{font-style:normal;color:#fff;font-size:10px;padding:2px 7px}
+.fromtag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:#5b6475;background:#eef1f6;border-radius:999px;padding:3px 9px;margin:-2px 0 6px 36px}
+.fromtag .li{width:13px;height:13px}
+.hintbtn{margin-left:auto;height:26px;padding:0 10px;border-radius:999px;background:#fff;border:1.5px solid #d5d8de;color:var(--ink);font-size:11px;font-weight:800}
+.cmpgo{height:28px;padding:0 12px;border-radius:999px;background:var(--pink);color:#fff;font-size:12px;font-weight:800;margin-left:8px}
+.recbase{display:flex;align-items:center;justify-content:space-between}
