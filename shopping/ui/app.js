@@ -165,8 +165,11 @@ function keyboardHelper(getScroller) {
   const vv = () => { try { return window.parent.visualViewport || window.visualViewport; } catch (e) { return window.visualViewport; } };
   const typing = el => el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["date", "checkbox", "radio", "button", "submit"].includes(el.type)));
   function kbHeight() {          // 画面の下からキーボードの上までの高さ（キーボードが出ていなければ 0）
-    const v = vv(); if (!v) return 0;
-    return Math.max(0, Math.round(window.innerHeight - (v.offsetTop + v.height)));
+    // 外側のページ（Streamlit）と、この画面（iframe）の両方で測って、大きい方を使う（端末によって、どちらかしか変わらないことがある）
+    let h = 0;
+    try { const pv = window.parent.visualViewport; if (pv) h = Math.max(h, window.parent.innerHeight - (pv.offsetTop + pv.height), window.innerHeight - (pv.offsetTop + pv.height)); } catch (e) { }
+    const v = window.visualViewport; if (v) h = Math.max(h, window.innerHeight - (v.offsetTop + v.height));
+    return Math.max(0, Math.round(h));
   }
   function fit() {
     document.documentElement.style.setProperty("--kb", kbHeight() + "px");
@@ -184,10 +187,18 @@ function keyboardHelper(getScroller) {
     document.body.classList.add("kbd");
     clearTimeout(t1); clearTimeout(t2);
     t1 = setTimeout(fit, 320); t2 = setTimeout(fit, 650);        // キーボードが出おわるのを待つ
+    // キーボードの大きさが変わったこと（予測変換の行が出る・消えるなど）を知らせてこない端末もあるので、入力中はときどき測りなおす
+    clearInterval(poll); let last = -1;
+    poll = setInterval(() => {
+      if (!typing(document.activeElement)) { clearInterval(poll); return; }
+      const h = kbHeight(); if (h !== last) { last = h; fit(); }
+    }, 250);
   });
+  let poll = 0;
   document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) { document.body.classList.remove("kbd"); document.documentElement.style.setProperty("--kb", kbHeight() + "px"); } }, 120));
   const v = vv();
   if (v) { v.addEventListener("resize", fit); v.addEventListener("scroll", fit); }
+  if (window.visualViewport && window.visualViewport !== v) { window.visualViewport.addEventListener("resize", fit); window.visualViewport.addEventListener("scroll", fit); }
 }
 
 const FOOT = [["入力", "pencil", "input"], ["一覧", "list", "list"], ["店舗別", "store", "stores"], ["計算", "calc", "calc"], ["メニュー", "home", "menu"]];
@@ -236,14 +247,26 @@ const App = {
     }
     const SEND_WAIT = 3000;
     let sendTimer = null;
-    function flush() {                                        // 待っている保存を、いますぐ送る
+    let typingSince = 0;
+    function flush(force) {                                   // 待っている保存を送る
       clearTimeout(sendTimer); sendTimer = null;
+      // 文字を打っているあいだは送らずに待つ（送ると画面が作りなおされて、キーボードや変換がじゃまされることがある）。最大 30 秒
+      const el = document.activeElement, busy = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
+      if (force !== true && busy && QUEUE.length) {
+        if (!typingSince) typingSince = Date.now();
+        if (Date.now() - typingSince < 30000) { sendTimer = setTimeout(flush, 1500); return; }
+      }
+      typingSince = 0;
       if (QUEUE.length) SL.value({ queue: QUEUE });
     }
+    document.addEventListener("focusout", () => setTimeout(() => {          // 入力が終わったら、待っていた保存を送る
+      const el = document.activeElement;
+      if (QUEUE.length && typingSince && !(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"))) { clearTimeout(sendTimer); sendTimer = setTimeout(flush, 600); }
+    }, 200));
     // 画面を閉じる・ほかのアプリに切りかえるときは、待たずに送る
-    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });
-    window.addEventListener("pagehide", flush);
-    try { parent.addEventListener("pagehide", flush); } catch (e) { }
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(true); });
+    window.addEventListener("pagehide", () => flush(true));
+    try { parent.addEventListener("pagehide", () => flush(true)); } catch (e) { }
     function logout() { TOKEN.clear(); clearTimeout(sendTimer); SL.value({ queue: QUEUE, logout: uid() }); }
     window.addEventListener("message", e => {
       const m = e.data;
@@ -296,6 +319,38 @@ const App = {
     // ---- 入力 ----
     // ---- 品名とジャンルの組み合わせを覚える（同じ品名を入れたら、前のジャンルを選ぶ。ちがうジャンルで入れたら上書き） ----
     const memOf = name => { const k = normName(name); return k ? S.memory.find(m => m["キー"] === k) : null; };
+    // はじめから入っている品名（words.js）：[{ 品名, よみ, ジャンル }]
+    const WORDS = [];
+    for (const [g, list] of Object.entries(window.SH_WORDS || {})) for (const w of list.split(/\s+/).filter(Boolean)) {
+      const [n, y] = w.split("|"); WORDS.push({ 品名: n, よみ: normName(y || n), キー: normName(n), ジャンル: g });
+    }
+    const hasGenre = g => S.genres.some(x => x["名前"] === g);
+    const wordOf = name => { const k = normName(name); return k ? WORDS.find(w => (w.キー === k || w.よみ === k) && hasGenre(w.ジャンル)) : null; };
+    // 品名の候補：打っている文字で始まるもの（よみでも）を、前に入れたもの → 買ったもの → はじめからの順に
+    const cands = computed(() => {
+      const q = normName(S.name);
+      if (!q) return [];
+      const seen = new Set(), out = [];
+      const add = (name, genre, from, yomi) => {
+        const k = normName(name);
+        if (!k || seen.has(k) || k === q) return;
+        const y = yomi || k, hit = k.startsWith(q) || y.startsWith(q) ? 0 : (k.includes(q) || y.includes(q)) && q.length >= 2 ? 1 : -1;
+        if (hit < 0) return;
+        seen.add(k); out.push({ name, genre: hasGenre(genre) ? genre : "", from, hit });
+      };
+      const wy = n => { const w = WORDS.find(x => x.キー === normName(n)); return w ? w.よみ : ""; };
+      for (const m of [...S.memory].reverse()) add(m["品名"], m["ジャンル"], 0, wy(m["品名"]));
+      for (const h of [...S.history].reverse()) add(h["品名"], h["ジャンル"], 1, wy(h["品名"]));
+      for (const w of WORDS) add(w.品名, w.ジャンル, 2, w.よみ);
+      return out.sort((a, b) => a.hit - b.hit || a.from - b.from || a.name.length - b.name.length).slice(0, 12);
+    });
+    function onName(e) { S.name = e.target.value; }         // 変換中（ひらがなのまま）でも、打つたびに候補とジャンルを変える
+    function pickCand(c) {
+      S.name = c.name;
+      const el = document.getElementById("nameIn");
+      if (el) { el.value = c.name; el.focus(); }
+      if (c.genre && c.genre !== S.genre) { S.genre = c.genre; S.autoGenre = true; centerGenre(); }
+    }
     function remember(name, genre) {
       const k = normName(name); if (!k) return;
       const old = S.memory.find(m => m["キー"] === k);
@@ -350,9 +405,10 @@ const App = {
       });
     }
     function pickGenre(name) { S.genre = name; S.autoGenre = false; keep(); centerGenre(); }
+    // 同じ品名を入れたら、前のジャンル（なければ、はじめからの品名のジャンル）を選ぶ。漢字でも、ひらがな・カタカナでも同じ品名とみなす
     watch(() => S.name, name => {
-      const m = memOf(name);
-      if (m && S.genres.some(g => g["名前"] === m["ジャンル"])) { if (S.genre !== m["ジャンル"] || !S.autoGenre) { S.genre = m["ジャンル"]; S.autoGenre = true; centerGenre(); } }
+      const m = memOf(name) || (() => { const w = wordOf(name); return w && (memOf(w.品名) || { ジャンル: w.ジャンル }); })();
+      if (m && hasGenre(m["ジャンル"])) { if (S.genre !== m["ジャンル"] || !S.autoGenre) { S.genre = m["ジャンル"]; S.autoGenre = true; centerGenre(); } }
       else if (S.autoGenre) S.autoGenre = false;
     });
     watch(() => S.view, v => { if (v === "input") centerGenre(false); });
@@ -727,7 +783,7 @@ const App = {
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
-      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
+      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, clearPin, saveStore, editBranch, saveBranch, deleteBranch, backToStore, draftBranches, branchesOf, branchLabel, addSuggest, dismissSuggest, hasPos, storeOf, meters, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
@@ -745,8 +801,8 @@ const App = {
   <template v-if="S.view === 'input'">
     <div class="title">買い物リスト</div>
     <div class="card" style="padding:4px 16px">
-      <div class="field"><label>品名</label><div class="namebox"><input id="nameIn" v-model="S.name" placeholder="例：たまねぎ" maxlength="40" @keydown.enter.prevent="addItem" autocomplete="off">
-        <span v-if="S.autoGenre" class="memtag" v-html="svg(iconKey(sortedGenres.find(g => g['名前'] === S.genre))) + 'いつもの ' + S.genre"></span></div></div>
+      <div class="field"><label>品名</label><div class="namebox"><input id="nameIn" :value="S.name" @input="onName" @compositionupdate="onName" @compositionend="onName" placeholder="例：たまねぎ" maxlength="40" @keydown.enter.prevent="addItem" autocomplete="off">
+        <span v-if="S.autoGenre" class="memtag" v-html="svg(iconKey(sortedGenres.find(g => g['名前'] === S.genre))) + (memOf(S.name) ? 'いつもの ' : '') + S.genre"></span></div></div>
       <div class="field"><label>メモ</label><input v-model="S.memo" placeholder="任意（例：2個・特売）" maxlength="60"></div>
       <div class="field"><label>優先</label><div class="prios"><button v-for="(l, k) in ['ふつう', '優先', '最優先']" :key="k" class="pchip" :class="['p' + k, { on: S.prio === String(k) }]" @click="S.prio = String(k)">{{ l }}</button></div></div>
     </div>
@@ -1049,6 +1105,9 @@ const App = {
 
 <!-- ジャンルの帯（入力画面だけ。画面の下、キーボードが出ているときはキーボードのすぐ上に固定。横にスクロール） -->
 <div v-if="S.view === 'input'" class="gstrip">
+  <div v-if="cands.length" class="cands" @mousedown.prevent>
+    <button v-for="c in cands" :key="c.name" class="cand" :class="{ mine: c.from === 0 }" @mousedown.prevent @click="pickCand(c)">{{ c.name }}<small v-if="c.genre">{{ c.genre }}</small></button>
+  </div>
   <button class="gedit" @mousedown.prevent @click="editGenres" aria-label="ジャンルの編集"><span v-html="svg('pencil')"></span></button>
   <div class="gdial">
     <div class="glens"></div>
