@@ -78,6 +78,16 @@ _HIDE_CLOUD_BADGES_JS = """
     for (const sel of SELECTORS) {
       doc.querySelectorAll(sel).forEach((el) => el.style.setProperty("display", "none", "important"));
     }
+    // 見えない部品（CSS や JavaScript だけの st.markdown / st.html）が作るすき間をつめる。
+    // 中に style・script があるか、st.html の空の箱で、高さ0・画像やボタンなどが無いものだけ（あとで中身が入る場所はさわらない）
+    doc.querySelectorAll('[data-testid="stElementContainer"], .element-container').forEach((el) => {
+      if (el.dataset.kzGap) return;
+      if (el.querySelector("iframe,img,button,input,textarea,select,a,canvas,svg,video,audio,table,[data-testid=stIconMaterial]")) return;
+      const invisible = el.querySelector("style,script") || el.querySelector('[data-testid="stHtml"]');
+      if (!invisible || el.getBoundingClientRect().height > 1) return;
+      el.dataset.kzGap = "1";
+      el.style.setProperty("display", "none", "important");
+    });
   };
   const docs = [document];
   try { if (window.parent !== window) docs.push(window.parent.document); } catch (e) {}
@@ -194,6 +204,9 @@ _CSS = """
 /* アイコン（stIconMaterial）はアイコン用フォントのままにする。上書きすると「arrow_right」などの文字が出てしまう */
 html, body, [class*="st-"]:not([data-testid="stIconMaterial"]), .stApp { font-family: 'Zen Maru Gothic', sans-serif; }
 .block-container { max-width: 900px; padding-top: 2rem; padding-bottom: 4rem; }
+/* 上のバー（中身はかくしてある）を消して、ページの上の空白をつめる */
+header[data-testid="stHeader"], [data-testid="stHeader"] { display: none !important; }
+.block-container, [data-testid="stMainBlockContainer"] { padding-top: .8rem !important; }
 /* 右上のツールバーのボタン（Fork・GitHub・メニュー）をかくす。
    サイドバーを開くボタンも stToolbar の中にあるので、stToolbar ごと消さない */
 [data-testid="stToolbarActions"], [data-testid="stToolbarActionButton"], [data-testid="stMainMenu"],
