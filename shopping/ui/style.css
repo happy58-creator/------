@@ -271,3 +271,6 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
   display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .cand small{font-size:10px;font-weight:700;color:var(--rose)}
 .cand.mine{border-color:var(--pink);background:#fff4f8}
+
+/* iPhone でキーボードの高さがわからないとき：帯を、打っている欄のすぐ下に出す */
+body.kbd.kbtop .gstrip{top:var(--stop,120px);bottom:auto;background:rgba(245,246,248,.98);box-shadow:0 8px 18px rgba(20,30,60,.14);border-radius:0 0 18px 18px;padding-top:6px}
