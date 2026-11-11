@@ -162,59 +162,59 @@ const TOKEN = {
 // ===== キーボードが入力欄を隠さないように =====
 // キーボードが出ると見える範囲がせまくなる（visualViewport）。フッターを隠して、入力中の欄が見える範囲に入るように画面を動かす
 function keyboardHelper(getScroller) {
-  const vv = () => { try { return window.parent.visualViewport || window.visualViewport; } catch (e) { return window.visualViewport; } };
+  // この画面は iframe の中。Streamlit Cloud では、さらに外側にもう1枚ページがあることがある（URL に /~/+/ がないとき）。
+  // キーボードで見える範囲がせまくなるのは「いちばん外側のページ」だけなので、そこまでたどって測り、この画面の中の位置に直す
+  function outer() {
+    let w = window, offY = 0;
+    for (let k = 0; k < 6; k++) {
+      let p; try { p = w.parent; if (!p || p === w) break; void p.document; } catch (e) { break; }
+      const fe = w.frameElement; if (!fe) break;
+      offY += fe.getBoundingClientRect().top + (fe.clientTop || 0);
+      w = p;
+    }
+    return { win: w, offY };
+  }
+  function visible() {          // この画面の中で、いま見えている範囲（上・下）
+    const o = outer(), v = o.win.visualViewport;
+    let top = 0, bottom = window.innerHeight;
+    if (v) { top = v.offsetTop - o.offY; bottom = v.offsetTop + v.height - o.offY; }
+    const own = window.visualViewport;          // この画面自身でも測って、せまい方を使う
+    if (own) { top = Math.max(top, own.offsetTop); bottom = Math.min(bottom, own.offsetTop + own.height); }
+    return { top, bottom };
+  }
   const typing = el => el && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["date", "checkbox", "radio", "button", "submit"].includes(el.type)));
   function kbHeight() {          // 画面の下からキーボードの上までの高さ（キーボードが出ていなければ 0）
-    // 外側のページ（Streamlit）と、この画面（iframe）の両方で測って、大きい方を使う（端末によって、どちらかしか変わらないことがある）
-    let h = 0;
-    try { const pv = window.parent.visualViewport; if (pv) h = Math.max(h, window.parent.innerHeight - (pv.offsetTop + pv.height), window.innerHeight - (pv.offsetTop + pv.height)); } catch (e) { }
-    const v = window.visualViewport; if (v) h = Math.max(h, window.innerHeight - (v.offsetTop + v.height));
-    return Math.max(0, Math.round(h));
+    return Math.max(0, Math.round(window.innerHeight - visible().bottom));
   }
-  // iPhone では、キーボードの高さを画面に教えてくれないことがある（高さ 0 のまま）。
-  // そのときは、ジャンルの帯（候補とダイヤル）を「いま打っている欄のすぐ下」に出す（打っている欄は iPhone がいつも見えるようにするので、帯も見える）
-  function placeStrip() {
-    const el = document.activeElement, strip = document.querySelector(".gstrip");
-    const on = !!(strip && document.body.classList.contains("kbd") && typing(el) && kbHeight() < 60);
-    document.body.classList.toggle("kbtop", on);
-    const box = on ? (el.closest(".field") || el) : null;
-    if (spaced && spaced !== box) { spaced.style.marginBottom = ""; spaced = null; }
-    if (!on) return;
-    box.style.marginBottom = strip.offsetHeight + 8 + "px"; spaced = box;      // 帯の分だけ下をあけて、下の欄（メモなど）を隠さない
-    const r = box.getBoundingClientRect();
-    document.documentElement.style.setProperty("--stop", Math.max(0, Math.round(r.bottom + 4)) + "px");
-  }
-  let spaced = null;
   function fit() {
     document.documentElement.style.setProperty("--kb", kbHeight() + "px");
-    placeStrip();
     const el = document.activeElement, sc = getScroller();
     if (!typing(el) || !sc) return;
-    const strip = document.querySelector(".gstrip"), stripH = strip && !document.body.classList.contains("kbtop") ? strip.offsetHeight : 0;
-    const v = vv(), top = (v ? v.offsetTop : 0) + 12, bottom = (v ? v.offsetTop + v.height : window.innerHeight) - 16 - stripH;
+    const strip = document.querySelector(".gstrip"), stripH = strip ? strip.offsetHeight : 0;
+    const v = visible(), top = v.top + 12, bottom = v.bottom - 16 - stripH;
     const r = el.getBoundingClientRect();
     if (r.bottom > bottom) sc.scrollTop += r.bottom - bottom;
     else if (r.top < top) sc.scrollTop -= top - r.top;
   }
-  let t1, t2;
+  let t1, t2, poll = 0;
   document.addEventListener("focusin", e => {
     if (!typing(e.target)) return;
     document.body.classList.add("kbd");
     clearTimeout(t1); clearTimeout(t2);
-    placeStrip(); t1 = setTimeout(fit, 320); t2 = setTimeout(fit, 650);        // キーボードが出おわるのを待つ
+    t1 = setTimeout(fit, 320); t2 = setTimeout(fit, 650);        // キーボードが出おわるのを待つ
     // キーボードの大きさが変わったこと（予測変換の行が出る・消えるなど）を知らせてこない端末もあるので、入力中はときどき測りなおす
     clearInterval(poll); let last = -1;
     poll = setInterval(() => {
       if (!typing(document.activeElement)) { clearInterval(poll); return; }
-      const h = kbHeight(); if (h !== last) { last = h; fit(); } else placeStrip();
-    }, 250);
+      const h = kbHeight(); if (h !== last) { last = h; fit(); }
+    }, 200);
   });
-  let poll = 0;
-  document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) { document.body.classList.remove("kbd", "kbtop"); placeStrip(); document.documentElement.style.setProperty("--kb", kbHeight() + "px"); } }, 120));
-  document.addEventListener("scroll", () => { if (document.body.classList.contains("kbtop")) placeStrip(); }, true);     // 画面を動かしたら、帯もいっしょに動かす
-  const v = vv();
-  if (v) { v.addEventListener("resize", fit); v.addEventListener("scroll", fit); }
-  if (window.visualViewport && window.visualViewport !== v) { window.visualViewport.addEventListener("resize", fit); window.visualViewport.addEventListener("scroll", fit); }
+  document.addEventListener("focusout", () => setTimeout(() => { if (!typing(document.activeElement)) { document.body.classList.remove("kbd"); document.documentElement.style.setProperty("--kb", kbHeight() + "px"); } }, 120));
+  const seen = new Set();
+  for (const v of [outer().win.visualViewport, (() => { try { return window.parent.visualViewport; } catch (e) { return null; } })(), window.visualViewport]) {
+    if (!v || seen.has(v)) continue; seen.add(v);
+    v.addEventListener("resize", fit); v.addEventListener("scroll", fit);
+  }
 }
 
 const FOOT = [["入力", "pencil", "input"], ["一覧", "list", "list"], ["店舗別", "store", "stores"], ["計算", "calc", "calc"], ["メニュー", "home", "menu"]];
