@@ -23,11 +23,12 @@ PAGE_DEFS = [
     ("chess", "pages/7_チェスVS.py", "チェス", "♟️", "chess"),
     ("rapid", "pages/8_限界突破ゲーム.py", "連打ゲーム", "⚡", "rapid"),
     ("story", "pages/11_ストーリーモード.py", "ストーリーモード", "⚔️", "story"),
+    ("itpass", "pages/12_ITパスポート.py", "ITパスポート", "🖥️", "itpass"),
     ("history", "pages/9_履歴.py", "せいせきの履歴", "📒", "history"),
 ]
 SECTIONS = {
     "": ["home"],
-    "べんきょう": ["calc", "kokugo", "english", "kanji", "typing", "programming"],
+    "べんきょう": ["calc", "kokugo", "english", "kanji", "typing", "programming", "itpass"],
     "ゲーム": ["lottery", "janken", "chess", "rapid", "story"],
     "きろく": ["history"],
 }
@@ -369,7 +370,8 @@ def build_navigation():
     # ログイン前はサイドバーのメニューを出さない
     position = "sidebar" if auth.session_alive() else "hidden"
     names = BAND_SECTIONS.get(band, {})
-    nav = {names.get(section, section): [PAGES[k] for k in keys] for section, keys in SECTIONS.items()}
+    adult_only = {"itpass"} if band == "小" else set()      # ITパスポートは大人向け（小学生のメニューには出さない）
+    nav = {names.get(section, section): [PAGES[k] for k in keys if k not in adult_only] for section, keys in SECTIONS.items()}
     # 家計簿（大人用）：メニューには出さないページ。URL の最後に /kakeibo を付けて開く（パスワードは kakeibo/app.py）
     nav[names.get("きろく", "きろく")].append(st.Page(page_file("kakeibo/app.py"), title="家計簿", icon="💴", url_path="kakeibo"))
     # 買い物リスト（大人用）：家計簿と同じく、メニューには出さないページ。URL の最後に /kaimono（ログインは家計簿と共通）

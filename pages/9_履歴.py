@@ -42,7 +42,7 @@ if score_col:
     if scores.notna().sum() >= 2:
         st.line_chart(pd.DataFrame({score_col: scores.values}, index=df["日時"].values))
 
-shown = df.drop(columns=["詳細"], errors="ignore")
+shown = df.drop(columns=["詳細", "正誤"], errors="ignore")    # 正誤：ITパスポートの1問ごとの記録（長いので表には出さない）
 st.dataframe(shown.iloc[::-1], use_container_width=True, hide_index=True)
 
 # --- そのときの問題・答え・点数を、結果PDFと同じ形で出す ---
