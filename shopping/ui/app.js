@@ -60,20 +60,30 @@ async function searchGsi(q) {
   return (j || []).slice(0, 6).map(f => ({ title: f.properties.title, sub: "住所", lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], addr: true }));
 }
 const squash = t => String(t || "").normalize("NFKC").replace(/[\s・　]/g, "").toLowerCase();
+const prefixLen = (a, b) => { let k = 0; while (k < a.length && k < b.length && a[k] === b[k]) k++; return k; };
+const bestScore = (names, title) => Math.max(0, ...names.map(n => nameScore(n, title)));
+// お店の名前（店名と別名）。別名は「、」「,」や空白で区切る（例：無印、MUJI）
+const storeNames = st => st ? [String(st["店名"] || "").trim(), ...String(st["別名"] || "").split(/[,、，\s　]+/)].filter(Boolean) : [];
 // 名前がどれだけ合っているか（入れた文字がぜんぶ名前に入っている＞一部だけ）
 function nameScore(q, title) {
   const a = squash(q), b = squash(title);
   if (!a || !b) return 0;
   if (b === a) return 3;
   if (b.includes(a) || a.includes(b)) return 2;
+  // 頭の文字が同じ（2文字以上・入れた名前の半分以上）で、そこで地図の名前が区切れているなら、同じお店の候補
+  // （例：「無印良品」と「無印 博多」は○。「スーパー大栄」と「スーパーセンタートライアル」は区切れていないので×）
+  const t = String(title).normalize("NFKC").toLowerCase().trim(), k = prefixLen(a, t);
+  if (k >= 2 && k >= Math.ceil(a.length / 2) && (k === t.length || /[\s　・(（\-]/.test(t[k]))) return 1.6;
   let hit = 0; for (const ch of new Set(a)) if (b.includes(ch)) hit++;
   return hit / new Set(a).size;
 }
 // near：現在地（わかれば、そのまわり 30km だけ・近い順）。skip：もう登録してある店舗の位置（一覧に出さない）
-async function geocode(q, near, skip) {
+// alias：お店の別名（店名と同じように探して、同じように合っているか見る）
+async function geocode(q, near, skip, alias) {
   const addrLike = ADDR_LIKE.test(q);
-  const [ph, no, gs] = await Promise.all([searchPhoton(q, near), searchNominatim(q, near), addrLike ? searchGsi(q) : Promise.resolve([])]);
-  let names = [...ph, ...no];
+  const extra = addrLike ? [] : (alias || []).filter(a => squash(a) !== squash(q)).slice(0, 2);
+  const [ph, no, gs, ...ex] = await Promise.all([searchPhoton(q, near), searchNominatim(q, near), addrLike ? searchGsi(q) : Promise.resolve([]), ...extra.map(a => searchPhoton(a, near))]);
+  let names = [...ph, ...no, ...ex.flat()];
   if (!names.length && !addrLike) {          // 「〇〇 須恵店」のように細かく入れて見つからないときは、最初のことば（お店の名前）で近くを探す
     const head = q.split(/[\s　]+/)[0].replace(/(本店|支店|[^\s]{1,8}店)$/, "");
     if (head && head !== q) names = [...await searchPhoton(head, near), ...await searchNominatim(head, near)];
@@ -81,7 +91,7 @@ async function geocode(q, near, skip) {
   // 同じ場所（100m 以内・同じ名前）は1つにまとめる
   const uniq = [];
   for (const r of names) if (!uniq.some(u => squash(u.title) === squash(r.title) && meters(u, r) < 150)) uniq.push(r);
-  for (const r of uniq) { r.score = nameScore(q, r.title) + (r.shop ? 0.5 : 0); r.m = near ? meters(near, r) : null; }
+  for (const r of uniq) { r.score = bestScore([q, ...extra], r.title) + (r.shop ? 0.5 : 0); r.m = near ? meters(near, r) : null; }
   if (near) uniq.splice(0, uniq.length, ...uniq.filter(r => r.m <= RANGE));
   const registered = r => (skip || []).some(b => meters(b, r) < 150);
   const hidden = uniq.filter(registered).length;
@@ -459,7 +469,7 @@ const App = {
       const found = [];
       await Promise.all(targets.map(async st => {
         const key = st.ID + "@" + cell(p);
-        if (!(key in looked)) looked[key] = await nearbyPoi(st["店名"], p);
+        if (!(key in looked)) looked[key] = await nearbyPoi(storeNames(st), p);
         const r = looked[key];
         if (!r) return;
         if (branchesOf(st.ID).some(b => hasPos(b) && meters(r, { lat: +b["緯度"], lng: +b["経度"] }) < 200)) return;     // もう登録してある
@@ -468,27 +478,35 @@ const App = {
       }));
       S.suggest = found.sort((a, b) => a.m - b.m);
     }
-    async function nearbyPoi(name, p) {          // p のまわり 1km で、名前に name が入っているお店（いちばん近いもの）
+    async function nearbyPoi(names, p) {          // p のまわり 1km で、名前が店名か別名に合うお店（いちばん近いもの）
       const dLat = 0.0095, dLng = 0.0115;
-      const j = await fetchJson("https://photon.komoot.io/api/?limit=15&q=" + encodeURIComponent(name) + `&lat=${p.lat}&lon=${p.lng}&bbox=${p.lng - dLng},${p.lat - dLat},${p.lng + dLng},${p.lat + dLat}`);
+      const lists = await Promise.all(names.slice(0, 3).map(n =>
+        fetchJson("https://photon.komoot.io/api/?limit=15&q=" + encodeURIComponent(n) + `&lat=${p.lat}&lon=${p.lng}&bbox=${p.lng - dLng},${p.lat - dLat},${p.lng + dLng},${p.lat + dLat}`)));
       let best = null;
-      for (const f of (j && j.features) || []) {
+      for (const j of lists) for (const f of (j && j.features) || []) {
         const pr = f.properties || {}, title = pr.name || "";
-        if (nameScore(name, title) < 2) continue;
+        if (bestScore(names, title) < 1.5) continue;
         const r = { title, lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] };
         r.m = meters(p, r);
         if (r.m <= NEAR && (!best || r.m < best.m)) best = r;
       }
       return best;
     }
-    // 地図の名前から、店舗名だけをとり出す（「無印良品 かやの森店」→「かやの森店」）
-    function branchFromTitle(storeName, title) {
-      const a = String(title).normalize("NFKC"), n = String(storeName).normalize("NFKC");
-      const rest = a.split(n).join(" ").replace(/[\s　・()（）]+/g, " ").trim();
-      return rest;
+    // 地図の名前から、店舗名だけをとり出す（「無印良品 かやの森店」→「かやの森店」、「無印 博多」→「博多」）
+    function branchFromTitle(names, title) {
+      const a = String(title).normalize("NFKC");
+      for (const n0 of [...names].sort((x, y) => y.length - x.length)) {
+        const n = String(n0).normalize("NFKC");
+        if (a.includes(n)) return a.split(n).join(" ").replace(/[\s　・()（）]+/g, " ").trim();
+      }
+      for (const n0 of names) {                 // 頭が同じだけのときは、同じ部分をとる
+        const k = prefixLen(a, String(n0).normalize("NFKC"));
+        if (k >= 2) return a.slice(k).replace(/[\s　・()（）]+/g, " ").trim();
+      }
+      return a;
     }
     function addSuggest(x) {
-      const row = { ID: uid(), 店舗ID: x.s.ID, 支店名: branchFromTitle(x.s["店名"], x.title), 緯度: x.lat.toFixed(6), 経度: x.lng.toFixed(6) };
+      const row = { ID: uid(), 店舗ID: x.s.ID, 支店名: branchFromTitle(storeNames(x.s), x.title), 緯度: x.lat.toFixed(6), 経度: x.lng.toFixed(6) };
       save("支店", [...S.branches, row]);
       S.suggest = S.suggest.filter(y => y !== x);
       toast(`「${fullName(x.s, row)}」を登録しました`);
@@ -565,7 +583,7 @@ const App = {
     // ---- 店舗の登録（店名と位置。位置は現在地か、地図でピン） ----
     let map = null, marker = null;
     function editStore(s) {
-      S.storeDraft = s ? { ...s } : { ID: "", 店名: "", 緯度: "", 経度: "", 並び: String(S.stores.length) };
+      S.storeDraft = s ? { 別名: "", ...s } : { ID: "", 店名: "", 別名: "", 緯度: "", 経度: "", 並び: String(S.stores.length) };
       S.view = "storeEdit"; S.branchDraft = null; keep();
     }
     const draftBranches = computed(() => S.storeDraft ? (S.storeDraft.ID ? branchesOf(S.storeDraft.ID) : []) : []);
@@ -611,7 +629,7 @@ const App = {
       if (!near) { try { near = S.here = await locate(); } catch (e) { } }     // 現在地の近くを優先して探す（わからなければ全国から）
       // このお店の、もう登録してある店舗（いま編集している店舗はのぞく）は一覧に出さない
       const skip = S.storeDraft && S.storeDraft.ID ? branchesOf(S.storeDraft.ID).filter(b => hasPos(b) && (!S.branchDraft || b.ID !== S.branchDraft.ID)).map(b => ({ lat: +b["緯度"], lng: +b["経度"] })) : [];
-      const res = await geocode(q, near, skip);
+      const res = await geocode(q, near, skip, storeNames(S.storeDraft));
       S.addrBusy = false; S.addrRes = res;
       if (res.length === 1) pickAddr(res[0]);
       else if (!res.length && res.hidden) toast("見つかった店舗は、ぜんぶ登録ずみでした");
@@ -620,7 +638,7 @@ const App = {
     function pickAddr(r) {
       setPin(r.lat, r.lng, true); S.addrRes = null;
       if (!String(S.branchDraft["支店名"] || "").trim() && S.storeDraft) {            // 店舗名が空なら、地図の名前から入れる（例：かやの森店）
-        const n = branchFromTitle(S.storeDraft["店名"], r.title);
+        const n = branchFromTitle(storeNames(S.storeDraft), r.title);
         if (n && n !== r.title.normalize("NFKC") && !r.addr) S.branchDraft["支店名"] = n;
       }
       toast("その場所にピンを立てました");
@@ -633,7 +651,7 @@ const App = {
       const d = S.storeDraft, name = String(d["店名"] || "").trim();
       if (!name) return null;
       if (!d.ID) d.ID = uid();
-      return { ...d, 店名: name };
+      return { ...d, 店名: name, 別名: storeNames({ 店名: "", 別名: d["別名"] }).join("、") };
     }
     function putStore(row, clearLegacy) {
       const r = clearLegacy ? { ...row, 緯度: "", 経度: "" } : row;
@@ -976,7 +994,9 @@ const App = {
     <div class="title">{{ storeOf(S.storeDraft.ID) ? 'お店を編集' : 'お店を追加' }}</div>
     <div class="card" style="padding:4px 16px">
       <div class="field"><label>店名</label><input v-model="S.storeDraft['店名']" placeholder="例：無印良品" maxlength="30"></div>
+      <div class="field"><label>別名</label><input v-model="S.storeDraft['別名']" placeholder="例：無印、MUJI（なくてもOK）" maxlength="40"></div>
     </div>
+    <div class="small muted" style="margin:6px 4px 0">地図で店名がちがう書き方のとき（例：「無印 博多」）も、別名に入れておくと同じお店として見つけます</div>
     <div class="sec" style="margin-top:4px">店舗<span class="small muted">位置を入れた店舗が、現在地の表示に出ます</span></div>
     <div class="list" v-if="draftBranches.length">
       <button v-for="b in draftBranches" :key="b.ID" class="item" style="grid-template-columns:34px 1fr auto" @click="editBranch(b)">
