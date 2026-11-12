@@ -64,8 +64,15 @@ const app = createApp({
       tick: 0, toast: "", confirm: null,
     });
     const L = reactive(local);
+    // この画面は、教材のページの中の背の高い枠（iframe）。画面の真ん中に出すと見えないところに出てしまうので、
+    // いま見えている場所（外側のページのスクロール位置）を調べて、そこに出す
+    function visibleTop() {
+      try { const r = window.frameElement.getBoundingClientRect(); return Math.max(0, -r.top); } catch (e) { return 0; }
+    }
+    function visibleHeight() { try { return window.parent.innerHeight || window.innerHeight; } catch (e) { return window.innerHeight; } }
+    const place = (name, ratio) => document.documentElement.style.setProperty(name, Math.round(visibleTop() + visibleHeight() * ratio) + "px");
     let toastTimer = 0;
-    const toast = m => { S.toast = m; clearTimeout(toastTimer); toastTimer = setTimeout(() => S.toast = "", 2400); };
+    const toast = m => { place("--tt", 0.04); S.toast = m; clearTimeout(toastTimer); toastTimer = setTimeout(() => S.toast = "", 2400); };
     const send = v => Streamlit.setValue({ ...v, nonce: uid() });
     const top = () => { window.scrollTo(0, 0); try { window.frameElement && window.frameElement.scrollIntoView({ block: "start" }); } catch (e) { } };
 
@@ -112,6 +119,7 @@ const app = createApp({
       return d;
     });
     watch(() => S.examDate, v => { L.examDate = v; persist(); });
+    watch(() => S.confirm, v => { if (v) place("--mt", 0.25); });
 
     // ---- 問題を選ぶ ----
     // smart：まだ解いていない → まちがえた → 正答率が低い の順に多めに（同じくらいならランダム）
