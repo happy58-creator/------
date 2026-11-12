@@ -232,7 +232,7 @@ const App = {
       listMode: "todo", storeMode: "all", storeSel: "", here: null, hereErr: "", hereBusy: false,
       // 計算
       price: "", qty: "1", lines: [], tax: "込",
-      ctab: "cmp", cmp: [], taxIn: "", cmpFocus: "", saveFocus: false, priceQ: "", priceSave: null, priceOpen: "", taxRateT: "8", taxDir: "in",
+      ctab: "cmp", cmp: [], taxIn: "", cmpFocus: "", saveFocus: false, histDraft: null, priceQ: "", priceSave: null, priceOpen: "", taxRateT: "8", taxDir: "in",
       // 店舗の登録・ジャンル
       storeDraft: null, genreDraft: null, pickFor: -1, addrQ: "", addrRes: null, addrBusy: false,
       toast: "", toastOn: false, saving: 0, confirm: null,
@@ -514,7 +514,43 @@ const App = {
       return days.map(k => [k, histByDay.value[k]]);
     });
     const dayLabel = k => { const d = new Date(k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10)); return `${d.getMonth() + 1}月${d.getDate()}日（${"日月火水木金土"[d.getDay()]}）`; };
-    function removeHist(h) { save("購入記録", S.history.filter(x => x.ID !== h.ID)); toast("記録を消しました"); }
+    function removeHist(h) {
+      save("購入記録", S.history.filter(x => x.ID !== h.ID));
+      if (h["価格ID"] && S.prices.some(r => r.ID === h["価格ID"])) save("価格記録", S.prices.filter(r => r.ID !== h["価格ID"]));     // カレンダーから入れた値段の記録も消す
+      toast("記録を消しました");
+    }
+    // ---- カレンダーから、買ったものの値段・量（単位）・個数を入れる。入れた値段は「記録」（価格記録）にも残す ----
+    function openHist(h) {
+      if (S.histDraft && S.histDraft.id === h.ID) { S.histDraft = null; return; }
+      S.histDraft = { id: h.ID, price: h["値段"] || "", amt: h["量"] || "", unit: UNITS[h["単位"]] ? h["単位"] : (memUnit(h["品名"]) || "g"), pack: h["入数"] || "1",
+        tax: h["税"] || "込", sid: h["店舗ID"] || "" };
+    }
+    function memUnit(name) {                  // 前に同じ品名を記録したときの単位
+      const k = normName(name), r = [...S.prices].reverse().find(x => normName(x["品名"]) === k);
+      return r && UNITS[r["単位"]] ? r["単位"] : "";
+    }
+    function saveHist(h) {
+      const d = S.histDraft, info = unitInfo(d);
+      if (!info) { toast("値段と量を入れてください"); return; }
+      const st = storeOf(d.sid);
+      const amt = String(num(d.amt) || (isCount(d.unit) ? 1 : "")), pack = isCount(d.unit) ? "1" : String(Math.max(1, num(d.pack) || 1));
+      // 値段の記録（前に入れていれば、その記録を書きかえる）
+      const old = h["価格ID"] && S.prices.find(r => r.ID === h["価格ID"]);
+      const rec = { ID: old ? old.ID : uid(), 品名: h["品名"], 店舗ID: d.sid || "", 店名: st ? st["店名"] : (h["店名"] || ""), 値段: String(Math.round(info.price)), 量: amt, 単位: d.unit, 入数: pack,
+        単価: String(+info.v.toFixed(3)), 基準: info.base, 基準量: String(info.per), 日付: String(h["日時"]).slice(0, 10), メモ: old ? old["メモ"] : "カレンダーから" };
+      save("価格記録", old ? S.prices.map(r => r.ID === old.ID ? rec : r) : [...S.prices, rec]);
+      const placeChanged = d.sid !== (h["店舗ID"] || "");
+      save("購入記録", S.history.map(x => x.ID === h.ID ? { ...x, 値段: d.price, 量: amt, 単位: d.unit, 入数: pack, 税: d.tax, 価格ID: rec.ID,
+        ...(placeChanged ? { 店舗ID: d.sid || "", 店名: st ? st["店名"] : "" } : {}) } : x));
+      S.histDraft = null;
+      toast(`${h["品名"]}：${perText(info)}で記録しました`);
+    }
+    const histPrice = h => {                 // カレンダーの行に出す「398円・500g」
+      if (!h["値段"]) return "";
+      const c = { price: h["値段"], amt: h["量"], unit: h["単位"], pack: h["入数"], tax: h["税"] || "込" }, info = unitInfo(c);
+      const q = isCount(h["単位"]) ? `${num(h["量"]) || 1}${h["単位"]}` : `${h["量"]}${h["単位"]}${num(h["入数"]) > 1 ? "×" + h["入数"] : ""}`;
+      return `${Number(h["値段"]).toLocaleString()}円${h["税"] && h["税"] !== "込" ? "（税抜）" : ""}・${q}` + (info ? `　${fmtPer(info.v, info.base, info.per)}` : "");
+    };
     function removeItem(it) { save("買い物", S.items.filter(x => x.ID !== it.ID)); toast("消しました"); }
     function clearDone() {
       const n = S.items.filter(i => i["済"]).length;
@@ -923,7 +959,7 @@ const App = {
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
-      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, recDetail, num, normName, genreFor, cmpCands, cmpFocus, cmpBlur, cmpName, pickCmpName, cancelBlur, saveBlur, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
+      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, openHist, saveHist, histPrice, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, recDetail, num, normName, genreFor, cmpCands, cmpFocus, cmpBlur, cmpName, pickCmpName, cancelBlur, saveBlur, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, clearPin, saveStore, editBranch, saveBranch, deleteBranch, backToStore, draftBranches, branchesOf, branchLabel, addSuggest, dismissSuggest, hasPos, storeOf, meters, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
@@ -1177,15 +1213,36 @@ const App = {
     <template v-for="[k, list] in calList" :key="k">
       <div class="day" v-if="!S.calDay">{{ dayLabel(k) }}<b>{{ list.length }}品</b></div>
       <div class="list">
-        <div v-for="h in list" :key="h.ID" class="item" style="grid-template-columns:34px 1fr auto auto">
+        <template v-for="h in list" :key="h.ID">
+        <div class="item hist" style="grid-template-columns:34px 1fr auto auto" @click="openHist(h)">
           <span class="bic" v-html="gIcon(h['ジャンル'])"></span>
-          <div class="t"><b>{{ h['品名'] }}</b><span :class="{ noplace: !h['店名'] }"><span v-if="h['店名']" class="place" v-html="svg('pin') + h['店名']"></span><template v-else>場所の記録なし</template></span></div>
+          <div class="t"><b>{{ h['品名'] }}</b><span :class="{ noplace: !h['店名'] }"><span v-if="h['店名']" class="place" v-html="svg('pin') + h['店名']"></span><template v-else>場所の記録なし</template></span>
+            <span v-if="histPrice(h)" class="hprice">{{ histPrice(h) }}</span><span v-else class="hadd">＋ 金額を入れる</span></div>
           <span class="time">{{ String(h['日時']).slice(11, 16) }}</span>
-          <button class="del" @click="removeHist(h)" aria-label="記録を消す">✕</button>
+          <button class="del" @click.stop="removeHist(h)" aria-label="記録を消す">✕</button>
         </div>
+        <div v-if="S.histDraft && S.histDraft.id === h.ID" class="histedit">
+          <div class="cmpin">
+            <label>値段<div class="unitbox"><input v-model="S.histDraft.price" inputmode="decimal" placeholder="0">円</div></label>
+            <button class="taxchip" @click="cycleTax(S.histDraft)">{{ taxLabel(S.histDraft.tax) }}</button>
+          </div>
+          <div class="cmpin" :class="{ one: isCount(S.histDraft.unit) }">
+            <label>{{ isCount(S.histDraft.unit) ? '数' : '量' }}<div class="unitbox"><input v-model="S.histDraft.amt" inputmode="decimal" :placeholder="isCount(S.histDraft.unit) ? '1' : '0'">
+              <select v-model="S.histDraft.unit"><option v-for="u in UNIT_LIST" :key="u">{{ u }}</option></select></div></label>
+            <label class="pack" v-if="!isCount(S.histDraft.unit)">入数<div class="unitbox"><input v-model="S.histDraft.pack" inputmode="numeric" placeholder="1">こ</div></label>
+          </div>
+          <div class="per" :class="{ none: !unitInfo(S.histDraft) }">{{ perText(unitInfo(S.histDraft)) }}</div>
+          <div class="small muted" style="margin:8px 2px 4px">買ったお店</div>
+          <div class="chips" style="flex-wrap:wrap">
+            <button v-for="s in sortedStores" :key="s.ID" class="chip" :class="{ on: S.histDraft.sid === s.ID }" @click="S.histDraft.sid = s.ID">{{ s['店名'] }}</button>
+            <button class="chip" :class="{ on: !S.histDraft.sid }" @click="S.histDraft.sid = ''">お店未定</button>
+          </div>
+          <div class="row2" style="margin-top:10px"><button class="btn" @click="S.histDraft = null">やめる</button><button class="btn pri" @click="saveHist(h)">保存（記録にも残す）</button></div>
+        </div>
+        </template>
       </div>
     </template>
-    <div class="small muted" style="margin:10px 4px 0">一覧や店舗別で「買った」にすると、ここに残ります。そのとき 1km 以内に登録したお店があれば、そのお店を場所として記録します</div>
+    <div class="small muted" style="margin:10px 4px 0">一覧や店舗別で「買った」にすると、ここに残ります。そのとき 1km 以内に登録したお店があれば、そのお店を場所として記録します。品物を押すと、値段・量・個数を入れられます（計算の「記録」にも残り、お店ごとの比較に使えます）</div>
   </template>
 
   <!-- ===== メニュー ===== -->

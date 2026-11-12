@@ -13,7 +13,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))      # このフォルダの kb_calc・kb_store を読む
 import kb_calc as calc  # noqa: E402
 import kb_store as store  # noqa: E402
-if "メモ" not in getattr(store, "TABLES", {}).get("価格記録", []) or not hasattr(store, "_memo"):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
+if "価格ID" not in getattr(store, "TABLES", {}).get("購入記録", []) or not hasattr(store, "_memo"):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
     import importlib
     store = importlib.reload(store)
 from kb_ui import ui  # noqa: E402

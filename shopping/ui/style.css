@@ -296,3 +296,9 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .cmpcands .cand{height:32px;font-size:13px}
 .cmpcands .cand small{color:var(--sub);font-weight:700}
 .cmpcands.save{margin:0 0 4px;padding:0 0 10px}
+/* カレンダー：値段の入力 */
+.item.hist{cursor:pointer}
+.hprice{display:block;font-size:12px;font-weight:700;color:var(--rose);margin-top:2px}
+.hadd{display:block;font-size:12px;font-weight:700;color:#b9a1ad;margin-top:2px}
+.histedit{background:#fff8fb;border-top:1px dashed #f0cfdc;padding:12px 12px 14px}
+.histedit .cmpin.one{grid-template-columns:1fr}
