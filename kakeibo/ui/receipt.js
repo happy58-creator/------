@@ -7,7 +7,7 @@
 const R = { step: "home", shots: [], pending: "", sentAt: 0, error: "", receipts: [], seen: "" };
 try { Object.assign(R, JSON.parse(sessionStorage.getItem("kb_receipt") || "{}"), { shots: [] }); } catch (e) {}
 if (R.step === "wait" || R.step === "shots") R.step = R.receipts.length ? "edit" : "home";
-function rkeep() { try { sessionStorage.setItem("kb_receipt", JSON.stringify({ step: R.step, pending: R.pending, receipts: R.receipts, seen: R.seen })); } catch (e) {} }
+function rkeep() { try { sessionStorage.setItem("kb_receipt", JSON.stringify({ step: R.step, pending: R.pending, receipts: R.receipts, seen: R.seen, model: R.model })); } catch (e) {} }
 
 const MAX_SHOTS = 8;
 const TAXES = [8, 10, 0];
@@ -80,7 +80,7 @@ V.other = () => `<div class="title">その他</div>
 
 V.receipt = () => {
   if (R.step === "wait") return `<div class="title">撮影入力</div>
-    <div class="card rwait"><div class="spin"></div><b>読みとっています…</b><div class="small muted">${R.shots.length || ""}${R.shots.length ? "枚の写真を" : ""}まとめて送りました。10〜30秒ほどかかります</div></div>`;
+    <div class="card rwait"><div class="spin"></div><b>読みとっています…</b><div class="small muted">${R.shots.length || ""}${R.shots.length ? "枚の写真を" : ""}まとめて送りました。10〜30秒ほどかかります（混んでいるときは自動で送り直すので、1分ほどかかることもあります）</div></div>`;
   if (R.step === "edit") return editView();
   const shots = R.shots.length ? `<div class="sec">撮った写真（${R.shots.length}枚）</div>
     <div class="rshots">${R.shots.map((s, i) => `<div class="rshot"><img src="${s.thumb}" alt=""><button data-r="delshot" data-i="${i}" aria-label="消す">✕</button></div>`).join("")}</div>` : "";
@@ -132,6 +132,7 @@ function editView() {
   }).join("");
   return `<button class="rback" data-go="home">‹ もどる（結果は残ります）</button><div class="title">読み取り結果</div>
     <div class="small muted" style="margin:-6px 4px 10px">直してから下の「保存」を押してください。行の右のアイコンでカテゴリを変えると、そのグループに移ります。「記録」で買い物リストの値段の記録に入れます</div>
+    ${/lite/.test(R.model || "") ? `<div class="alert">ℹ️ <span>いつものAIが混んでいたので、予備のAI（軽いもの）で読みました。品名や金額をいつもより念入りに見てください</span></div>` : ""}
     ${body}
     <div class="rtotal"><span>合計</span><b id="rgrand">${yen(grandTotal())}</b></div>
     <button class="big pink" data-r="save">保存する（家計簿に記録）</button>
@@ -249,7 +250,7 @@ window.addEventListener("message", e => {
   if (o.id !== R.pending) return;
   R.seen = o.id;
   if (o.error) { R.step = R.shots.length ? "shots" : "home"; R.error = o.error; }
-  else { R.receipts = fromResult(o.receipts || []); R.step = "edit"; R.shots = []; R.error = ""; }
+  else { R.receipts = fromResult(o.receipts || []); R.model = o.model || ""; R.step = "edit"; R.shots = []; R.error = ""; }
   rkeep();
   if (S.view === "receipt") { closeModal(); render(); scrollEl.scrollTop = 0; }
 });
@@ -277,6 +278,7 @@ function makeShot(src, w, h, crop) {
 // ================================================================ カメラ（自動撮影）
 const CAM = { on: false, stream: null, video: null, timer: 0, prev: null, okSince: 0, armed: true, capSmall: null, peak: [], allOkSince: 0, last: null, busy: false };
 const SW = 180;             // 調べるときの小さな絵の幅
+const PASS = 0.75;         // それぞれの点数がこれ以上（75%）なら合格
 const HOLD = 500;           // 90% 以上をこの時間（ミリ秒）保ったら撮る
 function camHtml() {
   return `<div id="cam"><video playsinline muted autoplay></video><canvas class="ov"></canvas>
@@ -332,9 +334,10 @@ function otsu(g) {
   return t;
 }
 // いちばん大きい明るいかたまり（＝レシート）
-function biggestBlob(g, W, H, t) {
-  const lab = new Uint8Array(W * H), stack = new Int32Array(W * H);
-  let best = null;
+function biggestBlob(g, W, H, t) { return allBlobs(g, W, H, t, 0).sort((a, b) => b.area - a.area)[0] || null; }
+// 明るいかたまりを全部（小さすぎるものは捨てる）
+function allBlobs(g, W, H, t, minArea) {
+  const lab = new Uint8Array(W * H), stack = new Int32Array(W * H), out = [];
   for (let s = 0; s < W * H; s++) {
     if (lab[s] || g[s] <= t) continue;
     let sp = 0, area = 0, x0 = W, x1 = 0, y0 = H, y1 = 0; stack[sp++] = s; lab[s] = 1;
@@ -347,9 +350,23 @@ function biggestBlob(g, W, H, t) {
       if (y > 0 && !lab[p - W] && g[p - W] > t) { lab[p - W] = 1; stack[sp++] = p - W; }
       if (y < H - 1 && !lab[p + W] && g[p + W] > t) { lab[p + W] = 1; stack[sp++] = p + W; }
     }
-    if (!best || area > best.area) best = { area, x0, x1, y0, y1, pix };
+    if (area >= minArea) out.push({ area, x0, x1, y0, y1, pix });
   }
-  return best;
+  return out;
+}
+// レシートらしさ：中に文字（まわりより暗い細かな点）があるか。照明やテカリは、のっぺり明るいだけで文字がない
+function paperOf(blob, g, W) {
+  const L = {}, Rr = {};
+  let sum = 0, sat = 0;
+  for (const p of blob.pix) { const x = p % W, y = (p / W) | 0; sum += g[p]; if (g[p] >= 250) sat++; if (L[y] === undefined || x < L[y]) L[y] = x; if (Rr[y] === undefined || x > Rr[y]) Rr[y] = x; }
+  const mean = sum / blob.area;
+  let n = 0, dark = 0, edge = 0;
+  for (const y in L) for (let x = L[y] + 1; x < Rr[y]; x++) {
+    const p = +y * W + x; n++;
+    if (g[p] < mean - 22) dark++;
+    if (Math.abs(g[p] - g[p + 1]) > 18) edge++;
+  }
+  return { mean, sat: sat / blob.area, detail: n ? dark / n : 0, edge: n ? edge / n : 0 };
 }
 // かたまりの形（レシートは「幅がほぼ一定」で「左右のふちがまっすぐ」）
 function shapeOf(blob, W) {
@@ -373,17 +390,25 @@ let lastT = 0;
 function findReceipt(g, W, H) {
   const t0 = otsu(g);
   let mb = 0, nb = 0, md = 0, nd = 0; for (const x of g) { if (x > t0) { mb += x; nb++; } else { md += x; nd++; } }
-  if ((nb ? mb / nb : 0) - (nd ? md / nd : 0) < 25) return null;
-  const starts = lastT > t0 ? [lastT - 8, t0] : [t0];
-  for (const st of starts) {
-    for (let t = Math.max(t0, st); t <= 242; t += 7) {
-      const blob = biggestBlob(g, W, H, t);
-      if (!blob || blob.area < W * H * 0.04) break;
-      const sh = shapeOf(blob, W);
-      if (sh.ok) { lastT = t; blob.t = t; return blob; }
+  if ((nb ? mb / nb : 0) - (nd ? md / nd : 0) < 20) return null;
+  // しきい値を上げながら、全部のかたまりを「形（幅が一定・ふちがまっすぐ）」と「文字があるか」で調べ、いちばんレシートらしいものを選ぶ
+  let best = null;
+  const lo = Math.max(60, Math.min(t0, lastT ? lastT - 14 : t0));
+  for (let t = lo; t <= 236; t += 8) {
+    const blobs = allBlobs(g, W, H, t, W * H * 0.03);
+    if (!blobs.length) break;
+    for (const b of blobs) {
+      if (b.x1 - b.x0 < 6 || b.y1 - b.y0 < 8) continue;
+      const sh = shapeOf(b, W); if (!sh.ok) continue;
+      const pp = paperOf(b, g, W);
+      if (pp.sat > 0.45 || pp.mean > 252) continue;          // 照明そのもの（真っ白でのっぺり）
+      if (pp.detail < 0.015 && pp.edge < 0.03) continue;      // 文字がない（テカリ・白い箱など）
+      const score = b.area * Math.min(1, (pp.detail + pp.edge) / 0.12) * (1 - Math.min(0.5, sh.cv * 2));
+      if (!best || score > best.score) best = Object.assign(b, { t, score });
     }
   }
-  return null;
+  if (best) lastT = best.t;
+  return best;
 }
 function edgeAngle(blob, W) {      // 左右のふちの傾き（度）
   const L = {}, Rr = {};
@@ -443,7 +468,7 @@ function analyze() {
     focCv = focCv || document.createElement("canvas"); focCv.width = fw; focCv.height = fh;
     const fx = focCv.getContext("2d", { willReadFrequently: true }); fx.drawImage(v, sx, sy + (bh / H * vh - sh) / 2, sw, sh, 0, 0, fw, fh);
     const lv = lapVar(grayOf(fx.getImageData(0, 0, fw, fh).data, fw * fh), fw, fh);
-    const now = Date.now(), others = sc.pos >= .9 && sc.tilt >= .9 && sc.light >= .9 && sc.still >= .9;
+    const now = Date.now(), others = sc.pos >= PASS && sc.tilt >= PASS && sc.light >= PASS && sc.still >= PASS;
     // ピントは「いまの構えの中でいちばんよかった値」とくらべる（構えがくずれたら、くらべる値もやりなおす）
     if (!others) CAM.peak = [];
     CAM.peak = CAM.peak.filter(p => now - p.t < 4000); CAM.peak.push({ t: now, v: lv });
@@ -452,11 +477,11 @@ function analyze() {
     const relax = CAM.allOkSince && now - CAM.allOkSince > 3000;          // 3秒たってもピントの数字が上がらないときは、その中でいちばんよいところで撮る
     const need = relax ? 0.85 * peak : Math.max(60, 0.7 * peak);
     sc.focus = clamp01(0.9 * lv / Math.max(1, need));
-    msg = !inside ? "少しはなしてください（左右が切れています）" : sc.pos < .9 ? "もう少し近づけてください（長いレシートは上下に分けて撮れます）" : sc.tilt < .9 ? `まっすぐにしてください（${Math.round(ang)}°）`
-      : sc.light < .9 ? (mean < 120 ? "暗いです。明るいところへ" : "光が反射しています。角度を少し変えて") : sc.still < .9 ? "動かさないでください" : sc.focus < .9 ? "ピントを合わせています…" : "そのまま…";
+    msg = !inside ? "少しはなしてください（左右が切れています）" : sc.pos < PASS ? "もう少し近づけてください（長いレシートは上下に分けて撮れます）" : sc.tilt < PASS ? `まっすぐにしてください（${Math.round(ang)}°）`
+      : sc.light < PASS ? (mean < 120 ? "暗いです。明るいところへ" : "光が反射しています。角度を少し変えて") : sc.still < PASS ? "動かさないでください" : sc.focus < PASS ? "ピントを合わせています…" : "そのまま…";
   }
   const score = Math.round(100 * Math.min(sc.pos, sc.tilt, sc.light, sc.still, sc.focus));
-  const allOk = found && score >= 90, now = Date.now();
+  const allOk = found && score >= PASS * 100, now = Date.now();
   if (allOk && CAM.armed) { CAM.okSince = CAM.okSince || now; } else CAM.okSince = 0;
   if (!CAM.armed && found) msg = "撮りました。次の部分・次のレシートへ動かしてください（終わったら「完了」）";
   // 画面に出す
@@ -465,7 +490,7 @@ function analyze() {
   el.querySelector(".cscore").className = "cscore " + (allOk ? "ok" : score >= 60 ? "mid" : "");
   el.querySelector(".cmsg").textContent = msg;
   el.querySelector(".cchips").innerHTML = [["位置", sc.pos], ["傾き", sc.tilt], ["明るさ", sc.light], ["手ぶれ", sc.still], ["ピント", sc.focus]]
-    .map(([l, s]) => `<span class="${found && s >= .9 ? "ok" : ""}">${l}</span>`).join("");
+    .map(([l, s]) => `<span class="${found && s >= PASS ? "ok" : ""}">${l}</span>`).join("");
   drawBox(el, box, W, H, allOk && CAM.armed);
   if (CAM.okSince && now - CAM.okSince >= HOLD) capture(box, W, H, g);
 }

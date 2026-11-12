@@ -10,6 +10,7 @@ import re
 import streamlit as st
 
 MODEL_FALLBACK = "gemini-3.6-flash"
+FALLBACK_MODEL = "gemini-3.5-flash-lite"   # 予備：混雑・回数の上限のとき（回数の上限はモデルごとに別）
 
 
 def _key():
@@ -103,12 +104,37 @@ def _clean(data, cats):
     return [r for r in out if r["items"]]
 
 
+def _reset_jst():
+    """1日の回数が戻る時刻（日本時間）。アメリカ太平洋時間の0時（冬は17時、夏は16時）"""
+    try:
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        la = datetime.now(ZoneInfo("America/Los_Angeles"))
+        nxt = (la + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return f"{nxt.astimezone(ZoneInfo('Asia/Tokyo')).hour}時"
+    except Exception:
+        return "17時ごろ"
+
+
+def _code(e):
+    """エラーの番号（429：回数の上限、5xx：Google側の混雑・不具合、404：モデルがない）"""
+    for k in ("code", "status_code"):
+        v = getattr(e, k, None)
+        if isinstance(v, int):
+            return v
+    m = re.search(r"\b(4\d\d|5\d\d)\b", str(e))
+    return int(m.group(1)) if m else 0
+
+
 def read_receipts(images, cats, names):
-    """images：data URL の一覧。返り値 {"receipts": [...]} か {"error": "..."}"""
+    """images：data URL の一覧。返り値 {"receipts": [...], "model": ...} か {"error": "..."}
+    失敗したら：混雑（5xx）は少し待って同じモデルで1回だけ送り直し、それでもダメなら予備のモデル（回数の上限は別）で読む。
+    1日の回数が少ない（無料は20回）ので、送り直しは多くしない。"""
     if not images:
         return {"error": "写真がありません"}
     if not available():
         return {"error": "AIのカギ（GEMINI_API_KEY）が設定されていないので、読み取りが使えません"}
+    import time
     try:
         from google import genai
         from google.genai import types
@@ -118,13 +144,34 @@ def read_receipts(images, cats, names):
             parts.append(types.Part.from_bytes(data=b, mime_type=mime))
         parts.append(_prompt(cats, names))
         client = genai.Client(api_key=_key())
-        res = client.models.generate_content(           # 写真が何枚でも、問い合わせは1回
-            model=_model(), contents=parts,
-            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1),
-        )
-        receipts = _clean(json.loads(res.text), cats)
-        if not receipts:
-            return {"error": "レシートの品物を読みとれませんでした。明るいところで、もう一度撮ってみてください"}
-        return {"receipts": receipts}
     except Exception as e:
-        return {"error": f"読み取りに失敗しました（{type(e).__name__}）。もう一度お試しください"}
+        return {"error": f"写真を送る準備ができませんでした（{type(e).__name__}）"}
+    main = _model()
+    plan = [(main, 0), (main, 4), (FALLBACK_MODEL, 0)]       # （モデル, 送る前に待つ秒）
+    codes, i = [], 0
+    while i < len(plan):
+        model, wait = plan[i]
+        i += 1
+        if wait:
+            time.sleep(wait)
+        try:
+            res = client.models.generate_content(           # 写真が何枚でも、問い合わせは1回
+                model=model, contents=parts,
+                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1),
+            )
+            receipts = _clean(json.loads(res.text), cats)
+            if not receipts:
+                return {"error": "レシートの品物を読みとれませんでした。明るいところで、もう一度撮ってみてください"}
+            return {"receipts": receipts, "model": model}
+        except Exception as e:
+            c = _code(e)
+            codes.append(c)
+            if c == 429 or c == 404 or (400 <= c < 500 and model == main):
+                # 回数の上限・モデルがない・写真の問題：同じモデルで送り直してもむだ → 予備のモデルへ
+                while i < len(plan) and plan[i][0] == model:
+                    i += 1
+    if codes and all(c == 429 for c in codes if c != 404):
+        return {"error": f"AIの読み取り回数の上限に達しました。1分ほど待ってもう一度押してください。1日の回数を使い切った場合は、{_reset_jst()}（日本時間）に戻ります（写真は残っています）"}
+    if any(500 <= c < 600 for c in codes) or not any(codes):
+        return {"error": "Geminiが混み合っていて読みとれませんでした。少し時間をおいて、もう一度「読みとる」を押してください（写真は残っています）"}
+    return {"error": f"読み取りに失敗しました（エラー {'・'.join(str(c) for c in codes if c)}）。写真を撮り直してみてください"}
