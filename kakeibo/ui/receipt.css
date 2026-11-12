@@ -94,3 +94,4 @@ body.rc-edit #foot{display:none}
 #sheet .amount .small{white-space:nowrap}
 #sheet .field select.runit{margin-left:6px;font-weight:600}
 .rback{font-size:13px;font-weight:700;color:var(--accent);padding:2px 2px 0}
+#cam .cres{position:absolute;right:12px;bottom:calc(96px + env(safe-area-inset-bottom));font-size:10px;opacity:.55}

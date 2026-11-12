@@ -276,11 +276,11 @@ function makeShot(src, w, h, crop) {
 
 // ================================================================ カメラ（自動撮影）
 const CAM = { on: false, stream: null, video: null, timer: 0, prev: null, okSince: 0, armed: true, capSmall: null, peak: [], allOkSince: 0, last: null, busy: false };
-const SW = 160;             // 調べるときの小さな絵の幅
+const SW = 180;             // 調べるときの小さな絵の幅
 const HOLD = 500;           // 90% 以上をこの時間（ミリ秒）保ったら撮る
 function camHtml() {
   return `<div id="cam"><video playsinline muted autoplay></video><canvas class="ov"></canvas>
-    <div class="ctop"><button class="cx" data-r="camclose" aria-label="閉じる">✕</button><div class="cscore"><b>—</b><span>読みとりやすさ</span></div><div class="ccount"></div></div>
+    <div class="ctop"><button class="cx" data-r="camclose" aria-label="閉じる">✕</button><div class="cscore"><b>—</b><span>読みとりやすさ</span></div><div class="ccount"></div></div><div class="cres"></div>
     <div class="cmsg">カメラを準備しています…</div>
     <div class="cchips"></div>
     <div class="cbot"><div class="cthumb"></div><button class="cshut" data-r="shut" aria-label="撮る"></button><button class="cdone" data-r="camdone">完了</button></div>
@@ -296,6 +296,7 @@ async function openCam() {
   try {
     CAM.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } } });
     if (!CAM.on) { stopStream(); return; }
+    try { await CAM.stream.getVideoTracks()[0].applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}   // できる端末だけ：ピントを合わせつづける
     CAM.video.srcObject = CAM.stream;
     await CAM.video.play().catch(() => {});
     CAM.timer = setInterval(analyze, 110);
@@ -350,6 +351,40 @@ function biggestBlob(g, W, H, t) {
   }
   return best;
 }
+// かたまりの形（レシートは「幅がほぼ一定」で「左右のふちがまっすぐ」）
+function shapeOf(blob, W) {
+  const L = {}, Rr = {};
+  for (const p of blob.pix) { const x = p % W, y = (p / W) | 0; if (L[y] === undefined || x < L[y]) L[y] = x; if (Rr[y] === undefined || x > Rr[y]) Rr[y] = x; }
+  const h = blob.y1 - blob.y0, ys = Object.keys(L).map(Number).filter(y => y >= blob.y0 + h * .1 && y <= blob.y1 - h * .1);
+  if (ys.length < 8) return { ok: false };
+  const wd = ys.map(y => Rr[y] - L[y] + 1), mean = wd.reduce((a, b) => a + b, 0) / wd.length;
+  const cv = Math.sqrt(wd.reduce((a, b) => a + (b - mean) ** 2, 0) / wd.length) / mean;
+  const resid = E => {          // ふちを直線にあてはめたときのずれ（幅に対する割合）
+    let sx = 0, sy = 0, sxy = 0, syy = 0; const n = ys.length;
+    for (const y of ys) { sx += E[y]; sy += y; sxy += E[y] * y; syy += y * y; }
+    const d = n * syy - sy * sy, a = d ? (n * sxy - sx * sy) / d : 0, b = (sx - a * sy) / n;
+    return Math.sqrt(ys.reduce((acc, y) => acc + (E[y] - (a * y + b)) ** 2, 0) / n) / mean;
+  };
+  const rl = resid(L), rr = resid(Rr);
+  return { ok: cv <= 0.2 && rl <= 0.1 && rr <= 0.1, cv, rl, rr, mean };
+}
+// レシートを探す：まわり（机の明るいところ・箱など）とつながっているときは、明るさのしきい値を上げて切りはなす
+let lastT = 0;
+function findReceipt(g, W, H) {
+  const t0 = otsu(g);
+  let mb = 0, nb = 0, md = 0, nd = 0; for (const x of g) { if (x > t0) { mb += x; nb++; } else { md += x; nd++; } }
+  if ((nb ? mb / nb : 0) - (nd ? md / nd : 0) < 25) return null;
+  const starts = lastT > t0 ? [lastT - 8, t0] : [t0];
+  for (const st of starts) {
+    for (let t = Math.max(t0, st); t <= 242; t += 7) {
+      const blob = biggestBlob(g, W, H, t);
+      if (!blob || blob.area < W * H * 0.04) break;
+      const sh = shapeOf(blob, W);
+      if (sh.ok) { lastT = t; blob.t = t; return blob; }
+    }
+  }
+  return null;
+}
 function edgeAngle(blob, W) {      // 左右のふちの傾き（度）
   const L = {}, Rr = {};
   for (const p of blob.pix) { const x = p % W, y = (p / W) | 0; if (L[y] === undefined || x < L[y]) L[y] = x; if (Rr[y] === undefined || x > Rr[y]) Rr[y] = x; }
@@ -389,17 +424,16 @@ function analyze() {
     let d = 0; for (let i = 0; i < g.length; i += 2) d += Math.abs(g[i] - CAM.capSmall[i]);
     if (d / (g.length / 2) > 16) CAM.armed = true;
   }
-  const t = otsu(g);
-  let mb = 0, nb = 0, md = 0, nd = 0; for (const x of g) { if (x > t) { mb += x; nb++; } else { md += x; nd++; } }
-  const contrast = (nb ? mb / nb : 0) - (nd ? md / nd : 0);
-  const blob = contrast >= 30 ? biggestBlob(g, W, H, t) : null;
-  const found = blob && blob.area >= W * H * 0.15;
+  const blob = findReceipt(g, W, H);
+  const found = !!blob;
   const sc = { pos: 0, tilt: 0, light: 0, still: clamp01(1 - motion / 40), focus: 0 };
-  let msg = "レシートを画面に入れてください（暗い机の上だと見つけやすいです）", box = null, ang = 0;
+  let msg = "レシートが見つかりません。まわりに白い物がない、暗めの所に置いてください", box = null, ang = 0;
   if (found) {
     const bw = blob.x1 - blob.x0 + 1, bh = blob.y1 - blob.y0 + 1, inside = blob.x0 >= 1 && blob.x1 <= W - 2;
     box = blob;
-    sc.pos = Math.min(1, (bw / W) / 0.5, (bh / H) / 0.4); if (!inside) sc.pos = Math.min(sc.pos, 0.6);
+    // 文字が読める大きさか：レシートの幅が、カメラの絵で 700 ピクセルくらい（画面の幅の 45% まで）あればよい
+    const needW = Math.min(0.45 * vw, 700), bwPx = bw / W * vw;
+    sc.pos = Math.min(1, 0.9 * bwPx / needW, (bh / H) / 0.3); if (!inside) sc.pos = Math.min(sc.pos, 0.6);
     ang = edgeAngle(blob, W); sc.tilt = clamp01(1 - Math.abs(ang) / 50);
     let sum = 0, glare = 0; for (const p of blob.pix) { sum += g[p]; if (g[p] >= 250) glare++; }
     const mean = sum / blob.area, gl = glare / blob.area;
@@ -418,7 +452,7 @@ function analyze() {
     const relax = CAM.allOkSince && now - CAM.allOkSince > 3000;          // 3秒たってもピントの数字が上がらないときは、その中でいちばんよいところで撮る
     const need = relax ? 0.85 * peak : Math.max(60, 0.7 * peak);
     sc.focus = clamp01(0.9 * lv / Math.max(1, need));
-    msg = !inside ? "少しはなしてください（左右が切れています）" : sc.pos < .9 ? "もう少し近づけてください" : sc.tilt < .9 ? `まっすぐにしてください（${Math.round(ang)}°）`
+    msg = !inside ? "少しはなしてください（左右が切れています）" : sc.pos < .9 ? "もう少し近づけてください（長いレシートは上下に分けて撮れます）" : sc.tilt < .9 ? `まっすぐにしてください（${Math.round(ang)}°）`
       : sc.light < .9 ? (mean < 120 ? "暗いです。明るいところへ" : "光が反射しています。角度を少し変えて") : sc.still < .9 ? "動かさないでください" : sc.focus < .9 ? "ピントを合わせています…" : "そのまま…";
   }
   const score = Math.round(100 * Math.min(sc.pos, sc.tilt, sc.light, sc.still, sc.focus));
@@ -427,6 +461,7 @@ function analyze() {
   if (!CAM.armed && found) msg = "撮りました。次の部分・次のレシートへ動かしてください（終わったら「完了」）";
   // 画面に出す
   el.querySelector(".cscore b").textContent = found ? score + "%" : "—";
+  el.querySelector(".cres").textContent = `${vw}×${vh}`;
   el.querySelector(".cscore").className = "cscore " + (allOk ? "ok" : score >= 60 ? "mid" : "");
   el.querySelector(".cmsg").textContent = msg;
   el.querySelector(".cchips").innerHTML = [["位置", sc.pos], ["傾き", sc.tilt], ["明るさ", sc.light], ["手ぶれ", sc.still], ["ピント", sc.focus]]
@@ -469,8 +504,8 @@ function manualShot() {
   const v = CAM.video, W = SW, H = Math.round(SW * v.videoHeight / v.videoWidth);
   anaCv = anaCv || document.createElement("canvas"); anaCv.width = W; anaCv.height = H;
   const cx = anaCv.getContext("2d", { willReadFrequently: true }); cx.drawImage(v, 0, 0, W, H);
-  const g = grayOf(cx.getImageData(0, 0, W, H).data, W * H), t = otsu(g), blob = biggestBlob(g, W, H, t);
-  capture(blob && blob.area >= W * H * 0.15 ? blob : null, W, H, g, true);
+  const g = grayOf(cx.getImageData(0, 0, W, H).data, W * H);
+  capture(findReceipt(g, W, H), W, H, g, true);
 }
 
 // ================================================================ 操作
