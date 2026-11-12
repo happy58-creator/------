@@ -13,11 +13,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))      # このフォルダの kb_calc・kb_store を読む
 import kb_calc as calc  # noqa: E402
 import kb_store as store  # noqa: E402
-if "規模" not in getattr(store, "TABLES", {}).get("支店", []) or not hasattr(store, "_memo"):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
+if "レシートの記憶" not in getattr(store, "TABLES", {}) or not hasattr(store, "_memo"):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
     import importlib
     store = importlib.reload(store)
 from kb_ui import ui  # noqa: E402
 import kb_auth as auth  # noqa: E402       # ログイン（買い物リストと共通）
+import kb_ocr as ocr  # noqa: E402         # レシートの読み取り（Gemini）
 from kb_calc import EXPENSE, INCOME  # noqa: E402
 
 try:
@@ -69,8 +70,52 @@ def apply(a):
             rec, nxt = calc.pay_sub(s, today)
             store.append("記録", {**rec, "ID": a.get("rid", "")})
             store.save("サブスク", [pick("サブスク", nxt) if x["ID"] == s["ID"] else x for x in subs])
+    elif t == "add_records":          # レシートから：何件でも書きこみは1回
+        rows = [pick("記録", r) for r in a.get("recs") or []]
+        if rows:
+            store.save("記録", store.load("記録") + rows)
+    elif t == "add_price":            # レシートの「記録」：買い物リストの値段の記録に入れる
+        store.append("価格記録", pick("価格記録", a["row"]))
+    elif t == "save_receipt_memo":    # 直した品名・カテゴリを覚える（変わった分だけ足して、表は1回で書く）
+        rows = {r["キー"]: r for r in store.load("レシートの記憶") if r.get("キー")}
+        for r in a.get("rows") or []:
+            if r.get("キー"):
+                rows[r["キー"]] = pick("レシートの記憶", r)
+        store.save("レシートの記憶", list(rows.values())[-1500:])
     elif t == "save_cats":
         store.save("カテゴリ", [{"種類": r["種類"], "名前": r["名前"], "アイコン": r.get("アイコン") or "📦"} for r in a["rows"] if r.get("名前")])
+
+
+def last_units():
+    """品名ごとの、いちばん新しい値段の記録の単位・量・入数（レシートの「記録」で最初に入れておく）"""
+    out = {}
+    for r in sorted(store.load("価格記録"), key=lambda r: r.get("日付", "")):
+        if r.get("品名"):
+            out[r["品名"]] = [r.get("単位", ""), r.get("量", ""), r.get("入数", "")]
+    return out
+
+
+def known_names():
+    """Gemini に渡す「よく使う品名」（買い物リスト・値段の記録・覚えた直し方）"""
+    seen, out = set(), []
+    for t, c in (("レシートの記憶", "品名"), ("価格記録", "品名"), ("買い物の記憶", "品名"), ("買い物", "品名")):
+        for r in reversed(store.load(t)):
+            n = str(r.get(c) or "").strip()
+            if n and n not in seen:
+                seen.add(n)
+                out.append(n)
+    return out[:300]
+
+
+def read_ocr(req):
+    """写真を読みとって、結果をセッションにとっておく（画面に返す）"""
+    cats = [c["名前"] for c in categories() if c["種類"] == EXPENSE]
+    try:
+        names = known_names()
+    except Exception:
+        names = []
+    res = ocr.read_receipts(req.get("images") or [], cats, names)
+    st.session_state["kb_ocr"] = {"id": req.get("id"), **res}
 
 
 # =========================================================================
@@ -84,10 +129,18 @@ data = {
     "tsumi": store.load("積立"), "tlog": store.load("積立記録"), "inames": store.load("アイコン名"),
     "shopping": True,       # 買い物リスト（同じアプリの /kaimono）へのボタンを出す
     "sheets": store.using_sheets(), "password": bool(auth.secret("KAKEIBO_PASSWORD")),
+    # レシートの読み取り：お店（買い物リストの登録店）・覚えた直し方・品名ごとの前の単位
+    "stores": [{"ID": r["ID"], "店名": r["店名"], "別名": r.get("別名", "")} for r in store.load("店舗") if r.get("店名")],
+    "rmemo": store.load("レシートの記憶"), "units": last_units(), "ocr": ocr.available(),
 }
-val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", key="kb_ui", default=None)
+val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", ocr=ss.get("kb_ocr"), key="kb_ui", default=None)
 if isinstance(val, dict):
     changed = False
+    req = val.get("ocr")
+    if isinstance(req, dict) and req.get("id") and req["id"] not in done:     # レシートの写真が来た（同じ写真は2回読まない）
+        done.append(req["id"])
+        read_ocr(req)
+        changed = True
     for a in val.get("queue") or []:
         if a.get("id") in done:
             continue
