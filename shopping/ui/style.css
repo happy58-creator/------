@@ -302,3 +302,10 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .hadd{display:block;font-size:12px;font-weight:700;color:#b9a1ad;margin-top:2px}
 .histedit{background:#fff8fb;border-top:1px dashed #f0cfdc;padding:12px 12px 14px}
 .histedit .cmpin.one{grid-template-columns:1fr}
+/* 店舗の規模（大・中・小） */
+.sizerow{display:flex;align-items:center;gap:10px}
+.sizebtn{flex:none;width:52px;height:40px;border-radius:12px;border:0;font-size:18px;font-weight:900;color:#fff;font-family:inherit}
+.sizebtn.s大,.sizetag.s大{background:#c2416e}.sizebtn.s中,.sizetag.s中{background:#e98aa8}.sizebtn.s小,.sizetag.s小{background:#f3b9cc}
+.sizehint{font-size:13px;font-weight:700;line-height:1.4}.sizehint small{display:block;font-size:11px;font-weight:600;color:var(--sub)}
+.sizetag{font-style:normal;color:#fff;font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+.sizerow label{white-space:nowrap;flex:none;width:54px}

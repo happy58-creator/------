@@ -58,10 +58,10 @@ const app = createApp({
     const S = reactive({
       view: "home", user: "", ai: {}, aiWait: "", server: {}, serverSessions: [],
       // 学ぶ
-      lessonCat: "", learnField: "S",
+      lessonCat: "", learnField: "T",
       // 演習・模試の進行
       run: null,            // { mode, title, ids, i, answers:{id:choice}, flags:{}, checked:{}, start, limit, done, result }
-      setup: { scope: "cat", f: "S", cat: "S01", n: 10, order: "smart" },
+      setup: { scope: "cat", f: "T", cat: "T01", n: 10, order: "smart" },
       // 用語カード
       cards: null,          // { list:[...], i, flip }
       cardScope: "all",

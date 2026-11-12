@@ -20,8 +20,13 @@ function meters(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 const distText = m => m < 1000 ? `${Math.round(m / 10) * 10}m` : `${(m / 1000).toFixed(1)}km`;
-const NEAR = 1000;      // 現在地から 1km 以内のお店
-const MAYBE = 3000;     // 1km〜3km のお店は「もしかして？」に出す
+const NEAR = 1000;      // いちばん広い範囲（大）。お店の範囲は店舗ごとの「規模」で決める（下の SIZES）
+const MAYBE = 3000;     // お店の範囲の外〜3km のお店は「もしかして？」に出す
+// 店舗の規模：ピンからこの範囲にいれば「そのお店にいる」とみなす（現在地の表示・買ったお店の記録・値段の記録のお店）
+const SIZES = { 大: { m: 1000, hint: "大型ショッピングモールなど" }, 中: { m: 600, hint: "大型店舗・ホームセンターなど" }, 小: { m: 300, hint: "駐車場50台以下の店舗など" } };
+const SIZE_NEXT = { 中: "小", 小: "大", 大: "中" };          // ボタンを押すたびに 中→小→大→中
+const sizeOf = b => SIZES[b && b["規模"]] ? b["規模"] : "中";   // 未設定は「中」
+const radiusOf = b => SIZES[sizeOf(b)].m;
 // 店名・住所から位置をさがす（どれも無料・登録なし）
 //   ・店名：OpenStreetMap の検索 2つ（Photon・Nominatim）。現在地の近くを優先して、近い順に並べる
 //   ・住所：国土地理院の住所検索（日本の住所に強い。店名を入れると、名前の一部が合う町の名前を出してしまうので、住所らしいときだけ先に出す）
@@ -316,16 +321,20 @@ const App = {
     const branchesOf = sid => {
       const real = S.branches.filter(b => b["店舗ID"] === sid);
       const st = storeOf(sid);
-      return st && hasPos(st) ? [{ ID: "L" + sid, 店舗ID: sid, 支店名: "", 緯度: st["緯度"], 経度: st["経度"], legacy: true }, ...real] : real;
+      return st && hasPos(st) ? [{ ID: "L" + sid, 店舗ID: sid, 支店名: "", 緯度: st["緯度"], 経度: st["経度"], 規模: "中", legacy: true }, ...real] : real;
     };
     const fullName = (st, b) => (st ? st["店名"] : "") + (b && b["支店名"] ? " " + b["支店名"] : "");
     const branchLabel = b => b["支店名"] || "（店舗名なし）";
-    // お店ごとに、いちばん近い店舗：[{ s, b, m }]（近い順）
+    // お店ごとに、代表の店舗：[{ s, b, m, r, inside }]（近い順）。r＝その店舗の範囲（規模）、inside＝範囲の中にいる
+    // 範囲の中にいる店舗があれば、その中でいちばん近いもの。なければ、いちばん近いもの
     function nearestBranches(p) {
       const out = [];
       for (const st of S.stores) {
         let best = null;
-        for (const b of branchesOf(st.ID)) if (hasPos(b)) { const m = meters(p, { lat: +b["緯度"], lng: +b["経度"] }); if (!best || m < best.m) best = { s: st, b, m }; }
+        for (const b of branchesOf(st.ID)) if (hasPos(b)) {
+          const m = meters(p, { lat: +b["緯度"], lng: +b["経度"] }), r = radiusOf(b), x = { s: st, b, m, r, inside: m <= r };
+          if (!best || (x.inside && !best.inside) || (x.inside === best.inside && m < best.m)) best = x;
+        }
         if (best) out.push(best);
       }
       return out.sort((a, b) => a.m - b.m);
@@ -464,15 +473,15 @@ const App = {
       const rest = list.filter(i => !(prio(i) && !i["済"]));
       return (top.length ? [[PRIO_KEY, top]] : []).concat(byGenre(rest));
     });
-    // ---- 買った記録（カレンダー）：「買った」にしたときの日時・品名と、そのとき近くにあった登録店（1km 以内）を残す ----
-    const BOUGHT_NEAR = 1000;      // 買ったときに、このきょり（m）以内の登録店を「場所」にする（広いお店もあるので 1km）
+    // ---- 買った記録（カレンダー）：「買った」にしたときの日時・品名と、そのときいた登録店（店舗の規模の範囲の中）を残す ----
     const pad2 = n => String(n).padStart(2, "0");
     const nowLocal = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
     async function storeHere(it) {         // いまいる登録店 { s, b }（なければ null）
       let p;
       try { p = await locate(true); S.here = p; S.hereAt = Date.now(); } catch (e) { return null; }       // 買ったその時の位置（前の位置は使わない）
-      const near = nearestBranches(p).filter(x => x.m <= BOUGHT_NEAR);
-      // その品に決めてあるお店の店舗が 1km 以内にあれば、そのお店（同じモールの中の別のお店とまちがえない）。なければ、いちばん近いお店
+      const near = nearestBranches(p).filter(x => x.inside);
+      // その品に決めてあるお店の店舗の範囲にいれば、そのお店（同じモールの中の別のお店とまちがえない）。なければ、範囲の中にいるいちばん近いお店。
+      // どのお店の範囲にもいなければ null（購入店は未設定）
       return near.find(x => x.s.ID === it["店舗ID"]) || near[0] || null;
     }
     function toggle(it) {
@@ -573,7 +582,7 @@ const App = {
     const cell = p => `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`;
     async function findUnregistered(p) {
       const want = [...new Set(todo.value.map(i => i["店舗ID"]).filter(Boolean))].map(storeOf).filter(Boolean);
-      const near = new Set(nearestBranches(p).filter(x => x.m <= NEAR).map(x => x.s.ID));
+      const near = new Set(nearestBranches(p).filter(x => x.inside).map(x => x.s.ID));
       const targets = want.filter(st => !near.has(st.ID)).slice(0, SUGGEST_MAX);
       const found = [];
       await Promise.all(targets.map(async st => {
@@ -615,7 +624,7 @@ const App = {
       return a;
     }
     function addSuggest(x) {
-      const row = { ID: uid(), 店舗ID: x.s.ID, 支店名: branchFromTitle(storeNames(x.s), x.title), 緯度: x.lat.toFixed(6), 経度: x.lng.toFixed(6) };
+      const row = { ID: uid(), 店舗ID: x.s.ID, 支店名: branchFromTitle(storeNames(x.s), x.title), 緯度: x.lat.toFixed(6), 経度: x.lng.toFixed(6), 規模: "中" };
       save("支店", [...S.branches, row]);
       S.suggest = S.suggest.filter(y => y !== x);
       toast(`「${fullName(x.s, row)}」を登録しました`);
@@ -628,14 +637,14 @@ const App = {
     const nearStores = computed(() => S.here ? nearestBranches(S.here) : []);
     // 表示するお店のまとまり：[{ id, name, dist, items }]
     // 優先のもの：全店舗・現在地はぜんぶ（現在地では別のお店のものも出す）。お店を選んでいるときは、そのお店のもの
-    // 1km〜3km のお店（もしかして？）
-    const maybeGroups = computed(() => S.storeMode !== "here" ? [] : nearStores.value.filter(x => x.m > NEAR && x.m <= MAYBE)
+    // お店の範囲の外〜3km のお店（もしかして？）
+    const maybeGroups = computed(() => S.storeMode !== "here" ? [] : nearStores.value.filter(x => !x.inside && x.m <= MAYBE)
       .map(x => ({ id: x.s.ID, name: fullName(x.s, x.b), dist: x.m, items: todo.value.filter(i => !prio(i) && i["店舗ID"] === x.s.ID) })));
     const prioStore = computed(() => byPrio(todo.value.filter(i => prio(i) && (S.storeMode === "here" || !S.storeSel || i["店舗ID"] === S.storeSel))));
     const storeGroups = computed(() => {
       const items = todo.value.filter(i => !prio(i));
       if (S.storeMode === "here") {
-        return nearStores.value.filter(x => x.m <= NEAR).map(x => ({ id: x.s.ID, name: fullName(x.s, x.b), dist: x.m, items: items.filter(i => i["店舗ID"] === x.s.ID) }));
+        return nearStores.value.filter(x => x.inside).map(x => ({ id: x.s.ID, name: fullName(x.s, x.b), dist: x.m, items: items.filter(i => i["店舗ID"] === x.s.ID) }));
       }
       const ids = S.storeSel ? [S.storeSel] : [...sortedStores.value.map(s => s.ID), ""];
       return ids.map(id => ({ id, name: storeName(id), dist: null, items: items.filter(i => (i["店舗ID"] || "") === id && (id === "" || storeOf(id))) .concat(id === "" ? items.filter(i => i["店舗ID"] && !storeOf(i["店舗ID"])) : []) }))
@@ -686,10 +695,10 @@ const App = {
     // ---- 値段の記録（お店ごとの最安値）：比べた結果を「品名・お店・1あたりの値段」で残して、別のお店で比べる ----
     const fmtPer = (v, base, per) => `${per === 1 ? "1" + base : per + base}あたり ${v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : Math.round(v).toLocaleString()}円`;
     const recInfo = r => ({ v: num(r["単価"]), base: r["基準"], per: +r["基準量"] || 1 });
-    function nearStoreNow() {             // いま近くにある登録店（10分以内にとった現在地で、1km 以内）
+    function nearStoreNow() {             // いまいる登録店（10分以内にとった現在地で、店舗の規模の範囲の中）
       if (!S.here || Date.now() - (S.hereAt || 0) > 600000) return null;
       const x = nearestBranches(S.here)[0];
-      return x && x.m <= NEAR ? x.s : null;
+      return x && x.inside ? x.s : null;
     }
     // その品名の記録を、お店ごとの最安値にまとめる：[{ base, per, list: [{ sid, name, best(記録), n }] }]（そろえる単位ごと・安い順）
     function priceBook(name) {
@@ -822,7 +831,7 @@ const App = {
     function editBranch(b) {                 // 店舗（支店）の追加・編集。位置は店名・住所で探す／現在地／地図のピン
       const d = S.storeDraft, name = String(d["店名"] || "").trim();
       if (!name) { toast("先に店名を入れてください"); return; }
-      S.branchDraft = b ? { ...b } : { ID: "", 店舗ID: d.ID, 支店名: "", 緯度: "", 経度: "" };
+      S.branchDraft = b ? { ...b, 規模: sizeOf(b) } : { ID: "", 店舗ID: d.ID, 支店名: "", 緯度: "", 経度: "", 規模: "中" };
       S.addrQ = b ? "" : name; S.addrRes = null; S.view = "branchEdit";
       const sc = document.getElementById("app"); if (sc) sc.scrollTop = 0;
       nextTick(drawMap);
@@ -905,7 +914,7 @@ const App = {
       let list = S.branches;
       if (hadLegacy && !legacy) list = [...list, { ID: uid(), 店舗ID: row.ID, 支店名: "", 緯度: old["緯度"], 経度: old["経度"] }];   // 前の版の位置も、店舗として残す
       putStore(row, hadLegacy);                                        // お店も保存（新しいお店のときも、ここで登録される）
-      const nb = { ID: b.ID && !legacy ? b.ID : uid(), 店舗ID: row.ID, 支店名: String(b["支店名"] || "").trim(), 緯度: b["緯度"], 経度: b["経度"] };
+      const nb = { ID: b.ID && !legacy ? b.ID : uid(), 店舗ID: row.ID, 支店名: String(b["支店名"] || "").trim(), 緯度: b["緯度"], 経度: b["経度"], 規模: sizeOf(b) };
       list = list.some(x => x.ID === nb.ID) ? list.map(x => x.ID === nb.ID ? nb : x) : [...list, nb];
       save("支店", list);
       toast(`「${fullName(row, nb)}」を保存しました`); backToStore();
@@ -958,7 +967,7 @@ const App = {
 
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
-    return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
+    return { S, svg, gIcon, yen, distText, NEAR, SIZES, SIZE_NEXT, sizeOf, radiusOf, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
       taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, openHist, saveHist, histPrice, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, recDetail, num, normName, genreFor, cmpCands, cmpFocus, cmpBlur, cmpName, pickCmpName, cancelBlur, saveBlur, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, clearPin, saveStore, editBranch, saveBranch, deleteBranch, backToStore, draftBranches, branchesOf, branchLabel, addSuggest, dismissSuggest, hasPos, storeOf, meters, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
@@ -1039,7 +1048,7 @@ const App = {
         <div style="flex:1;min-width:0" class="small">
           <template v-if="S.hereBusy">現在地をさがしています…</template>
           <template v-else-if="S.hereErr"><span style="color:var(--red)">{{ S.hereErr }}</span></template>
-          <template v-else-if="S.here">1km 以内のお店：<b>{{ storeGroups.length }}件</b>　1〜3km：<b>{{ maybeGroups.length }}件</b></template>
+          <template v-else-if="S.here">いまいるお店：<b>{{ storeGroups.length }}件</b>　近く（〜3km）：<b>{{ maybeGroups.length }}件</b></template>
         </div>
         <button class="chip" @click="findHere(true)">更新</button>
       </div>
@@ -1048,7 +1057,7 @@ const App = {
         <div class="row2"><button class="btn" @click="dismissSuggest(x)">今はしない</button><button class="btn pri" @click="addSuggest(x)">登録する</button></div>
       </div>
       <div v-if="S.here && !S.hereBusy && !storeGroups.length" class="card small muted">
-        1km 以内に登録したお店はありません。<template v-if="nearStores.length && !maybeGroups.length">いちばん近いのは「{{ nearStores[0].s['店名'] }}{{ nearStores[0].b['支店名'] ? ' ' + nearStores[0].b['支店名'] : '' }}」（{{ distText(nearStores[0].m) }}）です。</template>
+        いまいる場所は、登録したお店の範囲（規模：大1km・中600m・小300m）の外です。<template v-if="nearStores.length && !maybeGroups.length">いちばん近いのは「{{ nearStores[0].s['店名'] }}{{ nearStores[0].b['支店名'] ? ' ' + nearStores[0].b['支店名'] : '' }}」（{{ distText(nearStores[0].m) }}）です。</template>
       </div>
     </template>
     <template v-if="prioStore.length">
@@ -1242,7 +1251,7 @@ const App = {
         </template>
       </div>
     </template>
-    <div class="small muted" style="margin:10px 4px 0">一覧や店舗別で「買った」にすると、ここに残ります。そのとき 1km 以内に登録したお店があれば、そのお店を場所として記録します。品物を押すと、値段・量・個数を入れられます（計算の「記録」にも残り、お店ごとの比較に使えます）</div>
+    <div class="small muted" style="margin:10px 4px 0">一覧や店舗別で「買った」にすると、ここに残ります。そのとき登録したお店の範囲（店舗の規模：大1km・中600m・小300m）の中にいれば、そのお店を場所として記録します（どのお店の範囲にもいなければ、場所は記録しません）。品物を押すと、値段・量・個数を入れられます（計算の「記録」にも残り、お店ごとの比較に使えます）</div>
   </template>
 
   <!-- ===== メニュー ===== -->
@@ -1286,7 +1295,7 @@ const App = {
     <div class="list" v-if="draftBranches.length">
       <button v-for="b in draftBranches" :key="b.ID" class="item" style="grid-template-columns:34px 1fr auto" @click="editBranch(b)">
         <span class="bic" v-html="svg('pin')"></span>
-        <div class="t"><b>{{ branchLabel(b) }}</b><span>{{ hasPos(b) ? (S.here ? 'ここから ' + distText(meters(S.here, { lat: +b['緯度'], lng: +b['経度'] })) : '位置あり') : '位置なし' }}</span></div>
+        <div class="t"><b>{{ branchLabel(b) }}<em class="sizetag" :class="'s' + sizeOf(b)">{{ sizeOf(b) }}</em></b><span>{{ hasPos(b) ? (S.here ? 'ここから ' + distText(meters(S.here, { lat: +b['緯度'], lng: +b['経度'] })) : '位置あり') : '位置なし' }}・範囲 {{ distText(radiusOf(b)) }}</span></div>
         <span class="muted">›</span>
       </button>
     </div>
@@ -1301,6 +1310,9 @@ const App = {
     <div class="title">{{ S.storeDraft['店名'] }}の店舗</div>
     <div class="card" style="padding:4px 16px">
       <div class="field"><label>店舗名</label><input v-model="S.branchDraft['支店名']" placeholder="例：イオンモール福岡店（なくてもOK）" maxlength="30"></div>
+      <div class="field sizerow"><label>規模</label>
+        <button class="sizebtn" :class="'s' + sizeOf(S.branchDraft)" @click="S.branchDraft['規模'] = SIZE_NEXT[sizeOf(S.branchDraft)]">{{ sizeOf(S.branchDraft) }}</button>
+        <span class="sizehint">ピンから{{ distText(SIZES[sizeOf(S.branchDraft)].m) }}以内＝お店の中<small>{{ SIZES[sizeOf(S.branchDraft)].hint }}（押すと 中→小→大）</small></span></div>
     </div>
     <div class="sec" style="margin-top:4px">店舗の位置</div>
     <div class="addr"><input v-model="S.addrQ" placeholder="店名か住所（例：無印良品 かやの森）" @keydown.enter.prevent="searchAddr"><button class="btn pri" @click="searchAddr" :disabled="S.addrBusy">{{ S.addrBusy ? '…' : '探す' }}</button></div>
