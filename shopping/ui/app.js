@@ -232,7 +232,7 @@ const App = {
       listMode: "todo", storeMode: "all", storeSel: "", here: null, hereErr: "", hereBusy: false,
       // 計算
       price: "", qty: "1", lines: [], tax: "込",
-      ctab: "cmp", cmp: [], taxIn: "", priceQ: "", priceSave: null, priceOpen: "", taxRateT: "8", taxDir: "in",
+      ctab: "cmp", cmp: [], taxIn: "", cmpFocus: "", saveFocus: false, priceQ: "", priceSave: null, priceOpen: "", taxRateT: "8", taxDir: "in",
       // 店舗の登録・ジャンル
       storeDraft: null, genreDraft: null, pickFor: -1, addrQ: "", addrRes: null, addrBusy: false,
       toast: "", toastOn: false, saving: 0, confirm: null,
@@ -680,6 +680,35 @@ const App = {
       }
       return [...seen.values()].slice(0, 40);
     });
+    // ---- 比べる行の品名：打っている文字に合う「記録のある品名」を候補に出す（打つたびにしぼる） ----
+    function cmpCands(c) {
+      const q = normName(c.name), seen = new Map();
+      for (const r of [...S.prices].reverse()) {                 // 新しく記録した順
+        const k = normName(r["品名"]); if (!k) continue;
+        const e = seen.get(k) || { name: r["品名"], stores: new Set(), unit: r["単位"], hit: 9 };
+        e.stores.add(r["店舗ID"] || r["店名"] || "-");
+        if (!seen.has(k)) {
+          const w = WORDS.find(x => x.キー === k), y = w ? w.よみ : k;
+          e.hit = !q ? 1 : k.startsWith(q) || y.startsWith(q) ? 0 : (k.includes(q) || y.includes(q)) ? 1 : 9;
+          seen.set(k, e);
+        }
+      }
+      return [...seen.entries()].filter(([k, e]) => e.hit < 9 && k !== q).map(([, e]) => e)
+        .sort((a, b) => a.hit - b.hit).slice(0, 8);
+    }
+    let blurTimer = 0;
+    function cmpFocus(c) { clearTimeout(blurTimer); S.cmpFocus = c.id; }
+    function cmpBlur() { blurTimer = setTimeout(() => { S.cmpFocus = ""; }, 150); }
+    let saveTimer = 0;
+    function cancelBlur() { clearTimeout(saveTimer); }
+    function saveBlur() { saveTimer = setTimeout(() => { S.saveFocus = false; }, 150); }
+    function cmpName(c, e) { c.name = e.target.value; keep(); }        // 変換中（ひらがなのまま）でも、打つたびにしぼる
+    function pickCmpName(c, cand) {
+      c.name = cand.name;
+      if (!num(c.price) && !num(c.amt) && UNITS[cand.unit]) c.unit = cand.unit;      // まだ値段を入れていなければ、記録と同じ単位にそろえる
+      S.cmpFocus = ""; keep();
+      nextTick(() => { const el = document.querySelector(`[data-cmp="${c.id}"] .cmpin input`); if (el) el.focus(); });      // 次は値段へ
+    }
     // 比べる行の下に出す：その品名の記録の最安（いま入れた値段とくらべて）
     function rowHint(c) {
       const book = priceBook(c.name); if (!book.length) return null;
@@ -894,7 +923,7 @@ const App = {
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
     return { S, svg, gIcon, yen, distText, NEAR, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
-      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, recDetail, num, normName, genreFor, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
+      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, recDetail, num, normName, genreFor, cmpCands, cmpFocus, cmpBlur, cmpName, pickCmpName, cancelBlur, saveBlur, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, clearPin, saveStore, editBranch, saveBranch, deleteBranch, backToStore, draftBranches, branchesOf, branchLabel, addSuggest, dismissSuggest, hasPos, storeOf, meters, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
@@ -1040,10 +1069,13 @@ const App = {
         </template>
         <div v-else class="small muted">{{ cmpResult.msg }}</div>
       </div>
-      <div v-for="(c, i) in S.cmp" :key="c.id" class="card cmprow" :class="{ best: cmpResult.ok && cmpResult.best.i === i }">
+      <div v-for="(c, i) in S.cmp" :key="c.id" class="card cmprow" :data-cmp="c.id" :class="{ best: cmpResult.ok && cmpResult.best.i === i }">
         <div class="cmphead"><span class="letter">{{ LETTERS[i] }}</span>
-          <input v-model="c.name" @input="keep()" placeholder="品名（記録するときに使います）" maxlength="20">
+          <input :value="c.name" @input="cmpName(c, $event)" @compositionupdate="cmpName(c, $event)" @focus="cmpFocus(c)" @blur="cmpBlur" placeholder="品名（記録するときに使います）" maxlength="20" autocomplete="off">
           <button class="del" v-if="S.cmp.length > 2" @click="S.cmp.splice(i, 1); keep()">✕</button></div>
+        <div v-if="S.cmpFocus === c.id && cmpCands(c).length" class="cmpcands" @mousedown.prevent>
+          <button v-for="x in cmpCands(c)" :key="x.name" class="cand" @mousedown.prevent @click="pickCmpName(c, x)">{{ x.name }}<small>{{ x.stores.size }}店</small></button>
+        </div>
         <div v-if="c.from" class="fromtag"><span v-html="svg('store')"></span>記録：{{ c.from.store }}・{{ c.from.date }}<template v-if="c.from.memo">・{{ c.from.memo }}</template></div>
         <div class="cmpin">
           <label>値段<div class="unitbox"><input v-model="c.price" @input="keep()" inputmode="decimal" placeholder="0">円</div></label>
@@ -1273,7 +1305,10 @@ const App = {
 <div v-if="S.priceSave && S.priceSave.c" class="modal" @click.self="S.priceSave = null"><div class="sheet">
   <div style="font-weight:800;font-size:17px;margin-bottom:4px">値段を記録</div>
   <div class="small muted" style="margin-bottom:10px">{{ perText(unitInfo(S.priceSave.c)) }}（{{ Math.round(unitInfo(S.priceSave.c).price).toLocaleString() }}円）</div>
-  <div class="card" style="padding:4px 16px"><div class="field"><label>品名</label><input v-model="S.priceSave.name" placeholder="例：豚こま" maxlength="20"></div>
+  <div class="card" style="padding:4px 16px"><div class="field"><label>品名</label><input :value="S.priceSave.name" @input="S.priceSave.name = $event.target.value" @compositionupdate="S.priceSave.name = $event.target.value" @focus="S.saveFocus = true; cancelBlur()" @blur="saveBlur" placeholder="例：豚こま" maxlength="20" autocomplete="off"></div>
+    <div v-if="S.saveFocus && cmpCands(S.priceSave).length" class="cmpcands save" @mousedown.prevent>
+      <button v-for="x in cmpCands(S.priceSave)" :key="x.name" class="cand" @mousedown.prevent @click="S.priceSave.name = x.name; S.saveFocus = false">{{ x.name }}<small>{{ x.stores.size }}店</small></button>
+    </div>
     <div class="field"><label>メモ</label><input v-model="S.priceSave.memo" placeholder="任意（例：特売・国産・見切り品）" maxlength="40"></div></div>
   <div class="sec" style="margin-top:4px">お店<span v-if="S.priceSave.auto" class="small muted">いま近くのお店を選んでいます</span></div>
   <div class="chips" style="flex-wrap:wrap">

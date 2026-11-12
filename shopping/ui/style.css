@@ -291,3 +291,8 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .hintbtn{margin-left:auto;height:26px;padding:0 10px;border-radius:999px;background:#fff;border:1.5px solid #d5d8de;color:var(--ink);font-size:11px;font-weight:800}
 .cmpgo{height:28px;padding:0 12px;border-radius:999px;background:var(--pink);color:#fff;font-size:12px;font-weight:800;margin-left:8px}
 .recbase{display:flex;align-items:center;justify-content:space-between}
+/* 比べる：品名の候補（記録のある品名） */
+.cmpcands{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px 36px}
+.cmpcands .cand{height:32px;font-size:13px}
+.cmpcands .cand small{color:var(--sub);font-weight:700}
+.cmpcands.save{margin:0 0 4px;padding:0 0 10px}
