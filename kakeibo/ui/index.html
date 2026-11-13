@@ -442,6 +442,10 @@ function applyOp(d, a) {
     case "save_table": d[{ 積立: "tsumi", 積立記録: "tlog", アイコン名: "inames" }[a.table]] = a.rows; break;
     case "save_cats": d.cats = a.rows; break;
     case "add_records": d.records = [...d.records, ...a.recs]; break;          // レシートから
+    case "update_records": {                                                    // 撮影入力の明細を直す
+      const up = Object.fromEntries((a.rows || []).map(r => [r.ID, r])), gone = new Set(a.del || []);
+      d.records = [...d.records.filter(r => !gone.has(r.ID)).map(r => up[r.ID] || r), ...(a.add || [])]; break;
+    }
     case "save_receipt_memo": {
       const m = Object.fromEntries((d.rmemo || []).map(r => [r["キー"], r]));
       a.rows.forEach(r => m[r["キー"]] = r); d.rmemo = Object.values(m); break;
@@ -563,9 +567,9 @@ function monthNav() {
     <button class="arrow" data-a="mnext">›</button></div>`;
 }
 function recItem(r, del) {
-  const inc = r["種類"] === INC;
-  return `<div class="item"><div class="ic">${iconOf(r["種類"], r["カテゴリ"])}</div>
-    <div class="t"><b>${esc(r["カテゴリ"])}${!inc && payOf(r) !== CASH ? `<i class="ptag ${payOf(r) === FURI ? "furi" : ""}">${payOf(r)}</i>` : ""}</b><span>${esc(r["メモ"]) || "&nbsp;"}</span></div>
+  const inc = r["種類"] === INC, n = typeof detailCount === "function" ? detailCount(r) : 0;
+  return `<div class="item ${n ? "tap" : ""}" ${n ? `data-r="rdetail" data-id="${esc(r.ID)}"` : ""}><div class="ic">${iconOf(r["種類"], r["カテゴリ"])}</div>
+    <div class="t"><b>${esc(r["カテゴリ"])}${!inc && payOf(r) !== CASH ? `<i class="ptag ${payOf(r) === FURI ? "furi" : ""}">${payOf(r)}</i>` : ""}</b><span>${n ? `<i class="rtag">🧾${n}品</i>` : ""}${esc(r["メモ"]) || "&nbsp;"}</span></div>
     <div class="v ${inc ? "inc" : "exp"}">${yen(int(r["金額"]) * (inc ? 1 : -1), true)}</div>
     ${del ? `<button class="del" data-a="delrec" data-id="${esc(r.ID)}" aria-label="消す">✕</button>` : "<span></span>"}</div>`;
 }
@@ -584,10 +588,13 @@ V.home = () => `<div class="title">家計簿</div>
   ${D.shopping ? `<button class="tile" data-a="toshop"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${CAT_ICON.cart}</svg>買い物リスト</button>` : ""}</div>`;
 
 V.input = () => {
+  const isS = S.kind === "単品";
+  const seg = `<div class="seg k k3"><button class="e ${S.kind === EXP ? "on" : ""}" data-a="kind" data-v="${EXP}">支出</button><button class="s ${isS ? "on" : ""}" data-a="kind" data-v="単品">品目</button><button class="i ${S.kind === INC ? "on" : ""}" data-a="kind" data-v="${INC}">収入</button></div>`;
+  if (isS) return seg + (typeof singleView === "function" ? singleView() : "");     // 単品：撮影入力と同じ画面で、品物ごとに入れる（receipt.js）
   const list = cats(S.kind);
   if (!list.some(c => c["名前"] === S.cat[S.kind])) S.cat[S.kind] = list[0] ? list[0]["名前"] : "";
   const isE = S.kind === EXP;
-  return `<div class="seg k"><button class="e ${isE ? "on" : ""}" data-a="kind" data-v="${EXP}">支出</button><button class="i ${!isE ? "on" : ""}" data-a="kind" data-v="${INC}">収入</button></div>
+  return `${seg}
   <div class="card" style="padding:4px 16px">
     <div class="field"><label>日付</label><div class="datebox"><button data-a="dprev">‹</button>
       <div class="d">${S.date.replaceAll("-", "/")}（${WEEK[parse(S.date).getDay()]}）<input type="date" data-b="date" value="${S.date}"></div>

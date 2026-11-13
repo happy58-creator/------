@@ -4,10 +4,19 @@
 // 2) 撮った写真（何枚でも）を Python に渡し、Gemini に1回でまとめて読んでもらう
 // 3) 品名・金額・税・個数を、カテゴリごとのグループで直して保存（家計簿の記録）。「記録」で買い物リストの値段の記録にも入れる
 
-const R = { step: "home", shots: [], pending: "", sentAt: 0, error: "", receipts: [], seen: "" };
+const R = { step: "home", shots: [], pending: "", sentAt: 0, error: "", receipts: [], seen: "", manual: [] };
 try { Object.assign(R, JSON.parse(sessionStorage.getItem("kb_receipt") || "{}"), { shots: [] }); } catch (e) {}
+const SINGLE = "単品";
+// いま直している一覧：入力画面の「単品」なら手入力、それ以外は読み取り結果
+const isManual = () => S.view === "input" && S.kind === SINGLE;
+const RL = () => isManual() ? R.manual : R.receipts;
+function blankLine(cat, tax) {
+  const exp = cats(EXP).map(c => c["名前"]), c = cat || (exp.includes("食費") ? "食費" : exp[0] || "その他");
+  return { k: uid(), key: "", raw: "", name: "", price: "", qty: "1", tax: tax ?? 8, cat: c, unsure: false, mem: false, oname: "", ocat: c, rec: false };
+}
+function blankManual() { return { id: uid(), store: "", date: S.date || today(), tax_mode: "内税", total: 0, pay: S.pay || CASH, sid: "", items: [blankLine()], amt: {} }; }
 if (R.step === "wait" || R.step === "shots") R.step = R.receipts.length ? "edit" : "home";
-function rkeep() { try { sessionStorage.setItem("kb_receipt", JSON.stringify({ step: R.step, pending: R.pending, receipts: R.receipts, seen: R.seen, model: R.model })); } catch (e) {} }
+function rkeep() { try { sessionStorage.setItem("kb_receipt", JSON.stringify({ step: R.step, pending: R.pending, receipts: R.receipts, seen: R.seen, model: R.model, manual: R.manual })); } catch (e) {} }
 
 const MAX_SHOTS = 8;
 const TAXES = [8, 10, 0];
@@ -41,7 +50,7 @@ function groupAlloc(rc) {            // グループごとの金額（合計が�
 }
 const groupAmt = (rc, c) => { const o = (rc.amt || {})[c]; return o !== undefined && o !== "" ? int(o) : groupAlloc(rc)[c] || 0; };
 const receiptSum = rc => groupCats(rc).reduce((a, c) => a + groupAmt(rc, c), 0);
-const grandTotal = () => R.receipts.reduce((a, rc) => a + receiptSum(rc), 0);
+const grandTotal = () => RL().reduce((a, rc) => a + receiptSum(rc), 0);
 
 // ---------------------------------------------------------------- 読み取り結果を、直す画面の形にする
 function matchStore(name) {
@@ -80,7 +89,7 @@ V.other = () => `<div class="title">その他</div>
 
 V.receipt = () => {
   if (R.step === "wait") return `<div class="title">撮影入力</div>
-    <div class="card rwait"><div class="spin"></div><b>読みとっています…</b><div class="small muted">${R.shots.length || ""}${R.shots.length ? "枚の写真を" : ""}まとめて送りました。10〜30秒ほどかかります（混んでいるときは自動で送り直すので、1分ほどかかることもあります）</div></div>`;
+    <div class="card rwait"><div class="spin"></div><b>読みとっています…</b><div class="small muted">${R.shots.length || ""}${R.shots.length ? "枚の写真を" : ""}まとめて送りました。10〜30秒ほどかかります（うまくいかないときは、予備のAIで1回だけ読みなおします）</div></div>`;
   if (R.step === "edit") return editView();
   const shots = R.shots.length ? `<div class="sec">撮った写真（${R.shots.length}枚）</div>
     <div class="rshots">${R.shots.map((s, i) => `<div class="rshot"><img src="${s.thumb}" alt=""><button data-r="delshot" data-i="${i}" aria-label="消す">✕</button></div>`).join("")}</div>` : "";
@@ -95,10 +104,15 @@ V.receipt = () => {
     ${R.receipts.length ? `<button class="btn" style="margin-top:10px" data-r="resume">前の読み取り結果にもどる</button>` : ""}`;
 };
 
-function editView() {
+// 単品（入力画面）：読み取り結果と同じ画面で、1から入れる
+function singleView() {
+  if (!R.manual.length) R.manual = [blankManual()];
+  return editView(true);
+}
+function editView(manual) {
   const exp = cats(EXP);
   const icon = c => svgIcon(iconKey(exp.find(x => x["名前"] === c) || { 名前: c }));
-  const body = R.receipts.map((rc, i) => {
+  const body = RL().map((rc, i) => {
     const calc = receiptCalc(rc), diff = rc.total ? calc - rc.total : 0;
     const groups = groupCats(rc).map(c => {
       const own = (rc.amt || {})[c] !== undefined && rc.amt[c] !== "";
@@ -110,8 +124,8 @@ function editView() {
           <label class="rqty">×<input data-ri="${i}|${j}|qty" inputmode="numeric" value="${esc(it.qty)}" placeholder="1"></label>
           <button class="rmove" data-r="move" data-i="${i}" data-j="${j}" aria-label="カテゴリを変える">${icon(it.cat)}</button>
           <button class="rdel" data-r="dline" data-i="${i}" data-j="${j}" aria-label="消す">✕</button></div>
-        ${it.raw && normKey(it.raw) !== normKey(it.name) || it.unsure || it.mem ? `<div class="rraw">${it.raw ? `レシート：${esc(it.raw)}` : ""}${it.unsure ? `<i class="runsure">要確認</i>` : ""}${it.mem ? `<i class="rmem">覚えた直し方</i>` : ""}${rc.tax_mode === "外税" ? `<span>税込 ${yen(lineYen(rc, it))}</span>` : ""}</div>`
-          : rc.tax_mode === "外税" ? `<div class="rraw"><span>税込 ${yen(lineYen(rc, it))}</span></div>` : ""}
+        ${it.raw && normKey(it.raw) !== normKey(it.name) || it.unsure || it.mem ? `<div class="rraw">${it.raw ? `レシート：${esc(it.raw)}` : ""}${it.unsure ? `<i class="runsure">要確認</i>` : ""}${it.mem ? `<i class="rmem">覚えた直し方</i>` : ""}${rc.tax_mode === "外税" ? `<span id="ty${i}_${j}">税込 ${yen(lineYen(rc, it))}</span>` : ""}</div>`
+          : rc.tax_mode === "外税" ? `<div class="rraw"><span id="ty${i}_${j}">税込 ${yen(lineYen(rc, it))}</span></div>` : ""}
       </div>`).join("");
       return `<div class="rgroup"><div class="ghead"><button class="gcat" data-r="gcat" data-i="${i}" data-c="${esc(c)}"><span class="bic">${icon(c)}</span><b>${esc(c)}</b><i class="chev">▾</i></button>
           <label class="gamt ${own ? "own" : ""}">まとめて<input data-rg="${i}" data-c="${esc(c)}" inputmode="numeric" value="${groupAmt(rc, c)}">円</label></div>
@@ -127,9 +141,15 @@ function editView() {
           <span class="rsumline" id="rsum${i}">${sumLine(rc)}</span></div>
       </div>
       ${groups || `<div class="empty">品物がありません</div>`}
-      <div class="rfoot"><button class="radd" data-r="addline" data-i="${i}" data-c="">＋ 品物を足す</button><button class="rdrop" data-r="dropr" data-i="${i}">このレシートを外す</button></div>
+      <div class="rfoot"><button class="radd" data-r="addline" data-i="${i}" data-c="">＋ 品物を足す</button>${manual ? "" : `<button class="rdrop" data-r="dropr" data-i="${i}">このレシートを外す</button>`}</div>
     </div>`;
   }).join("");
+  if (manual) return `${body}
+    <div class="rtotal"><span>合計</span><b id="rgrand">${yen(grandTotal())}</b></div>
+    <button class="big pink" data-r="save">保存する（家計簿に記録）</button>
+    <button class="btn" style="margin-top:10px" data-r="discard">入力を消す</button>
+    <div style="height:70px"></div>
+    <div class="foot rbar up"><span>合計 <b id="rgrand2">${yen(grandTotal())}</b></span><button data-r="save">保存</button></div>`;
   return `<button class="rback" data-go="home">‹ もどる（結果は残ります）</button><div class="title">読み取り結果</div>
     <div class="small muted" style="margin:-6px 4px 10px">直してから下の「保存」を押してください。行の右のアイコンでカテゴリを変えると、そのグループに移ります。「記録」で買い物リストの値段の記録に入れます</div>
     ${/lite/.test(R.model || "") ? `<div class="alert">ℹ️ <span>いつものAIが混んでいたので、予備のAI（軽いもの）で読みました。品名や金額をいつもより念入りに見てください</span></div>` : ""}
@@ -143,9 +163,10 @@ function sumLine(rc) {
   const calc = receiptCalc(rc), diff = rc.total ? calc - rc.total : 0, own = receiptSum(rc);
   return (own !== calc ? `<b style="color:#b24d72">まとめ金額で ${yen(own)}</b><br>` : "") + (rc.total ? (diff ? `<b class="exp">レシート ${yen(rc.total)}・差 ${yen(diff, true)}</b>` : `<span class="ok">レシート ${yen(rc.total)} と一致</span>`) : `<span>計算 ${yen(calc)}</span>`);
 }
+const memoOf = (head, names) => ((head ? head + "：" : "") + names.join("・")).slice(0, 60);
 // 入力中は全部を書きかえない（キーボードが閉じないように）。合計などだけ直す
 function refreshTotals() {
-  R.receipts.forEach((rc, i) => {
+  RL().forEach((rc, i) => {
     const el = document.getElementById("rsum" + i); if (el) el.innerHTML = sumLine(rc);
     appEl.querySelectorAll(`[data-rg="${i}"]`).forEach(inp => { if (inp !== document.activeElement) inp.value = groupAmt(rc, inp.dataset.c); });
   });
@@ -155,10 +176,15 @@ function refreshTotals() {
 // ---------------------------------------------------------------- 記録（買い物リストの値段の記録）
 let recDraft = null;
 function openRec(i, j) {
-  const rc = R.receipts[i], it = rc.items[j], last = (D.units || {})[it.name] || [];
-  const unit = RUNITS[last[0]] ? last[0] : "個", qty = Math.max(1, int(it.qty) || 1);
-  recDraft = { i, j, name: it.name, price: String(lineYen(rc, it)), unit, amt: rIsCount(unit) ? String(qty) : String(last[1] || ""),
-    pack: rIsCount(unit) ? "1" : String(qty > 1 ? qty : (last[2] || 1)), sid: rc.sid || "", memo: "レシートから" };
+  const rc = RL()[i], it = rc.items[j];
+  openRecWith({ name: it.name, price: lineYen(rc, it), qty: it.qty, sid: rc.sid, date: rc.date, done: sid => { it.rec = true; if (!rc.sid && sid) rc.sid = sid; rkeep(); } });
+}
+// 値段の記録の下書き（o：name, price, qty, sid, date, done(sid)：記録したあとにすること）
+function openRecWith(o) {
+  const last = (D.units || {})[o.name] || [];
+  const unit = RUNITS[last[0]] ? last[0] : "個", qty = Math.max(1, int(o.qty) || 1);
+  recDraft = { name: o.name, price: String(o.price), qty, unit, amt: rIsCount(unit) ? String(qty) : String(last[1] || ""),
+    pack: rIsCount(unit) ? "1" : String(qty > 1 ? qty : (last[2] || 1)), sid: o.sid || "", memo: "レシートから", date: o.date || today(), done: o.done };
   drawRec();
 }
 function recInfo() {
@@ -189,14 +215,81 @@ function saveRec() {
   const d = recDraft, name = String(d.name || "").trim(), info = recInfo();
   if (!name) { toast("品名を入れてください"); return; }
   if (!info) { toast(rIsCount(d.unit) ? "値段を入れてください" : "値段と量を入れてください"); return; }
-  const st = (D.stores || []).find(s => s.ID === d.sid), rc = R.receipts[d.i];
+  const st = (D.stores || []).find(s => s.ID === d.sid);
   act({ type: "add_price", row: { ID: uid(), 品名: name, 店舗ID: d.sid || "", 店名: st ? st["店名"] : "", 値段: String(Math.round(info.price)),
     量: String(rnum(d.amt) || (rIsCount(d.unit) ? 1 : "")), 単位: d.unit, 入数: rIsCount(d.unit) ? "1" : String(Math.max(1, rnum(d.pack) || 1)),
-    単価: String(+info.v.toFixed(3)), 基準: info.base, 基準量: String(info.per), 日付: rc.date || today(), メモ: String(d.memo || "").trim() } });
+    単価: String(+info.v.toFixed(3)), 基準: info.base, 基準量: String(info.per), 日付: d.date || today(), メモ: String(d.memo || "").trim() } });
   D.units = { ...(D.units || {}), [name]: [d.unit, d.amt, d.pack] };
-  const it = rc.items[d.j]; if (it) it.rec = true;
-  if (!rc.sid && d.sid) rc.sid = d.sid;            // 次の行も同じお店にする
-  closeModal(); rkeep(); toast(`記録しました：${name}（${st ? st["店名"] : "お店未定"}）`); render(true);
+  closeModal();
+  if (d.done) d.done(d.sid);
+  toast(`記録しました：${name}（${st ? st["店名"] : "お店未定"}）`); render(true);
+}
+
+// ---------------------------------------------------------------- 一覧・カレンダーから明細を見る（撮影入力で保存した記録）
+function detailOf(r) { try { const d = JSON.parse(r["明細"] || ""); return d && Array.isArray(d.i) ? d : null; } catch (e) { return null; } }
+function detailCount(r) { const d = r["明細"] ? detailOf(r) : null; return d ? d.i.length : 0; }
+let detailId = "";
+function openDetail(id) {
+  const r = D.records.find(x => x.ID === id), d = r && detailOf(r);
+  if (!d) { closeModal(); return; }
+  detailId = id;
+  const exp = cats(EXP), icon = c => svgIcon(iconKey(exp.find(x => x["名前"] === c) || { 名前: c }));
+  const sum = d.i.reduce((a, it) => a + int(it.p), 0);
+  modal(`<div class="dhead"><div class="ic">${icon(r["カテゴリ"])}</div><div><b>${esc(r["カテゴリ"])}</b><span>${dlabel(r["日付"])}${d.s ? "・" + esc(d.s) : ""}・${esc(payOf(r))}</span></div><div class="v exp">${yen(int(r["金額"]))}</div></div>
+    <div class="dlist">${d.i.map((it, j) => `<div class="drow">
+      <div class="dn"><b>${esc(it.n)}</b><span>${it.q > 1 ? `×${it.q}・` : ""}${taxText(+it.t || 0)}</span></div>
+      <div class="dp">${yen(int(it.p))}</div>
+      <button class="rmove" data-r="dmove" data-j="${j}" aria-label="カテゴリを変える">${icon(r["カテゴリ"])}</button>
+      <button class="rrec ${it.rec ? "done" : ""}" data-r="drec" data-j="${j}">${it.rec ? "記録済" : "記録"}</button></div>`).join("")}</div>
+    ${sum !== int(r["金額"]) ? `<div class="small muted" style="margin:6px 4px 0">品物の合計 ${yen(sum)}（まとめ金額・端数のちがいがあります）</div>` : ""}
+    <div class="small muted" style="margin:8px 4px 12px">品物のアイコンでカテゴリを変えると、その品物の金額がそのカテゴリの記録へ移ります。「記録」で買い物リストの値段の記録に入れます</div>
+    <div class="row2"><button class="btn" data-r="dcat">全部のカテゴリを変える</button><button class="btn pri pink" data-r="mclose">閉じる</button></div>`);
+}
+// 同じレシートで、そのカテゴリの記録（なければ作る）
+function siblingOf(r, d, cat) {
+  return D.records.find(x => x.ID !== r.ID && x["カテゴリ"] === cat && x["種類"] === r["種類"] && (detailOf(x) || {}).r === d.r && d.r) || null;
+}
+function moveItem(j, cat) {
+  const r = D.records.find(x => x.ID === detailId), d = r && detailOf(r); if (!d || !d.i[j] || r["カテゴリ"] === cat) return;
+  const it = d.i[j], from = { ...r }, fd = { ...d, i: d.i.filter((_, k) => k !== j) };
+  let to = siblingOf(r, d, cat), isNew = !to;
+  to = to ? { ...to } : { ID: uid(), 日付: r["日付"], 種類: r["種類"], 金額: 0, カテゴリ: cat, メモ: "", 支払方法: r["支払方法"], 登録日時: r["登録日時"], 明細: JSON.stringify({ ...d, i: [] }) };
+  const td = detailOf(to); td.i.push(it);
+  let move = int(it.p);
+  if (!fd.i.length) move = int(from["金額"]);              // 最後の品物：残りの金額（端数）もいっしょに移す
+  from["金額"] = int(from["金額"]) - move; to["金額"] = int(to["金額"]) + move;
+  from["明細"] = JSON.stringify(fd); from["メモ"] = memoOf(d.s, fd.i.map(x => x.n));
+  to["明細"] = JSON.stringify(td); to["メモ"] = memoOf(td.s, td.i.map(x => x.n));
+  const gone = !fd.i.length;
+  act({ type: "update_records", rows: [...(gone ? [] : [from]), ...(isNew ? [] : [to])], add: isNew ? [to] : [], del: gone ? [r.ID] : [] });
+  if (it.k) act({ type: "save_receipt_memo", rows: [{ キー: it.k, 品名: it.n, カテゴリ: cat, 更新: today() }] });     // 次のレシートから、このカテゴリにする
+  toast(`「${it.n}」を${cat}へ移しました`);
+  if (gone) closeModal(); else openDetail(r.ID);
+}
+function recatAll(cat) {
+  const r = D.records.find(x => x.ID === detailId), d = r && detailOf(r); if (!d || r["カテゴリ"] === cat) return;
+  const to = siblingOf(r, d, cat);
+  if (to) {           // 同じレシートの同じカテゴリがあれば、ひとつにまとめる
+    const td = detailOf(to), nd = { ...td, i: [...td.i, ...d.i] };
+    act({ type: "update_records", rows: [{ ...to, 金額: int(to["金額"]) + int(r["金額"]), 明細: JSON.stringify(nd), メモ: memoOf(nd.s, nd.i.map(x => x.n)) }], del: [r.ID] });
+    openDetail(to.ID);
+  } else {
+    act({ type: "update_records", rows: [{ ...r, カテゴリ: cat }] });
+    openDetail(r.ID);
+  }
+  const memo = d.i.filter(it => it.k).map(it => ({ キー: it.k, 品名: it.n, カテゴリ: cat, 更新: today() }));
+  if (memo.length) act({ type: "save_receipt_memo", rows: memo });
+  toast(`${cat}に変えました`);
+}
+function recFromDetail(j) {
+  const r = D.records.find(x => x.ID === detailId), d = r && detailOf(r), it = d && d.i[j]; if (!it) return;
+  const id = r.ID;
+  openRecWith({ name: it.n, price: it.p, qty: it.q, sid: d.sid, date: r["日付"], done: sid => {
+    const cur = D.records.find(x => x.ID === id), cd = cur && detailOf(cur); if (!cd || !cd.i[j]) return;
+    cd.i[j] = { ...cd.i[j], rec: 1 }; if (!cd.sid && sid) cd.sid = sid;
+    act({ type: "update_records", rows: [{ ...cur, 明細: JSON.stringify(cd) }] });
+    setTimeout(() => openDetail(id), 50);
+  } });
 }
 
 // ---------------------------------------------------------------- カテゴリを選ぶ
@@ -212,12 +305,15 @@ function pickCat(title, cur, fn) {
 function saveAll() {
   const recs = [], memo = [], stamp = nowStamp();
   let skipped = 0;
-  for (const rc of R.receipts) {
+  const manual = isManual();
+  for (const rc of RL()) {
     for (const c of groupCats(rc)) {
       const amt = groupAmt(rc, c), names = rc.items.filter(it => it.cat === c).map(it => String(it.name).trim()).filter(Boolean);
       if (amt <= 0) { skipped++; continue; }
       const head = String(rc.store || "").trim();
-      recs.push({ ID: uid(), 日付: rc.date || today(), 種類: EXP, 金額: amt, カテゴリ: c, メモ: ((head ? head + "：" : "") + names.join("・")).slice(0, 60), 支払方法: rc.pay, 登録日時: stamp });
+      const det = { r: rc.id, s: head, sid: rc.sid || "", i: rc.items.filter(it => it.cat === c && String(it.name).trim()).map(it => ({
+        n: String(it.name).trim(), p: lineYen(rc, it), q: Math.max(1, int(it.qty) || 1), t: +it.tax || 0, k: it.key || "", ...(it.rec ? { rec: 1 } : {}) })) };
+      recs.push({ ID: uid(), 日付: rc.date || today(), 種類: EXP, 金額: amt, カテゴリ: c, メモ: memoOf(head, names), 支払方法: rc.pay, 登録日時: stamp, 明細: JSON.stringify(det) });
     }
     for (const it of rc.items) {
       const name = String(it.name).trim();
@@ -228,8 +324,9 @@ function saveAll() {
   act({ type: "add_records", recs });
   if (memo.length) act({ type: "save_receipt_memo", rows: memo });
   const total = recs.reduce((a, r) => a + r["金額"], 0);
-  R.receipts = []; R.step = "home"; rkeep();
   toast(`${recs.length}件を記録しました（${yen(total)}）${skipped ? "・0円以下のグループは外しました" : ""}`);
+  if (manual) { R.manual = [blankManual()]; rkeep(); render(); scrollEl.scrollTop = 0; return; }     // 単品：続けて入れられるように入力画面のまま
+  R.receipts = []; R.step = "home"; rkeep();
   go("list");
 }
 
@@ -537,7 +634,7 @@ function manualShot() {
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-r]");
   if (!b || b.tagName === "INPUT") return;
-  const a = b.dataset.r, i = +b.dataset.i, j = +b.dataset.j, rc = R.receipts[i];
+  const a = b.dataset.r, i = +b.dataset.i, j = +b.dataset.j, rc = RL()[i];
   switch (a) {
     case "cam": openCam(); break;
     case "camclose": case "camdone": closeCam(); break;
@@ -565,29 +662,39 @@ document.addEventListener("click", e => {
       });
       break;
     }
-    case "catok": closeModal(); if (catPick) catPick(b.dataset.v); catPick = null; rkeep(); render(true); break;
+    case "catok": { closeModal(); const fn = catPick; catPick = null; if (fn) fn(b.dataset.v); rkeep(); render(true); break; }
     case "greset": if (rc.amt) delete rc.amt[b.dataset.c]; rkeep(); render(true); break;
     case "rec": openRec(i, j); break;
+    case "rdetail": if (!e.target.closest("[data-a]")) openDetail(b.dataset.id); break;
+    case "dmove": { const r = D.records.find(x => x.ID === detailId); pickCat("この品物のカテゴリ", r ? r["カテゴリ"] : "", c => moveItem(j, c)); break; }
+    case "dcat": { const r = D.records.find(x => x.ID === detailId); pickCat("まとめてカテゴリを変える", r ? r["カテゴリ"] : "", c => recatAll(c)); break; }
+    case "drec": recFromDetail(j); break;
     case "recsave": saveRec(); break;
     case "mclose": closeModal(); break;
     case "dropr": confirmBox(`「${esc(rc.store || "このレシート")}」を外しますか？（保存されません）`, "外す", () => { R.receipts.splice(i, 1); if (!R.receipts.length) R.step = "home"; rkeep(); render(); }); break;
-    case "discard": confirmBox("読み取り結果を消しますか？", "消す", () => { R.receipts = []; R.step = "home"; rkeep(); render(); }); break;
+    case "discard":
+      if (isManual()) confirmBox("入力した内容を消しますか？", "消す", () => { R.manual = [blankManual()]; rkeep(); render(); });
+      else confirmBox("読み取り結果を消しますか？", "消す", () => { R.receipts = []; R.step = "home"; rkeep(); render(); });
+      break;
     case "save": saveAll(); break;
   }
 });
 document.addEventListener("input", e => {
   const t = e.target;
   if (t.dataset.ri) {
-    const [i, j, f] = t.dataset.ri.split("|"), it = R.receipts[+i] && R.receipts[+i].items[+j]; if (!it) return;
+    const [i, j, f] = t.dataset.ri.split("|"), it = RL()[+i] && RL()[+i].items[+j]; if (!it) return;
     if (f !== "name") t.value = t.value.replace(f === "price" ? /[^0-9\-]/g : /[^0-9]/g, "");
     it[f] = t.value; if (f === "name") it.unsure = false;
+    const ty = document.getElementById(`ty${i}_${j}`), rc = RL()[+i]; if (ty && rc) ty.textContent = "税込 " + yen(lineYen(rc, it));     // 書きなおさずに税込の表示だけ直す
     rkeep(); refreshTotals();
   } else if (t.dataset.rg !== undefined) {
-    const rc = R.receipts[+t.dataset.rg]; if (!rc) return;
+    const rc = RL()[+t.dataset.rg]; if (!rc) return;
     t.value = t.value.replace(/[^0-9]/g, ""); rc.amt = rc.amt || {}; rc.amt[t.dataset.c] = t.value;
     rkeep(); refreshTotals();
   } else if (t.dataset.rh) {
-    const [i, f] = t.dataset.rh.split("|"); if (R.receipts[+i]) R.receipts[+i][f] = t.value; rkeep();
+    const [i, f] = t.dataset.rh.split("|"), rc = RL()[+i];
+    if (rc) { rc[f] = t.value; if (f === "store") rc.sid = matchStore(t.value) || rc.sid; }       // お店の名前から、買い物リストのお店を選んでおく
+    rkeep();
   } else if (t.dataset.rd && recDraft && t.tagName !== "SELECT") {
     if (["price", "pack"].includes(t.dataset.rd)) t.value = t.value.replace(/[^0-9]/g, "");
     if (t.dataset.rd === "amt") t.value = t.value.replace(/[^0-9.]/g, "");
@@ -607,11 +714,10 @@ document.addEventListener("change", e => {
     t.value = "";
   } else if (t.dataset.rd === "unit" && recDraft) {
     const was = rIsCount(recDraft.unit); recDraft.unit = t.value;
-    if (was !== rIsCount(t.value)) { const it = R.receipts[recDraft.i].items[recDraft.j], q = Math.max(1, int(it.qty) || 1); recDraft.amt = rIsCount(t.value) ? String(q) : ""; recDraft.pack = rIsCount(t.value) ? "1" : String(q); }
+    if (was !== rIsCount(t.value)) { const q = recDraft.qty; recDraft.amt = rIsCount(t.value) ? String(q) : ""; recDraft.pack = rIsCount(t.value) ? "1" : String(q); }
     drawRec();
   } else if (t.dataset.rd === "sid" && recDraft) recDraft.sid = t.value;
-  else if (t.dataset.rh && t.type === "date") { const [i] = t.dataset.rh.split("|"); if (R.receipts[+i]) R.receipts[+i].date = t.value; rkeep(); }
-  else if (t.dataset.ri && t.dataset.ri.endsWith("|price")) render(true);           // 税込の表示を直す
+  else if (t.dataset.rh && t.type === "date") { const [i] = t.dataset.rh.split("|"); if (RL()[+i]) RL()[+i].date = t.value; rkeep(); }
 });
 document.addEventListener("visibilitychange", () => { if (document.hidden && CAM.on) closeCam(); });
 if (S.view === "receipt" || S.view === "other") render();

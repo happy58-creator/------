@@ -13,7 +13,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))      # このフォルダの kb_calc・kb_store を読む
 import kb_calc as calc  # noqa: E402
 import kb_store as store  # noqa: E402
-if "レシートの記憶" not in getattr(store, "TABLES", {}) or not hasattr(store, "_memo"):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
+if "明細" not in getattr(store, "TABLES", {}).get("記録", []) or not hasattr(store, "_memo"):     # 更新のあと、前の版の kb_store がメモリに残っていたら読み直す
     import importlib
     store = importlib.reload(store)
 from kb_ui import ui  # noqa: E402
@@ -74,6 +74,12 @@ def apply(a):
         rows = [pick("記録", r) for r in a.get("recs") or []]
         if rows:
             store.save("記録", store.load("記録") + rows)
+    elif t == "update_records":       # 撮影入力の明細：品物のカテゴリを変える・記録済みの印など（直す・足す・消すを、書きこみ1回で）
+        up = {r["ID"]: pick("記録", r) for r in a.get("rows") or []}
+        gone = set(a.get("del") or [])
+        rows = [up.pop(r["ID"], r) for r in store.load("記録") if r["ID"] not in gone]
+        rows += [pick("記録", r) for r in a.get("add") or []]
+        store.save("記録", rows)
     elif t == "add_price":            # レシートの「記録」：買い物リストの値段の記録に入れる
         store.append("価格記録", pick("価格記録", a["row"]))
     elif t == "save_receipt_memo":    # 直した品名・カテゴリを覚える（変わった分だけ足して、表は1回で書く）

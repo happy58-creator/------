@@ -128,13 +128,11 @@ def _code(e):
 
 def read_receipts(images, cats, names):
     """images：data URL の一覧。返り値 {"receipts": [...], "model": ...} か {"error": "..."}
-    失敗したら：混雑（5xx）は少し待って同じモデルで1回だけ送り直し、それでもダメなら予備のモデル（回数の上限は別）で読む。
-    1日の回数が少ない（無料は20回）ので、送り直しは多くしない。"""
+    失敗したら、予備のモデル（回数の上限は別）で1回だけ読みなおす。1日の回数が少ない（無料は20回）ので、それ以上は送らない。"""
     if not images:
         return {"error": "写真がありません"}
     if not available():
         return {"error": "AIのカギ（GEMINI_API_KEY）が設定されていないので、読み取りが使えません"}
-    import time
     try:
         from google import genai
         from google.genai import types
@@ -147,13 +145,8 @@ def read_receipts(images, cats, names):
     except Exception as e:
         return {"error": f"写真を送る準備ができませんでした（{type(e).__name__}）"}
     main = _model()
-    plan = [(main, 0), (main, 4), (FALLBACK_MODEL, 0)]       # （モデル, 送る前に待つ秒）
-    codes, i = [], 0
-    while i < len(plan):
-        model, wait = plan[i]
-        i += 1
-        if wait:
-            time.sleep(wait)
+    codes = []
+    for model in (main, FALLBACK_MODEL):          # 失敗したら、そのまま予備のモデルで1回だけ送り直す（回数がもったいないので、それ以上は送らない）
         try:
             res = client.models.generate_content(           # 写真が何枚でも、問い合わせは1回
                 model=model, contents=parts,
@@ -164,12 +157,7 @@ def read_receipts(images, cats, names):
                 return {"error": "レシートの品物を読みとれませんでした。明るいところで、もう一度撮ってみてください"}
             return {"receipts": receipts, "model": model}
         except Exception as e:
-            c = _code(e)
-            codes.append(c)
-            if c == 429 or c == 404 or (400 <= c < 500 and model == main):
-                # 回数の上限・モデルがない・写真の問題：同じモデルで送り直してもむだ → 予備のモデルへ
-                while i < len(plan) and plan[i][0] == model:
-                    i += 1
+            codes.append(_code(e))
     if codes and all(c == 429 for c in codes if c != 404):
         return {"error": f"AIの読み取り回数の上限に達しました。1分ほど待ってもう一度押してください。1日の回数を使い切った場合は、{_reset_jst()}（日本時間）に戻ります（写真は残っています）"}
     if any(500 <= c < 600 for c in codes) or not any(codes):
