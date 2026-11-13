@@ -43,14 +43,15 @@ def _image(url):
     return base64.b64decode(m.group(2)), m.group(1)
 
 
-def _prompt(cats, names):
+def _prompt(cats, names, stores=()):
     hint = "、".join(names[:300]) if names else "（なし）"
+    shops = "、".join(stores[:200]) if stores else "（なし）"
     return f"""あなたは日本のレシートを読みとる係です。写真は1枚以上あります。
 - 1枚のレシートを上下に分けて撮った写真があります。同じレシートの写真はつなげて1つのレシートとして読み、重なって写っている行は1回だけ数えてください。
 - ちがうレシートの写真は、別のレシートとして分けてください。
 
 各レシートについて：
-- store：お店の名前（チェーン名。例「無印良品」「トライアル」）。branch：支店名（例「イオンモール福岡店」。なければ空）
+- store：お店の名前（チェーン名。例「無印良品」「トライアル」）。下の「登録してあるお店」に同じお店があれば、英語表記・略し方がちがっても（例「COSTCO」→「コストコ」、「TRIAL」→「トライアル」）その名前で書く。branch：支店名（例「イオンモール福岡店」。なければ空）
 - date：日付 YYYY-MM-DD（わからなければ空）。time：時刻 HH:MM（なければ空）
 - tax_mode：品物の金額が税込なら "内税"、税抜で最後に消費税を足す形なら "外税"
 - total：レシートに書いてある支払いの合計（税込）。整数
@@ -59,18 +60,25 @@ def _prompt(cats, names):
   - name：ふつうの書き方に直した品名（例「ﾌﾞﾀｺﾏｷﾞﾚ」→「豚こま切れ」、「ｷﾞｭｳﾆｭｳ」→「牛乳」）。下の「よく使う品名」に同じものがあれば、その書き方にそろえる
   - price：その行の金額（値引き後。2コ×158 なら 316）。外税のレシートなら税抜の金額のまま。整数
   - qty：個数（書いてなければ 1）
-  - tax：税率 8・10・0（0 は非課税）。「※」「軽」などの印は 8%（軽減税率）。食品は多くが 8%、日用品・外食・酒は 10%
+  - tax：税率 8・10・0（0 は非課税）。決め方は次の順：
+    1. レシートに印字された記号の説明（例「※は軽減税率対象」「E 8%」「A 10%」「★印は軽減税率」）を見て、各行の記号から決める
+    2. 説明がなくても、よくある記号：「※」「軽」「*」「E」は 8%、「A」は 10%（コストコは金額の右の E が 8%、A が 10%）
+    3. 記号がない行は、下の「8%対象」「10%対象」の金額と、税率ごとの品物の合計がぴったり合うように割り振る
+    4. それでも決まらないときだけ、品物から推測する（食品は多くが 8%、日用品・外食・酒は 10%）
   - category：次のカテゴリから1つ：{"・".join(cats)}
 - 品物ごとの値引き（「値引」「割引」「-30」など）は、その品物の price から引いて、行を作らない
 - お会計全体の値引き・クーポンは、name を「値引き」、price をマイナスにした行にする
 - 小計・合計・消費税・お預り・お釣り・ポイント・支払方法の行は items に入れない
+- base8・base10：レシートに印字された「8%対象」「10%対象」の金額（税抜か税込かは印字のまま）。書いてなければ 0
+- base_taxed：base8・base10 が消費税を含む金額なら true、税抜なら false
 - payment：支払方法がわかれば "現金"・"クレカ"・"その他"、わからなければ空
 - 読めない文字があっても、できるだけ推測して埋める。自信がない行は "unsure": true をつける
 
 よく使う品名：{hint}
+登録してあるお店：{shops}
 
 次の JSON だけを出力：
-{{"receipts":[{{"store":"","branch":"","date":"","time":"","tax_mode":"内税","total":0,"payment":"","items":[{{"raw":"","name":"","price":0,"qty":1,"tax":8,"category":"","unsure":false}}]}}]}}"""
+{{"receipts":[{{"store":"","branch":"","date":"","time":"","tax_mode":"内税","total":0,"base8":0,"base10":0,"base_taxed":false,"payment":"","items":[{{"raw":"","name":"","price":0,"qty":1,"tax":8,"category":"","unsure":false}}]}}]}}"""
 
 
 def _int(v):
@@ -99,6 +107,7 @@ def _clean(data, cats):
             "store": str(r.get("store") or "").strip(), "branch": str(r.get("branch") or "").strip(),
             "date": date if re.match(r"^\d{4}-\d{2}-\d{2}$", date) else "", "time": str(r.get("time") or ""),
             "tax_mode": "外税" if r.get("tax_mode") == "外税" else "内税", "total": _int(r.get("total")),
+            "base8": _int(r.get("base8")), "base10": _int(r.get("base10")), "base_taxed": bool(r.get("base_taxed")),
             "payment": str(r.get("payment") or ""), "items": items,
         })
     return [r for r in out if r["items"]]
@@ -126,7 +135,7 @@ def _code(e):
     return int(m.group(1)) if m else 0
 
 
-def read_receipts(images, cats, names):
+def read_receipts(images, cats, names, stores=()):
     """images：data URL の一覧。返り値 {"receipts": [...], "model": ...} か {"error": "..."}
     失敗したら、予備のモデル（回数の上限は別）で1回だけ読みなおす。1日の回数が少ない（無料は20回）ので、それ以上は送らない。"""
     if not images:
@@ -140,7 +149,7 @@ def read_receipts(images, cats, names):
         for u in images[:10]:
             b, mime = _image(u)
             parts.append(types.Part.from_bytes(data=b, mime_type=mime))
-        parts.append(_prompt(cats, names))
+        parts.append(_prompt(cats, names, list(stores)))
         client = genai.Client(api_key=_key())
     except Exception as e:
         return {"error": f"写真を送る準備ができませんでした（{type(e).__name__}）"}

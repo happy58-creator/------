@@ -53,8 +53,13 @@ const receiptSum = rc => groupCats(rc).reduce((a, c) => a + groupAmt(rc, c), 0);
 const grandTotal = () => RL().reduce((a, rc) => a + receiptSum(rc), 0);
 
 // ---------------------------------------------------------------- 読み取り結果を、直す画面の形にする
+// 読みとった店名 → 買い物リストのお店。① 前に選びなおした組み合わせ（覚えたもの）② 店名・別名がふくまれるか
+const storeKey = name => "店:" + normKey(name);
 function matchStore(name) {
   const t = normKey(name);
+  if (!t) return "";
+  const m = (D.rmemo || []).find(r => r["キー"] === storeKey(name));
+  if (m && (D.stores || []).some(s => s.ID === m["品名"])) return m["品名"];
   let best = null, len = 0;
   for (const s of D.stores || []) {
     for (const n of [s["店名"], ...String(s["別名"] || "").split(/[、,，・\/\s]+/)]) {
@@ -77,7 +82,8 @@ function fromResult(list) {
     });
     const pay = r.payment === "クレカ" ? CARD : r.payment === "現金" ? CASH : S.pay || CASH;
     return { id: uid(), store: [r.store, r.branch].filter(Boolean).join(" "), date: r.date || today(), tax_mode: r.tax_mode === "外税" ? "外税" : "内税",
-      total: +r.total || 0, pay, sid: matchStore(`${r.store} ${r.branch}`), items, amt: {} };
+      total: +r.total || 0, base8: +r.base8 || 0, base10: +r.base10 || 0, base_taxed: !!r.base_taxed, pay, chain: r.store || "",
+      sid: matchStore(`${r.store} ${r.branch}`.trim()) || matchStore(r.store), items, amt: {} };
   });
 }
 
@@ -139,6 +145,7 @@ function editView(manual) {
         <div class="rbtns"><button class="paybtn ${rc.pay === CARD ? "is-card" : rc.pay === FURI ? "is-furi" : ""}" data-r="pay" data-i="${i}">${rc.pay}</button>
           <button class="rmode" data-r="mode" data-i="${i}">${rc.tax_mode}</button>
           <span class="rsumline" id="rsum${i}">${sumLine(rc)}</span></div>
+        <div class="rwarns" id="rwarn${i}">${warnLine(rc)}</div>
       </div>
       ${groups || `<div class="empty">品物がありません</div>`}
       <div class="rfoot"><button class="radd" data-r="addline" data-i="${i}" data-c="">＋ 品物を足す</button>${manual ? "" : `<button class="rdrop" data-r="dropr" data-i="${i}">このレシートを外す</button>`}</div>
@@ -159,6 +166,19 @@ function editView(manual) {
     <button class="btn" style="margin-top:10px" data-r="discard">読み取り結果を消す</button>
     <div class="foot rbar"><span>合計 <b id="rgrand2">${yen(grandTotal())}</b></span><button data-r="save">保存</button></div>`;
 }
+// レシートの「8%対象」「10%対象」と、税率ごとの品物の合計をくらべる
+function rateCheck(rc) {
+  const out = [];
+  for (const [r, base] of [[8, rc.base8], [10, rc.base10]]) {
+    if (!base) continue;
+    const sum = rc.items.filter(it => (+it.tax || 0) === r).reduce((a, it) => a + rnum(it.price), 0);
+    const withTax = sum + Math.floor(sum * r / 100), noTax = Math.round(sum / (1 + r / 100));
+    const ok = [sum, withTax, noTax].some(v => Math.abs(v - base) <= 1);
+    if (!ok) out.push(`${r}%の品物の合計 ${yen(Math.round(sum))} が、レシートの${r}%対象 ${yen(base)} と合いません（税率を確かめてください）`);
+  }
+  return out;
+}
+const warnLine = rc => rateCheck(rc).map(t => `<div class="rwarn">⚠️ ${t}</div>`).join("");
 function sumLine(rc) {
   const calc = receiptCalc(rc), diff = rc.total ? calc - rc.total : 0, own = receiptSum(rc);
   return (own !== calc ? `<b style="color:#b24d72">まとめ金額で ${yen(own)}</b><br>` : "") + (rc.total ? (diff ? `<b class="exp">レシート ${yen(rc.total)}・差 ${yen(diff, true)}</b>` : `<span class="ok">レシート ${yen(rc.total)} と一致</span>`) : `<span>計算 ${yen(calc)}</span>`);
@@ -168,6 +188,7 @@ const memoOf = (head, names) => ((head ? head + "：" : "") + names.join("・"))
 function refreshTotals() {
   RL().forEach((rc, i) => {
     const el = document.getElementById("rsum" + i); if (el) el.innerHTML = sumLine(rc);
+    const w = document.getElementById("rwarn" + i); if (w) w.innerHTML = warnLine(rc);
     appEl.querySelectorAll(`[data-rg="${i}"]`).forEach(inp => { if (inp !== document.activeElement) inp.value = groupAmt(rc, inp.dataset.c); });
   });
   ["rgrand", "rgrand2"].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = yen(grandTotal()); });
@@ -177,14 +198,14 @@ function refreshTotals() {
 let recDraft = null;
 function openRec(i, j) {
   const rc = RL()[i], it = rc.items[j];
-  openRecWith({ name: it.name, price: lineYen(rc, it), qty: it.qty, sid: rc.sid, date: rc.date, done: sid => { it.rec = true; if (!rc.sid && sid) rc.sid = sid; rkeep(); } });
+  openRecWith({ name: it.name, price: lineYen(rc, it), qty: it.qty, sid: rc.sid, date: rc.date, shop: rc.chain || rc.store, done: sid => { it.rec = true; if (!rc.sid && sid) rc.sid = sid; rkeep(); } });
 }
 // 値段の記録の下書き（o：name, price, qty, sid, date, done(sid)：記録したあとにすること）
 function openRecWith(o) {
   const last = (D.units || {})[o.name] || [];
   const unit = RUNITS[last[0]] ? last[0] : "個", qty = Math.max(1, int(o.qty) || 1);
   recDraft = { name: o.name, price: String(o.price), qty, unit, amt: rIsCount(unit) ? String(qty) : String(last[1] || ""),
-    pack: rIsCount(unit) ? "1" : String(qty > 1 ? qty : (last[2] || 1)), sid: o.sid || "", memo: "レシートから", date: o.date || today(), done: o.done };
+    pack: rIsCount(unit) ? "1" : String(qty > 1 ? qty : (last[2] || 1)), sid: o.sid || "", memo: "レシートから", date: o.date || today(), shop: o.shop || "", done: o.done };
   drawRec();
 }
 function recInfo() {
@@ -221,6 +242,8 @@ function saveRec() {
     単価: String(+info.v.toFixed(3)), 基準: info.base, 基準量: String(info.per), 日付: d.date || today(), メモ: String(d.memo || "").trim() } });
   D.units = { ...(D.units || {}), [name]: [d.unit, d.amt, d.pack] };
   closeModal();
+  // 読みとった店名と、ちがうお店を選んだら覚える（次から自動でそのお店）
+  if (d.shop && d.sid && matchStore(d.shop) !== d.sid) act({ type: "save_receipt_memo", rows: [{ キー: storeKey(d.shop), 品名: d.sid, カテゴリ: "", 更新: today() }] });
   if (d.done) d.done(d.sid);
   toast(`記録しました：${name}（${st ? st["店名"] : "お店未定"}）`); render(true);
 }
@@ -284,7 +307,7 @@ function recatAll(cat) {
 function recFromDetail(j) {
   const r = D.records.find(x => x.ID === detailId), d = r && detailOf(r), it = d && d.i[j]; if (!it) return;
   const id = r.ID;
-  openRecWith({ name: it.n, price: it.p, qty: it.q, sid: d.sid, date: r["日付"], done: sid => {
+  openRecWith({ name: it.n, price: it.p, qty: it.q, sid: d.sid, date: r["日付"], shop: d.c || d.s, done: sid => {
     const cur = D.records.find(x => x.ID === id), cd = cur && detailOf(cur); if (!cd || !cd.i[j]) return;
     cd.i[j] = { ...cd.i[j], rec: 1 }; if (!cd.sid && sid) cd.sid = sid;
     act({ type: "update_records", rows: [{ ...cur, 明細: JSON.stringify(cd) }] });
@@ -311,7 +334,7 @@ function saveAll() {
       const amt = groupAmt(rc, c), names = rc.items.filter(it => it.cat === c).map(it => String(it.name).trim()).filter(Boolean);
       if (amt <= 0) { skipped++; continue; }
       const head = String(rc.store || "").trim();
-      const det = { r: rc.id, s: head, sid: rc.sid || "", i: rc.items.filter(it => it.cat === c && String(it.name).trim()).map(it => ({
+      const det = { r: rc.id, s: head, c: rc.chain || "", sid: rc.sid || "", i: rc.items.filter(it => it.cat === c && String(it.name).trim()).map(it => ({
         n: String(it.name).trim(), p: lineYen(rc, it), q: Math.max(1, int(it.qty) || 1), t: +it.tax || 0, k: it.key || "", ...(it.rec ? { rec: 1 } : {}) })) };
       recs.push({ ID: uid(), 日付: rc.date || today(), 種類: EXP, 金額: amt, カテゴリ: c, メモ: memoOf(head, names), 支払方法: rc.pay, 登録日時: stamp, 明細: JSON.stringify(det) });
     }

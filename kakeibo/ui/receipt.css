@@ -118,3 +118,5 @@ body.rc-edit #foot{display:none}
 .seg.k button.on.s{color:#8a3b5a}
 .rbar.up{bottom:calc(92px + env(safe-area-inset-bottom))}
 body.kbd .rbar{display:none}
+.rwarns:empty{display:none}
+.rwarn{color:#8a5200;background:#fff1d6;border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;font-weight:700;line-height:1.5}

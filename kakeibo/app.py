@@ -4,6 +4,7 @@
   ・Python → 画面：記録・予算・カテゴリ・積立（args の data）と、保存が終わった操作の ID（done）
   ・画面 → Python：まだ保存されていない操作の列（queue）。同じ操作を2回保存しないよう ID で見分ける
 保存は kb_store.py（Google スプレッドシート）、計算は kb_calc.py。"""
+import re
 import sys
 from pathlib import Path
 
@@ -120,7 +121,11 @@ def read_ocr(req):
         names = known_names()
     except Exception:
         names = []
-    res = ocr.read_receipts(req.get("images") or [], cats, names)
+    try:
+        shops = [n for r in store.load("店舗") for n in [r.get("店名", "")] + re.split(r"[、,，・/\s]+", r.get("別名", "")) if n]
+    except Exception:
+        shops = []
+    res = ocr.read_receipts(req.get("images") or [], cats, names, shops)
     st.session_state["kb_ocr"] = {"id": req.get("id"), **res}
 
 
