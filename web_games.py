@@ -15,7 +15,7 @@ _calc = components.declare_component("calc_study", path=str(_WEB / "calc"))
 _english = components.declare_component("english_study", path=str(_WEB / "english"))
 _programming = components.declare_component("programming_study", path=str(_WEB / "programming"))
 _kokugo = components.declare_component("kokugo_study", path=str(_WEB / "kokugo"))
-_history = components.declare_component("history_view", path=str(_WEB / "history"))
+_history = components.declare_component("history_view", path=str(_WEB / "seiseki"))   # "history" は .gitignore で外されるので別の名前
 # トップ画面の下のメニューとカレンダー（同じ JavaScript。iframe の名前を分けて、CSS で下のメニューだけ画面の下に固定する）
 _home_footer = components.declare_component("home_footer", path=str(_WEB / "home"))
 _home_calendar = components.declare_component("home_calendar", path=str(_WEB / "home"))
