@@ -34,8 +34,8 @@ MODES = {"聞く": "聞いて答える", "話す": "見て話す"}
 # モード -> コース -> (説明, 問いかけ)
 COURSES = {
     "聞く": {
-        "単語": ("英単語を聞いて、日本語の意味を選ぼう", "いま聞こえた単語の意味は？"),
-        "文": ("英語の文を聞いて、正しい日本語訳を選ぼう", "いま聞こえた文の意味は？"),
+        "単語": ("英単語を聞いて、聞こえた単語を選ぼう", "いま聞こえた単語は どれ？"),
+        "文": ("英語の文を聞いて、単語のパーツを ならべよう", "聞こえた順に 単語を ならべよう"),
         "しつもん": ("英語の しつもんを聞いて、正しい答えを選ぼう", "しつもんへの 答えは どれ？"),
     },
     "話す": {
@@ -48,24 +48,32 @@ COURSES = {
 def build_prompt(mode, course, level, topic):
     guide, kana = LEVELS[level]
     topic_line = f"- テーマは「{topic}」に関連づけてください。" if topic else "- テーマはおまかせ（いろいろな分野から出す）。"
-    ja_rule = "日本語（ja・choices・hint・tip・explanation）は、漢字をなるべく使わず ひらがな中心にしてください。" if kana else "日本語は、年齢に合った自然な表現にしてください。"
+    ja_rule = "日本語（ja・hint・tip・explanation）は、漢字をなるべく使わず ひらがな中心にしてください。" if kana else "日本語は、年齢に合った自然な表現にしてください。"
     common_rule = """- en は読み上げ（音声合成）と音声認識に使います。記号・絵文字・かっこ・カタカナを入れず、ふつうの英語のつづりだけで書いてください。
 - reading には en のカタカナの読みを入れます。
 - ja には en の日本語訳を入れます。"""
     if mode == "聞く" and course == "しつもん":
-        form = """- 「しつもんコース」です。en は英語のかんたんな しつもん（例：What color is the sky?）。それを聞いて、正しい答えを3〜4択で選ばせます。
-- choices は英語の答え（短い文や語）。answer は正しい答えで、choices の1つと完全に一致させます。
+        form = """- 「しつもんコース」です。en は英語のかんたんな しつもん（例：What color is the sky?）。それを聞いて、正しい答えを英語の3〜4択で選ばせます。
+- options は英語の答えの選択肢（短い文や語）と、その日本語の意味（ja）。answer は正しい答えの英語で、options の en の1つと完全に一致させます。
 - ja には しつもんの日本語訳を入れます。"""
+    elif mode == "聞く" and course == "単語":
+        form = """- 「聞いて答える・単語コース」です。en は英単語（または熟語）。それを聞いて、聞こえた英単語を3〜4択で選ばせます。
+- options は英単語の選択肢と、その日本語の意味（ja）。音が似ていて聞きまちがえやすい語（例：light / right / night、ship / sheep）を誤答に入れてください。
+- answer は en と同じ英単語で、options の en の1つと完全に一致させます。"""
     elif mode == "聞く":
-        what = "英単語（または熟語）" if course == "単語" else "短い英語の文"
-        form = f"""- 「聞いて答える・{course}コース」です。en は {what}。それを聞いて、正しい日本語の意味を3〜4択で選ばせます。
-- choices は日本語の選択肢。聞きまちがえやすい音の似た語の意味や、少しだけちがう訳など、まぎらわしい誤答を混ぜてください。
-- answer は正しい日本語で、choices の1つと完全に一致させます。"""
+        form = """- 「聞いて答える・文コース」です。en は短い英語の文（3〜9語）。それを聞いて、単語のパーツを聞こえた順にならべさせます。
+- parts は en を単語に分けたもの（文の順。ピリオドなどの記号は付けない。大文字小文字は en のまま）と、それぞれの単語の日本語の意味（ja、メモ程度の短いことば）。parts の w をスペースでつなぐと、記号を除いた en と同じになるようにしてください。
+- decoys は、まぎらわしい ひっかけの単語を2〜3個（音が似た語や、時制・形がちがう語。parts と同じ語は入れない）と、その意味（ja）。"""
     else:
         what = "英単語（または熟語）" if course == "単語" else "声に出して読むのにちょうどよい長さの英語の文"
         form = f"""- 「見て話す・{course}コース」です。en は {what}。画面に出して、声に出して言わせます。
 - 日本人がまちがえやすい音（L と R、TH、V と B、語末の子音、アクセントなど）がほどよく入るようにしてください。
-- choices と answer は使わず、空の配列・空文字にします。"""
+- options・parts・answer は使いません。"""
+    json_shape = ('{"questions": [{"en": "...", "reading": "...", "ja": "...", "parts": [{"w": "...", "ja": "..."}], "decoys": [{"w": "...", "ja": "..."}], "hint": "...", "explanation": "..."}]}'
+                  if mode == "聞く" and course == "文" else
+                  '{"questions": [{"en": "...", "reading": "...", "ja": "...", "options": [{"en": "...", "ja": "..."}], "answer": "...", "hint": "...", "explanation": "..."}]}'
+                  if mode == "聞く" else
+                  '{"questions": [{"en": "...", "reading": "...", "ja": "...", "hint": "...", "tip": "...", "explanation": "..."}]}')
     return f"""
 あなたは経験豊富な英語の先生です。次の条件で、英語のリスニング・スピーキング練習の問題を【{TOTAL_Q}問】作成してください。
 
@@ -82,17 +90,44 @@ def build_prompt(mode, course, level, topic):
 
 必ず次のJSONのみで出力してください。
 
-{{"questions": [{{"en": "...", "reading": "...", "ja": "...", "choices": ["..."], "answer": "...", "hint": "...", "tip": "...", "explanation": "..."}}]}}
+{json_shape}
 """
 
 
-def valid(q, mode):
+def words_of(text):
+    import re
+    return [w for w in re.sub(r"[^A-Za-z0-9'’ -]", " ", str(text)).replace("’", "'").split() if w.strip("-")]
+
+
+def fix(q, mode, course):
+    """AIの1問をととのえる。だめなら None"""
     if not (isinstance(q, dict) and str(q.get("en") or "").strip()):
-        return False
+        return None
+    q["en"] = str(q["en"]).strip()
     if mode == "話す":
-        return True
-    ch = q.get("choices")
-    return isinstance(ch, list) and 2 <= len(ch) <= 5 and q.get("answer") in ch
+        return q
+    if course == "文":                   # 単語のパーツ（文の順）＋ ひっかけ
+        ws = words_of(q["en"])
+        parts = [p for p in (q.get("parts") or []) if isinstance(p, dict) and str(p.get("w") or "").strip()]
+        if [str(p["w"]).strip().lower() for p in parts] != [w.lower() for w in ws]:
+            jam = {str(p.get("w")).strip().lower(): str(p.get("ja") or "") for p in parts}
+            parts = [{"w": w, "ja": jam.get(w.lower(), "")} for w in ws]
+        if not 2 <= len(parts) <= 12:
+            return None
+        low = {p["w"].lower() for p in parts}
+        decoys = [{"w": str(d.get("w")).strip(), "ja": str(d.get("ja") or "")} for d in (q.get("decoys") or [])
+                  if isinstance(d, dict) and str(d.get("w") or "").strip() and str(d.get("w")).strip().lower() not in low][:3]
+        q["parts"] = [{"w": str(p["w"]).strip(), "ja": str(p.get("ja") or "")} for p in parts]
+        q["decoys"] = decoys
+        q["answer"] = " ".join(p["w"] for p in q["parts"])
+        return q
+    opts = [{"en": str(o.get("en")).strip(), "ja": str(o.get("ja") or "")} for o in (q.get("options") or []) if isinstance(o, dict) and str(o.get("en") or "").strip()]
+    ans = str(q.get("answer") or "").strip()
+    if not (2 <= len(opts) <= 5 and ans in [o["en"] for o in opts]):
+        return None
+    random.shuffle(opts)
+    q["options"], q["answer"] = opts, ans
+    return q
 
 
 def ai_call(contents, temperature):
@@ -115,13 +150,9 @@ def ai_call(contents, temperature):
 
 def generate(mode, course, level, topic):
     data = ai_call(build_prompt(mode, course, level, topic), 0.6)
-    items = [q for q in (data.get("questions") or []) if valid(q, mode)][:TOTAL_Q]
+    items = [x for x in (fix(q, mode, course) for q in (data.get("questions") or [])) if x][:TOTAL_Q]
     if len(items) < min(TOTAL_Q, 8):
         raise RuntimeError("AIが うまく問題を作れなかったよ。もう一度ためしてね")
-    for q in items:
-        q["en"] = str(q["en"]).strip()
-        if mode == "聞く":
-            random.shuffle(q["choices"])
     return items
 
 

@@ -13,13 +13,13 @@ createApp({
     const L = Kit.load("sp_v1", {});
     const S = reactive({
       ready: false, args: {}, view: "menu",
-      level: L.level || "", mode: L.mode || "聞く", courses: L.courses || {}, slow: !!L.slow, assist: L.assist ?? true, topic: "",
+      level: L.level || "", mode: L.mode || "聞く", courses: L.courses || {}, slow: !!L.slow, assist: L.assist ?? true, show: L.show === "en" ? "en" : "enja", topic: "",
       busy: false, sec: 0, err: "", toast: "",
       qs: [], i: 0, pick: null, decided: null, hint: false, log: [], rows: [], run: "",
-      rec: "idle", live: "", takes: [], playing: "", heard: 0, play: null,
+      rec: "idle", live: "", takes: [], built: [], playing: "", heard: 0, play: null,
       sending: false, result: null, pdf: "",
     });
-    const keep = () => Kit.save("sp_v1", { level: S.level, mode: S.mode, courses: S.courses, slow: S.slow, assist: S.assist });
+    const keep = () => Kit.save("sp_v1", { level: S.level, mode: S.mode, courses: S.courses, slow: S.slow, assist: S.assist, show: S.show });
     function onArgs(a) {
       S.args = a; S.ready = true; Kit.takeReply(a);
       if (!S.level || !(a.levels || []).includes(S.level)) S.level = a.level;
@@ -47,8 +47,10 @@ createApp({
       });
     }
     function begin(qs, want) {
-      S.qs = qs.map(q => want.mode === "聞く" && q.choices ? { ...q, choices: Kit.shuffle(q.choices) } : q);
-      S.play = { slow: S.slow, assist: S.assist, ...want };
+      // 文コース：文の単語パーツ＋ひっかけを まぜて ならべる
+      S.qs = qs.map(q => q.parts ? { ...q, tiles: Kit.shuffle([...q.parts.map((p, k) => ({ id: "p" + k, ...p })), ...(q.decoys || []).map((d, k) => ({ id: "d" + k, ...d }))]) } : q);
+      S.play = { slow: S.slow, assist: S.assist, show: S.show, ...want };
+      S.built = [];
       S.i = 0; S.pick = null; S.decided = null; S.hint = false; S.log = []; S.rows = []; S.takes = []; S.rec = "idle"; S.live = "";
       S.result = null; S.pdf = ""; S.sending = false; S.run = Kit.uid(); S.heard = 0;
       S.view = "play"; Kit.top();
@@ -65,14 +67,23 @@ createApp({
 
     // ---- 聞く：えらんで決定
     const score = computed(() => S.log.filter(Boolean).length);
+    // 文コース：パーツをタップで ならべる・もどす
+    const isBuild = computed(() => !!(q.value.parts && q.value.tiles));
+    const tileOf = id => (q.value.tiles || []).find(t => t.id === id) || {};
+    function put(t) { if (S.decided == null && !S.built.includes(t.id)) { S.built.push(t.id); S.pick = S.built.length >= q.value.parts.length ? builtText() : null; } }
+    function pull(k) { if (S.decided == null) { S.built.splice(k, 1); S.pick = null; } }
+    const builtText = () => S.built.map(id => tileOf(id).w).join(" ");
+    const sameText = (a, b) => String(a).toLowerCase().replace(/[^a-z0-9' ]/g, "").replace(/\s+/g, " ").trim() === String(b).toLowerCase().replace(/[^a-z0-9' ]/g, "").replace(/\s+/g, " ").trim();
+    const slotOk = k => { const t = tileOf(S.built[k]), p = (q.value.parts || [])[k]; return !!p && String(t.w).toLowerCase() === String(p.w).toLowerCase(); };
     function decide() {
       if (S.pick == null) return;
       S.decided = S.pick;
-      const ok = S.pick === q.value.answer;
+      const ok = isBuild.value ? sameText(S.pick, q.value.answer) : S.pick === q.value.answer;
       S.log.push(ok);
       S.rows.push([q.value.en + (q.value.ja ? `\n（${q.value.ja}）` : ""), S.pick, q.value.answer, ok]);
     }
     const optClass = c => S.decided == null ? { on: S.pick === c } : { right: c === q.value.answer, wrong: c === S.decided && c !== q.value.answer };
+    const isRight = computed(() => S.decided != null && (isBuild.value ? sameText(S.decided, q.value.answer) : S.decided === q.value.answer));
 
     // ---- 話す：録音と判定
     const take = computed(() => S.takes[S.i] || null);
@@ -103,7 +114,7 @@ createApp({
     function next() {
       if (Rec.on) Rec.stop();
       if (S.i < S.qs.length - 1) {
-        S.i++; S.pick = null; S.decided = null; S.hint = false; S.rec = S.takes[S.i] ? "done" : "idle"; S.live = ""; Kit.top();
+        S.i++; S.pick = null; S.decided = null; S.hint = false; S.built = []; S.rec = S.takes[S.i] ? "done" : "idle"; S.live = ""; Kit.top();
         if (isListen.value) listen();          // タップのすぐあとなら、iPhone でも自動で読み上げられる
         return;
       }
@@ -136,7 +147,7 @@ createApp({
     const label = p => p ? `${p.mode === "聞く" ? "聞く" : "話す"}・${p.course}` : "";
 
     Streamlit.ready(onArgs);
-    return { S, TOPICS, COURSE_IC, MODE_IC, Voice, Rec, keep, modeOf, courseList, courseNow, infoOf, start, q, isListen, say, listen, score, decide, optClass,
+    return { S, TOPICS, COURSE_IC, MODE_IC, Voice, Rec, keep, modeOf, courseList, courseNow, infoOf, start, q, isListen, say, listen, score, decide, optClass, isBuild, tileOf, put, pull, slotOk, isRight,
       take, mic, playMine, pctClass, next, again, quit, toMenu, wrong, scoreOf, label, Kit };
   },
   template: `
@@ -166,6 +177,10 @@ createApp({
     </div>
     <div class="card">
       <div class="h3"><ic n="sliders" :s="17"></ic>せってい・テーマ<span class="small muted">おこのみで</span></div>
+      <template v-if="S.mode === '聞く'">
+        <div class="small muted" style="margin-bottom:4px">答えの 表示</div>
+        <div class="seg two"><button :class="{ on: S.show === 'en' }" @click="S.show = 'en'; keep()">英語だけ</button><button :class="{ on: S.show === 'enja' }" @click="S.show = 'enja'; keep()">英語 ＋ 日本語</button></div>
+      </template>
       <button v-if="S.mode === '聞く'" class="toggle" :class="{ on: S.slow }" @click="S.slow = !S.slow; keep()"><span class="sw"></span><span class="grow"><b>はじめから ゆっくり読む</b><small class="muted tsub">あとから「ゆっくり」ボタンでも 聞けるよ</small></span></button>
       <button v-else class="toggle" :class="{ on: S.assist }" @click="S.assist = !S.assist; keep()"><span class="sw"></span><span class="grow"><b>おたすけモード</b><small class="muted tsub">カタカナの読み方と 日本語の意味を 見ながら話す</small></span></button>
       <div class="tinrow"><ic n="tag" :s="18"></ic><input class="tin" v-model="S.topic" maxlength="40" placeholder="テーマ（空らんなら おまかせ）"></div>
@@ -199,15 +214,26 @@ createApp({
         <div v-if="S.decided != null" class="reveal"><div class="en">{{ q.en }}</div><div class="small muted">{{ q.reading }}</div><div class="ja">{{ q.ja }}</div></div>
       </div>
       <div class="h3" style="margin:4px 4px 0">{{ infoOf(S.play.mode, S.play.course).ask }}</div>
-      <div class="opts">
-        <button v-for="(c, k) in q.choices" :key="S.i + '-' + k" class="opt" :class="optClass(c)" :disabled="S.decided != null" @click="S.pick = c"><span class="mk">{{ 'ABCDE'[k] }}</span><span class="grow">{{ c }}</span></button>
+      <template v-if="isBuild">
+        <div class="build" :class="{ done: S.decided != null }">
+          <span v-if="!S.built.length" class="small muted bph">下の パーツを タップして ならべよう</span>
+          <button v-for="(id, k) in S.built" :key="id" class="tile on" :class="S.decided != null ? (slotOk(k) ? 'right' : 'wrong') : ''" @click="pull(k)"><b>{{ tileOf(id).w }}</b><small v-if="S.play.show === 'enja' && tileOf(id).ja">{{ tileOf(id).ja }}</small></button>
+        </div>
+        <div class="bank">
+          <button v-for="t in q.tiles" :key="t.id" class="tile" :class="{ used: S.built.includes(t.id) }" :disabled="S.built.includes(t.id) || S.decided != null" @click="put(t)"><b>{{ t.w }}</b><small v-if="S.play.show === 'enja' && t.ja">{{ t.ja }}</small></button>
+        </div>
+        <button v-if="S.built.length && S.decided == null" class="link" @click="S.built = []; S.pick = null"><ic n="again" :s="14"></ic> 全部もどす</button>
+      </template>
+      <div v-else class="opts">
+        <button v-for="(o, k) in q.options" :key="S.i + '-' + k" class="opt" :class="optClass(o.en)" :disabled="S.decided != null" @click="S.pick = o.en"><span class="mk">{{ 'ABCDE'[k] }}</span>
+          <span class="grow"><b class="oen">{{ o.en }}</b><small v-if="(S.play.show === 'enja' || S.decided != null) && o.ja" class="oja">{{ o.ja }}</small></span></button>
       </div>
       <template v-if="S.decided == null">
         <div v-if="S.hint" class="note warn" style="margin-top:10px"><ic n="bulb" :s="16"></ic> {{ q.hint || 'よく聞いて 考えてみよう！' }}</div>
         <div class="row2"><button class="btn" :disabled="S.hint" @click="S.hint = true"><ic n="bulb" :s="16"></ic>ヒント</button><button class="btn pri" :disabled="S.pick == null" @click="decide"><ic n="check" :s="16"></ic>これで決定</button></div>
       </template>
       <template v-else>
-        <div class="fb" :class="S.decided === q.answer ? 'ok' : 'ng'"><ic :n="S.decided === q.answer ? 'check' : 'x'" :s="18"></ic>{{ S.decided === q.answer ? 'せいかい！' : '正しい答えは「' + q.answer + '」' }}
+        <div class="fb" :class="isRight ? 'ok' : 'ng'"><ic :n="isRight ? 'check' : 'x'" :s="18"></ic>{{ isRight ? 'せいかい！' : '正しい答えは「' + q.answer + '」' }}
           <small v-if="q.explanation">{{ q.explanation }}</small></div>
         <button class="big" @click="next">{{ S.i >= S.qs.length - 1 ? '結果を見る' : '次の問題へ' }}<ic n="next" :s="20"></ic></button>
       </template>
