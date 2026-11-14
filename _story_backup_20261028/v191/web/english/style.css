@@ -1,0 +1,10 @@
+/* AI英語チャレンジの色（あとは base.css） */
+:root{--h1:#3a4fc4;--h2:#6c8cf2;--b1:#5b78ea;--b2:#3a4fc4;--shadowc:rgba(58,79,196,.28);--pri:#3a5bd9;--priD:#2c46b3;--priL:#edf1ff}
+.logo{font-size:19px}
+.radio{width:20px;height:20px;border-radius:50%;border:2px solid #c9ced8;flex:none;position:relative}
+.pk.on .radio{border-color:var(--pri)}.pk.on .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--pri)}
+.qbox{padding:22px 16px}
+.emoji{font-size:64px;line-height:1.1}
+.prompt{font-size:30px;font-weight:800;color:#2c3a8a;line-height:1.35;word-break:break-word}
+.reading{color:var(--sub);font-size:17px;margin-top:4px}
+.pick.two{grid-template-columns:1fr 1fr}.pick.two .pk{padding:9px 10px;gap:8px}.lv{font-size:13px!important;line-height:1.35}

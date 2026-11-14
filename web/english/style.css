@@ -8,3 +8,5 @@
 .prompt{font-size:30px;font-weight:800;color:#2c3a8a;line-height:1.35;word-break:break-word}
 .reading{color:var(--sub);font-size:17px;margin-top:4px}
 .pick.two{grid-template-columns:1fr 1fr}.pick.two .pk{padding:9px 10px;gap:8px}.lv{font-size:13px!important;line-height:1.35}
+
+.errbox{margin:10px 0 2px;padding:11px 14px;border-radius:14px;background:#fff1f0;border:1.5px solid #f3b3ae;color:#b3261e;font-weight:800;font-size:14px;line-height:1.5}

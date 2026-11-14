@@ -103,10 +103,10 @@ def valid_question(q):
 def generate_questions(course, level, topic):
     prompt = build_prompt(course, level, topic, LEVELS[level][1])
     last_error = None
-    for _ in range(2):  # 形式が崩れたときは1回だけやり直す
+    for model in (common.GEMINI_MODEL, getattr(common, "GEMINI_FALLBACK_MODEL", common.GEMINI_MODEL)):   # 失敗したら予備のモデルで1回だけ
         try:
             response = client.models.generate_content(
-                model=common.GEMINI_MODEL,
+                model=model,
                 contents=prompt,
                 config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.6),
             )
@@ -119,8 +119,10 @@ def generate_questions(course, level, topic):
             return items
         except Exception as e:
             last_error = e
-    raise RuntimeError(f"AIが問題を作るときにエラーが起きちゃったみたい。もう一度ためしてね：{last_error}")
-
+            print(f"[英語] {model}: {type(e).__name__}: {e}", flush=True)     # Manage app のログで原因がわかるように
+    if isinstance(last_error, ValueError):
+        raise RuntimeError("AIが うまく10問を作れなかったよ。もう一度ためしてね")
+    raise RuntimeError(common.ai_error_text(last_error) if hasattr(common, "ai_error_text") else f"AIでエラーが起きちゃった：{last_error}")
 
 
 def pdf_info(course, level, topic):

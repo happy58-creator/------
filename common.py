@@ -458,4 +458,24 @@ def get_gemini_client():
             " `.streamlit/secrets.toml` に `GEMINI_API_KEY = \"...\"` を書いてね。"
         )
         st.stop()
-    return genai.Client(api_key=key)
+    try:          # 返事が来ないまま待ちつづけないように（1回の問い合わせは60秒まで）
+        from google.genai import types
+        return genai.Client(api_key=key, http_options=types.HttpOptions(timeout=60_000))
+    except Exception:
+        return genai.Client(api_key=key)
+
+
+GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite"   # 予備：混雑・回数の上限のとき（回数の上限はモデルごとに別）
+
+
+def ai_error_text(e):
+    """Gemini のエラーを、子どもにもわかる文にする"""
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+    name, msg = type(e).__name__, str(e)
+    if code == 429 or "RESOURCE_EXHAUSTED" in msg:
+        return "今日のAIの回数を 使いきったみたい。夕方5時（日本時間）に もどるよ"
+    if isinstance(code, int) and code >= 500:
+        return "AIが 混み合っているみたい。少し待ってから もう一度ためしてね"
+    if "timeout" in name.lower() or "timed out" in msg.lower() or "Timeout" in msg:
+        return "AIの返事が おそすぎたよ。もう一度ためしてね"
+    return f"AIでエラーが起きちゃった（{name}）。もう一度ためしてね"

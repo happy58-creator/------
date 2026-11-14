@@ -12,7 +12,7 @@ createApp({
       ready: false, args: {}, view: "menu",
       level: L.level || "", course: L.course || "単語", assist: L.assist ?? true, topic: "",
       qs: [], i: 0, pick: null, decided: null, hint: false, log: [], rows: [], run: "",
-      busy: false, pdf: "", toast: "",
+      busy: false, sec: 0, err: "", pdf: "", toast: "",
     });
     const keep = () => Kit.save("en_v1", { level: S.level, course: S.course, assist: S.assist });
     function onArgs(a) {
@@ -24,12 +24,20 @@ createApp({
     let toastT = 0;
     function toast(m) { Kit.placeToast(); S.toast = m; clearTimeout(toastT); toastT = setTimeout(() => S.toast = "", 2600); }
 
+    // AIに10問たのむ：待っている秒数を見せる。90秒たっても返事がなければ、ボタンをもどして知らせる（あとから返事が来たら、そのまま始める）
+    let waitT = 0;
     function start() {
-      S.busy = true; keep();
+      S.busy = true; S.err = ""; S.sec = 0; keep();
+      clearInterval(waitT);
+      waitT = setInterval(() => {
+        S.sec++;
+        if (S.sec >= 90) { clearInterval(waitT); S.busy = false; S.err = "AIの返事が 来ないみたい…。通信を たしかめて、もう一度 押してみてね"; }
+      }, 1000);
       Kit.ask({ type: "gen", course: S.course, level: S.level, topic: S.topic.trim() }, r => {
-        S.busy = false;
-        if (r.error || !r.questions) { toast(r.error || "うまく作れなかったよ。もう一度ためしてね"); return; }
-        begin(r.questions, S.topic.trim());
+        clearInterval(waitT); S.busy = false;
+        if (r.error || !r.questions) { if (S.view === "menu") S.err = r.error || "うまく作れなかったよ。もう一度ためしてね"; return; }
+        if (S.view !== "menu") return;
+        S.err = ""; begin(r.questions, S.topic.trim());
       });
     }
     function begin(qs, topic) {
@@ -88,7 +96,9 @@ createApp({
       <input class="tin" style="margin-top:12px" v-model="S.topic" maxlength="40" placeholder="テーマ（空らんなら おまかせ）">
       <div class="sugg"><button v-for="t in TOPICS" :key="t" @click="S.topic = t">{{ t }}</button></div>
     </div>
-    <button class="big" :disabled="S.busy" @click="start">{{ S.busy ? '🧙‍♂️ AI先生が 10問を 作っているよ…（10秒くらい）' : '🚀 AIに10問 つくってもらう！' }}</button>
+    <div v-if="S.err" class="errbox">⚠️ {{ S.err }}</div>
+    <button class="big" :disabled="S.busy" @click="start">{{ S.busy ? '🧙‍♂️ AI先生が 10問を 作っているよ…（' + S.sec + '秒）' : (S.err ? '🔁 もう一度 つくってもらう' : '🚀 AIに10問 つくってもらう！') }}</button>
+    <div v-if="S.busy" class="small muted center" style="margin-top:6px">ふつうは 10〜30秒ほどで できあがるよ</div>
   </template>
 
   <template v-else-if="S.view === 'play'">
