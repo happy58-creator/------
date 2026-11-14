@@ -1,3 +1,8 @@
+"""AI国語アドベンチャー：テーマを入れると、AIがその学年の文章と10問をつくる。「学ぶ」は読解・文法・言葉・古典の講座と、古典の作品。
+画面はぜんぶ JavaScript（web/kokugo）。漢字の読み書きの答え合わせも画面でする（kokugo_logic.check_reading / check_writing と同じ）。
+Python は次のことだけ（どれも nonce つきのたのみごと）：
+  gen：AIで文章と10問をつくる（ふざけた入力は記録）　essay：自分で書いた文章を AI が採点　done：記録して表彰状
+  ai：まちがえた問題の AI先生の解説　learned：学んだ ✓　lquiz：講座の「やってみよう」をつくりなおす"""
 import json
 import random
 import time
@@ -9,33 +14,19 @@ import ai_explain
 import auth
 import common
 import history
+import js_page
 import kokugo_classics as KC
 import kokugo_lessons as KL
 import kokugo_logic as K
 import learn_log
 import pdfgen
+import web_games
 
 common.setup_page("AI国語アドベンチャー", "🧙‍♂️")
-common.hero("🧙‍♂️ AI国語わくわくアドベンチャー 🌟", "入力したテーマに合わせて、AIがその場で『世界にひとつだけの国語教材』を作ります！")
-
+ss = st.session_state
 client = common.get_gemini_client()
-
-DEFAULTS = {
-    "jp_state": "menu",  # menu, playing, ending, lecture（古典の講座）, work（作品を読む）
-    "jp_step": 1,
-    "jp_score": 0,
-    "jp_quiz": None,
-    "jp_theme": "",
-    "jp_grade": "",
-    "jp_course": "",
-    "jp_passage": None,  # 古典の本文（kokugo_classics の1つ）
-    "jp_answer": None,  # 今の問題で答えた結果 {"typed", "ok", "note"}
-    "jp_retry": "",     # 採点しないで書き直してもらうときのひとこと
-    "jp_log": [],  # 各問題の結果 (正解したか)
-    "jp_rows": [],  # PDF・履歴用 (問題, あなたの答え, 正しい答え, 正解か)
-    "jp_played_at": "",
-}
-common.init_state(DEFAULTS)
+SUBJECT = "国語"
+QUIZ_COURSE = {"中1": "chu1", "中2": "chu_koten", "中3": "chu_koten", "高1": "gengo_bunka", "高2": "koten_tankyu", "高3": "koten_tankyu"}
 
 KIND_LABELS = {
     "read": "📖 漢字の読み（漢字 → ひらがな）",
@@ -164,13 +155,12 @@ def generate_quiz_with_ai(theme, grade, course_id, passage):
             return K.shuffle_choices(K.validate(data, plan, passage)), None
         except Exception as e:
             last_error = e
-    st.error(f"AIが問題を作るときにエラーが起きちゃったみたい。もう一度ためしてね：{last_error}")
-    return None, None
+    raise RuntimeError(f"AIが問題を作るときにエラーが起きちゃったみたい。もう一度ためしてね：{last_error}")
 
 
-def grade_essay(q, answer):
+def grade_essay(q, answer, grade):
     """自分で書いた文章を、AIが観点ごとに見て 0〜10点で採点する（目安）。(点数, よいところ, アドバイス) か None"""
-    prompt = f"""あなたは{K.GRADE_NAMES[st.session_state.jp_grade]}の国語の先生です。生徒が書いた文章を採点してください。
+    prompt = f"""あなたは{K.GRADE_NAMES[grade]}の国語の先生です。生徒が書いた文章を採点してください。
 【問題】{q['text']}
 【字数】{q['limit'][0]}〜{q['limit'][1]}字
 【採点の観点】{'／'.join(q['rubric'])}
@@ -191,89 +181,9 @@ def grade_essay(q, answer):
     return None
 
 
-def report_silly(theme, reason):
-    """ふざけた入力：画面で知らせて、記録する（管理者が「せいせきの履歴」の「入力チェック」で見られる）"""
-    history.log_result("入力チェック", ページ="国語", 入力=theme, 理由=reason, 学年=st.session_state.get("jp_grade_pick", ""))
-    st.error("🚨 この入力は記録されました。どんなテーマで遊ぶか、おうちの人と相談してみよう。")
-
-
-def course_name():
-    c = K.COURSES.get(st.session_state.jp_course)
-    return c["name"] if c else ""
-
-
-def pdf_info():
-    info = f"テーマ：{st.session_state.jp_theme}　学年：{K.GRADE_NAMES.get(st.session_state.jp_grade, '')}　科目：{course_name()}"
-    if st.session_state.jp_passage:
-        info += f"　古典：{KC.get(st.session_state.jp_passage)['title']}"
-    return info
-
-
-def correct_text(q):
-    if q["kind"] in ("text", "classic"):
-        return q["ans"]
-    if q["kind"] == "essay":
-        return "（AIの採点）"
-    return "／".join(q["answers"])
-
-
-def record_answer(typed, ok, note="", points=None):
-    st.session_state.jp_answer = {"typed": typed, "ok": ok, "note": note,
-                                  "points": (K.POINT if ok else 0) if points is None else points}
-    st.session_state.jp_retry = ""
-
-
-def go_next():
-    step = st.session_state.jp_step
-    q = st.session_state.jp_quiz["questions"][step - 1]
-    ans = st.session_state.jp_answer
-    question = f"{KIND_LABELS[q['kind']].split(' ', 1)[1]} {q['text']}"
-    if q["kind"] in ("text", "classic"):
-        question = f"{K.KIND_NAMES[q['kind']]}（{q['view']}） {q['text']}\n（{'／'.join(q['opts'])}）"
-    typed = ans["typed"] + (f"（{ans['points']}/10点）" if q["kind"] == "essay" else "")
-    st.session_state.jp_rows.append((question, typed, correct_text(q), ans["ok"]))
-    st.session_state.jp_log.append(ans["ok"])
-    st.session_state.jp_score += ans["points"]
-    st.session_state.jp_answer = None
-    st.session_state.jp_retry = ""
-    st.session_state.jp_step += 1
-    if st.session_state.jp_step > K.TOTAL:
-        st.session_state.jp_state = "ending"
-        st.session_state.jp_played_at = time.strftime("%Y-%m-%d %H:%M:%S")
-        history.log_result(
-            "国語", テーマ=st.session_state.jp_theme, 点数=st.session_state.jp_score,
-            詳細=pdfgen.make_record("AI国語アドベンチャー", pdf_info(), st.session_state.jp_rows),
-            学年=K.GRADE_NAMES.get(st.session_state.jp_grade, ""), 科目=course_name(),
-        )
-
-
-def start_play(quiz, theme, grade, course_id, passage_id):
-    common.reset_state("jp_", DEFAULTS)
-    st.session_state.jp_quiz = quiz
-    st.session_state.jp_theme = theme
-    st.session_state.jp_grade = grade
-    st.session_state.jp_course = course_id
-    st.session_state.jp_passage = passage_id
-    st.session_state.jp_state = "playing"
-    st.rerun()
-
-
-SUBJECT = "国語"
-QUIZ_COURSE = {"中1": "chu1", "中2": "chu_koten", "中3": "chu_koten", "高1": "gengo_bunka", "高2": "koten_tankyu", "高3": "koten_tankyu"}
-
 
 def school_of(grade):
     return "高" if grade.startswith("高") else ("中" if grade.startswith("中") else "小")
-
-
-def done_mark(uid):
-    return "　✓" if uid in learn_log.learned(SUBJECT) else ""
-
-
-def show_passage(passage):
-    st.markdown(passage["text"].replace("\n", "  \n"))
-    if passage.get("hakubun"):
-        st.caption("白文：" + passage["hakubun"].replace("\n", "　"))
 
 
 def work_course(w, grade):
@@ -284,310 +194,124 @@ def work_course(w, grade):
     return course_id
 
 
-def learn_tab(grade):
-    """学ぶ：読解・文法・言葉・古典の講座と、古典の作品を1つのページに番号順に並べる。上の目次からジャンプできる"""
-    ss = st.session_state
-    school = school_of(grade)
-    classic_ok = K.GRADES.index(grade) >= 4          # 古典は小5から
-    lectures = [lec for lec in KL.lectures_for(school) if classic_ok or lec.get("group", "古典") != "古典"]
-    order = getattr(KL, "GROUP_ORDER", ["読解", "文法・表現", "言葉・漢字", "古典"])
-    lectures.sort(key=lambda lec: order.index(lec.get("group", "古典")) if lec.get("group", "古典") in order else len(order))
-    items = [("lec_" + lec["id"], lec) for lec in lectures]
-    if classic_ok:
-        items += [("work_" + w["id"], w) for w in KC.candidates("高" if school == "高" else "中", tuple(KC.KIND_NAMES))]
-    common.anchor("jp-top")
-    with st.container(border=True):
-        st.markdown("**📑 目次**　えらんで「表示」を押すと、そこまで ジャンプするよ")
-        pick = common.pick("📑 目次", list(range(len(items))), key="jp_learn_pick",
-                            format_func=lambda i: f"{i + 1}. " + (f"{items[i][1]['emoji']} {items[i][1]['title']}" if items[i][0].startswith("lec_")
-                                                                  else f"📜 {items[i][1]['title']}") + done_mark(items[i][0]))
-        if st.button("👉 表示", type="primary", use_container_width=True, key="jp_learn_go"):
-            ss.jp_jump = (items[pick][0], time.time())
-        got = sum(1 for uid, _ in items if uid in learn_log.learned(SUBJECT))
-        n_work = sum(1 for u, _ in items if u.startswith("work_"))
-        st.caption(f"📖 学んだ：{got} / {len(items)}（講座 {len(items) - n_work}" + (f"・古典の作品 {n_work}）" if n_work else "）"))
-    quizzes = ss.setdefault("jp_lq_map", {})
-    section = None
-    for n, (uid, obj) in enumerate(items, 1):
-        head = ({"読解": "📖 読解のコツ", "文法・表現": "✏️ 文法・表現", "言葉・漢字": "🈶 言葉・漢字", "古典": "📜 古典のミニ講座"}[obj.get("group", "古典")]
-                if uid.startswith("lec_") else "📜 古典の作品を読む")
-        if head != section:
-            st.markdown(f"### {head}")
-            section = head
-        common.anchor(uid)
-        with st.container(border=True):
-            if uid.startswith("lec_"):
-                lec = obj
-                st.markdown(f"#### {n}. {lec['emoji']} {lec['title']}{done_mark(uid)}")
-                st.markdown(f"💡 {lec['intro']}")
-                st.markdown("**おぼえよう**\n" + "\n".join(f"- {p}" for p in lec["points"]))
-                st.markdown("**📜 作品の中で見てみよう**" if lec.get("group", "古典") == "古典" else "**👀 例**")
-                for text, note in lec["examples"]:
-                    st.markdown(f"> {text}")
-                    st.caption("👉 " + note)
-                with st.expander("🙋 やってみよう（点数はつかないよ）"):
-                    if lec["id"] not in quizzes:
-                        quizzes[lec["id"]] = {"q": KL.make_quiz(lec["id"], random.Random()), "checked": False}
-                    qz = quizzes[lec["id"]]
-                    with st.form(f"jp_lform_{lec['id']}", enter_to_submit=False):
-                        for i, q in enumerate(qz["q"]):
-                            st.markdown(f"**{i + 1}.** {q['q']}")
-                            if q["type"] == "choice":
-                                st.radio("こたえ", q["opts"], index=None, key=f"jp_lq_{lec['id']}_{i}")
-                            else:
-                                st.text_input("こたえ（ひらがな）", key=f"jp_lq_{lec['id']}_{i}", label_visibility="collapsed", placeholder="ひらがなで")
-                        if st.form_submit_button("答えを たしかめる", type="primary"):
-                            qz["checked"] = True
-                    if qz["checked"]:
-                        for i, q in enumerate(qz["q"]):
-                            got_ans = ss.get(f"jp_lq_{lec['id']}_{i}") or ""
-                            ok = (got_ans == q["ans"]) if q["type"] == "choice" else K.check_reading(got_ans, q["answers"])[0] == "ok"
-                            right = q["ans"] if q["type"] == "choice" else q["show"]
-                            (st.success if ok else st.error)(f"{i + 1}. {'⭕ せいかい！' if ok else '❌ 答えは「' + right + '」'}　{q['explain']}")
-                    if st.button("🔄 ちがう問題にする", key=f"jp_lnew_{lec['id']}"):
-                        quizzes.pop(lec["id"], None)
-                        for i in range(5):
-                            ss.pop(f"jp_lq_{lec['id']}_{i}", None)
-                        ss.jp_jump = (uid, time.time())
-                        st.rerun()
-                cols = st.columns(2)
-                if uid in learn_log.learned(SUBJECT):
-                    cols[0].success("✓ 学んだ！")
-                elif cols[0].button("✅ 学んだ！", key=f"jp_done_{uid}", use_container_width=True):
-                    learn_log.mark(SUBJECT, grade, uid, lec["title"])
-                    ss.jp_jump = (uid, time.time())
-                    st.rerun()
-                if cols[1].button("⬆ 目次へ", key=f"jp_top_{uid}", use_container_width=True):
-                    ss.jp_jump = ("jp-top", time.time())
-            else:
-                w = obj
-                guide = KL.WORK_GUIDES.get(w["id"], {"kind": KC.KIND_NAMES[w["kind"]], "points": []})
-                st.markdown(f"#### {n}. 📜 {w['title']}{done_mark(uid)}")
-                st.caption(f"{w['author']}／{w['era']}／{guide['kind']}")
-                st.markdown("**🔎 読みどころ**\n" + "\n".join(f"- {p}" for p in guide["points"]))
-                st.caption("原文" if w["kind"] in ("kobun", "waka", "kindai") else "書き下し文")
-                show_passage(w)
-                with st.expander("📖 現代語訳を見る" if w["kind"] != "kindai" else "📖 言葉の意味を見る"):
-                    st.markdown(w["yaku"].replace("\n", "  \n"))
-                cols = st.columns(2)
-                if uid in learn_log.learned(SUBJECT):
-                    cols[0].success("✓ 読んだ！")
-                elif cols[0].button("✅ 読んだ！", key=f"jp_done_{uid}", use_container_width=True):
-                    learn_log.mark(SUBJECT, grade, uid, w["title"])
-                    ss.jp_jump = (uid, time.time())
-                    st.rerun()
-                if cols[1].button("⬆ 目次へ", key=f"jp_top_{uid}", use_container_width=True):
-                    ss.jp_jump = ("jp-top", time.time())
-                course_id = work_course(w, grade)
-                if course_id and st.button(f"🏁 この作品で問題に挑戦（{K.COURSES[course_id]['name']}・10問）", key=f"jp_wq_{uid}", use_container_width=True):
-                    with st.spinner("🧙‍♂️ AI先生が、この作品の問題を作成中だよ...（20〜30秒くらい待ってね）"):
-                        quiz, _ = generate_quiz_with_ai(w["title"], grade, course_id, w)
-                    if quiz:
-                        start_play(quiz, w["title"], grade, course_id, w["id"])
-    if ss.get("jp_jump"):
-        common.jump_to(*ss.jp_jump)
+def course_name(course_id):
+    c = K.COURSES.get(course_id)
+    return c["name"] if c else ""
 
 
-# --- メニュー（問題にちょうせん ／ 古典をまなぶ） ---
-if st.session_state.jp_state == "menu":
-    common.no_keyboard_selects()
-    age_grade = K.grade_for_age(st.session_state.get("auth_age"))
-    with st.container(border=True):
-        if auth.is_admin() or age_grade is None:
-            # 管理者（年齢の登録がない人）は、学年をえらべる
-            default = st.session_state.get("jp_grade_pick") or age_grade or K.DEFAULT_GRADE
-            grade = common.pick("🎓 学年", K.GRADES, index=K.GRADES.index(default),
-                                 format_func=lambda g: K.GRADE_NAMES[g], key="jp_grade_pick")
+def pdf_info(theme, grade, course_id, passage_id):
+    info = f"テーマ：{theme}　学年：{K.GRADE_NAMES.get(grade, '')}　科目：{course_name(course_id)}"
+    if passage_id:
+        info += f"　古典：{KC.get(passage_id)['title']}"
+    return info
+
+
+def max_grade():
+    """管理者・年齢がわからない人は全部。ほかの人は、いまの学年まで"""
+    g = K.grade_for_age(ss.get("auth_age"))
+    return None if (auth.is_admin() or g is None) else g
+
+
+def grade_ok(grade):
+    m = max_grade()
+    return grade in K.GRADES and (m is None or K.GRADES.index(grade) <= K.GRADES.index(m))
+
+
+def pub_lecture(lec):
+    return {k: v for k, v in lec.items() if not callable(v)}
+
+
+def handle(v):
+    t = v.get("type")
+    grade = v.get("grade") or ""
+    if t == "gen":                                      # テーマ（または古典の作品）で、文章と10問をつくる
+        if not grade_ok(grade):
+            return {"error": "その学年は まだ えらべないよ"}
+        course_id = v.get("course")
+        if v.get("work"):                               # 学ぶ：この作品で問題に挑戦（科目は作品と学年で決まる）
+            w = KC.get(v["work"])
+            course_id = work_course(w, grade)
+            if not course_id:
+                return {"error": "この作品では 問題を作れないよ"}
+            theme, passage = w["title"], w
+        elif course_id not in K.courses_for(grade):
+            return {"error": "えらび方がおかしいよ"}
         else:
-            grade = age_grade
-            st.session_state.jp_grade_pick = grade
-            st.markdown(f"🎓 **{K.GRADE_NAMES[grade]}** の問題が出るよ（{st.session_state.auth_age}さい）")
-    tabs = st.tabs(["🏁 問題にちょうせん", "📖 学ぶ"])
-
-    with tabs[0]:
-        with st.container(border=True):
-            course_ids = K.courses_for(grade)
-            if len(course_ids) > 1:
-                course_id = common.pick("📚 科目", course_ids, key=f"jp_course_pick_{grade}",
-                                         format_func=lambda c: f"{K.COURSES[c]['name']}（{K.COURSES[c]['desc']}）")
-            else:
-                course_id = course_ids[0]
-                st.caption(f"📚 {K.COURSES[course_id]['name']}：{K.COURSES[course_id]['desc']}")
-            st.markdown("**✍️ どんなお話で遊びたい？テーマを教えてね！**")
-            st.caption(f"（例：恐竜、マインクラフト、魔法学校、宇宙飛行士、ねこ、など何でもOK！ {K.THEME_MAX}文字まで）")
-            with st.form("jp_theme_form"):
-                theme_input = st.text_input("すきな言葉（キーワード）：", placeholder="ここに文字を入力してね")
-                submitted = st.form_submit_button("🚀 このテーマでAIに問題を作ってもらう！", type="primary", use_container_width=True)
-
-        if submitted:
-            theme = theme_input.strip()
+            theme = str(v.get("theme") or "").strip()
             problem = K.theme_problem(theme)
             if problem and problem[0] == "empty":
-                st.warning("⚠️ 言葉を入力してね！")
-            elif problem and problem[0] == "long":
-                st.warning(f"📏 テーマを もう少し短く入力してね（{K.THEME_MAX}文字まで。いまは {len(theme)}文字）")
-            elif problem:
-                report_silly(theme, problem[1])
-            else:
-                with st.spinner("🧙‍♂️ AI先生が、キミのために特別な文章と問題を作成中だよ...（20〜30秒くらい待ってね）"):
-                    passage = pick_passage(theme, course_id) if "classic" in K.COURSES[course_id] else None
-                    quiz, silly = generate_quiz_with_ai(theme, grade, course_id, passage)
-                if silly:
-                    report_silly(theme, silly)
-                elif quiz:
-                    start_play(quiz, theme, grade, course_id, passage["id"] if passage else None)
+                return {"error": "⚠️ 言葉を入力してね！"}
+            if problem and problem[0] == "long":
+                return {"error": f"📏 テーマを もう少し短く入力してね（{K.THEME_MAX}文字まで。いまは {len(theme)}文字）"}
+            if problem:
+                history.log_result("入力チェック", ページ="国語", 入力=theme, 理由=problem[1], 学年=grade)
+                return {"silly": True}
+            passage = pick_passage(theme, course_id) if "classic" in K.COURSES[course_id] else None
+        quiz, silly = generate_quiz_with_ai(theme, grade, course_id, passage)
+        if silly:
+            history.log_result("入力チェック", ページ="国語", 入力=theme, 理由=silly, 学年=grade)
+            return {"silly": True}
+        return {"quiz": quiz, "theme": theme, "grade": grade, "course": course_id, "passage": passage}
+    if t == "essay":                                    # 自分で書いた文章を、AI が採点（目安）
+        q, answer = v.get("q") or {}, str(v.get("answer") or "").strip()
+        res = grade_essay(q, answer, grade if grade in K.GRADES else K.DEFAULT_GRADE)
+        if res is None:
+            return {"error": "⚠️ 採点が うまくいかなかったよ。もう一度「提出」を押してね。"}
+        score, good, advice = res
+        return {"score": score, "good": good, "advice": advice}
+    if t == "done":                                     # 10問おわった：記録して、表彰状をつくる
+        rows = [(str(r[0]), str(r[1]), str(r[2]), bool(r[3])) for r in v.get("rows") or []][:K.TOTAL]
+        score = max(0, min(100, int(v.get("score") or 0)))
+        info = pdf_info(v.get("theme") or "", grade, v.get("course"), v.get("passage"))
+        history.log_once("国語", f"jp-{v.get('run')}", テーマ=v.get("theme") or "", 点数=score, 詳細=pdfgen.make_record("AI国語アドベンチャー", info, rows),
+                         学年=K.GRADE_NAMES.get(grade, ""), 科目=course_name(v.get("course")))
+        pdf = pdfgen.build_pdf("AI国語アドベンチャー", info, ss.get("player_name", ""), time.strftime("%Y-%m-%d %H:%M:%S"), score, rows)
+        return {"pdf": js_page.pdf_b64(pdf)}
+    if t == "ai":                                       # まちがえた問題の AI先生の解説
+        items = [{"q": str(i.get("q")), "user": str(i.get("user")), "correct": str(i.get("correct")), "hint": str(i.get("hint") or "")} for i in v.get("items") or []]
+        return {"notes": ai_explain.cached_explanations(f"jp-{v.get('run')}", "国語", K.GRADE_NAMES.get(grade, ""), items)}
+    if t == "learned":
+        uid = str(v.get("uid") or "")
+        if uid.startswith(("lec_", "work_")):
+            learn_log.mark(SUBJECT, grade, uid, str(v.get("title") or uid))
+        return {}
+    if t == "lquiz":
+        lid = v.get("lid")
+        return {"lid": lid, "quiz": KL.make_quiz(lid, random.Random())}
+    return {}
 
-    with tabs[1]:
-        learn_tab(grade)
 
-# --- プレイ ---
-elif st.session_state.jp_state == "playing":
-    data = st.session_state.jp_quiz
-    step = st.session_state.jp_step
-    q = data["questions"][step - 1]
-    passage = KC.get(st.session_state.jp_passage) if st.session_state.jp_passage else None
-    total = len(data["questions"])
+@st.cache_data(show_spinner=False)
+def learn_data():
+    """学ぶの教材（ぜんぶの学年ぶん。学校ごとの番号は画面でえらぶ）"""
+    order = getattr(KL, "GROUP_ORDER", ["読解", "文法・表現", "言葉・漢字", "古典"])
+    lectures, by_school = {}, {}
+    for s in ("小", "中", "高"):
+        ls = sorted(KL.lectures_for(s), key=lambda lec: order.index(lec.get("group", "古典")) if lec.get("group", "古典") in order else len(order))
+        by_school[s] = [lec["id"] for lec in ls]
+        for lec in ls:
+            lectures[lec["id"]] = pub_lecture(lec)
+    works, work_school = {}, {}
+    for s in ("中", "高"):
+        ws = KC.candidates(s, tuple(KC.KIND_NAMES))
+        work_school[s] = [w["id"] for w in ws]
+        for w in ws:
+            works[w["id"]] = w
+    guides = {wid: KL.WORK_GUIDES.get(wid, {"kind": KC.KIND_NAMES[w["kind"]], "points": []}) for wid, w in works.items()}
+    return {"lectures": lectures, "bySchool": by_school, "works": works, "workSchool": work_school, "guides": guides,
+            "kindNames": KC.KIND_NAMES, "groupOrder": order}
 
-    st.caption(f"テーマ：{st.session_state.jp_theme}　／　{K.GRADE_NAMES.get(st.session_state.jp_grade, '')}・{course_name()}"
-               f"　／　いまの点数：{st.session_state.jp_score}点")
-    st.progress((step - 1) / total, text=f"第{step}問 / {total}問")
-    if q["section"] is not None:
-        chapter = data["chapters"][q["section"]]
-        st.header(chapter["title"])
-        st.info(chapter["story"])
-    else:
-        st.header(f"📜 {passage['title']}")
-        st.caption(f"{passage['author']}／{passage['era']}／{KC.KIND_NAMES[passage['kind']]}")
-        with st.container(border=True):
-            st.markdown(passage["text"].replace("\n", "  \n"))
-            if passage.get("hakubun"):
-                st.caption("白文：" + passage["hakubun"].replace("\n", "　"))
-    st.subheader(f"❓ 第{step}問　{KIND_LABELS[q['kind']]}" + (f"（{q['view']}）" if q["kind"] in ("text", "classic") else ""))
-    if q["kind"] in KIND_HOWTO:
-        st.caption(KIND_HOWTO[q["kind"]])
-    st.markdown(f"#### {q['text']}")
-    if q["kind"] == "essay":
-        st.caption(f"字数：{q['limit'][0]}〜{q['limit'][1]}字　／　採点の観点：{'・'.join(q['rubric'])}　（AIの採点なので、点数は目安だよ）")
 
-    ans = st.session_state.jp_answer
-    if ans is None:
-        if q["kind"] in ("text", "classic"):
-            choice = st.radio("どれかな？", q["opts"], index=None, key=f"jp_radio_{step}")
-            if st.button("これで決定！", disabled=choice is None, type="primary"):
-                record_answer(choice, choice == q["ans"])
-                st.rerun()
-        elif q["kind"] == "essay":
-            with st.form(f"jp_form_{step}"):
-                typed = st.text_area("ここに書こう", key=f"jp_typed_{step}", height=200)
-                sent = st.form_submit_button("これで提出！", type="primary")
-            if st.session_state.jp_retry:
-                st.warning(st.session_state.jp_retry)
-            if sent:
-                length = len(K.clean(typed))
-                lo, hi = q["limit"]
-                if length < lo // 2:
-                    st.session_state.jp_retry = f"✏️ もう少し書いてみよう（いま {length}字。{lo}字くらいから）"
-                elif length > int(hi * 1.5):
-                    st.session_state.jp_retry = f"✏️ 長すぎるよ（いま {length}字。{hi}字までにまとめよう）"
-                else:
-                    with st.spinner("📝 AI先生が読んでいるよ..."):
-                        result = grade_essay(q, typed.strip())
-                    if result is None:
-                        st.session_state.jp_retry = "⚠️ 採点がうまくいかなかったよ。もう一度「提出」を押してね。"
-                    else:
-                        score, good, advice = result
-                        note = (f"👍 よいところ：{good}\n\n" if good else "") + (f"💡 アドバイス：{advice}" if advice else "")
-                        record_answer(typed.strip(), score >= 6, note, points=score)
-                st.rerun()
-        else:
-            with st.form(f"jp_form_{step}"):
-                label = {"read": "読み方（ひらがな）", "write": "漢字で書こう", "kana": "現代かなづかい（ひらがな）"}[q["kind"]]
-                typed = st.text_input(label, key=f"jp_typed_{step}")
-                sent = st.form_submit_button("これで決定！", type="primary")
-            if st.session_state.jp_retry:
-                st.warning(st.session_state.jp_retry)
-            if sent:
-                if q["kind"] in ("read", "kana"):
-                    result, note = K.check_reading(typed, q["answers"])
-                else:
-                    result, note = K.check_writing(typed, q["answers"], q.get("reading", ""))
-                if result == "retry":                # 書き方のまちがい（ひらがなで書いた など）は、採点しないで書き直し
-                    st.session_state.jp_retry = "✏️ " + note
-                else:
-                    record_answer(typed.strip(), result == "ok", note)
-                st.rerun()
-    else:
-        if q["kind"] in ("text", "classic"):
-            st.radio("どれかな？", q["opts"], index=q["opts"].index(ans["typed"]), key=f"jp_radio_{step}", disabled=True)
-        else:
-            st.markdown(f"キミの答え：**{ans['typed']}**")
-        if q["kind"] == "essay":
-            show = st.success if ans["ok"] else st.warning
-            show(f"📝 {ans['points']} / 10点（目安）\n\n{ans['note']}\n\n" + q["ok"])
-        elif ans["ok"]:
-            st.success("⭕ せいかい！ " + q["ok"])
-        else:
-            note = f"{ans['note']}\n\n" if ans.get("note") else ""
-            st.error(f"❌ ざんねん… 正しい答えは「{correct_text(q)}」だよ。\n\n{note}" + q["ng"])
-        if q["section"] is None and passage:
-            with st.expander("📖 現代語訳を見る"):
-                st.markdown(passage["yaku"].replace("\n", "  \n"))
-        label = "結果発表へ！ 🏆" if step == total else "次の問題へ進む ➡️"
-        st.button(label, on_click=go_next, type="primary", use_container_width=True)
+def catalog():
+    return {"grades": K.GRADES, "gradeNames": K.GRADE_NAMES, "byGrade": {g: K.courses_for(g) for g in K.GRADES},
+            "courses": {c: {"name": v["name"], "desc": v["desc"]} for c, v in K.COURSES.items()},
+            "workCourse": {g: QUIZ_COURSE.get(g) for g in K.GRADES}, "themeMax": K.THEME_MAX,
+            "kindLabels": KIND_LABELS, "kindHowto": KIND_HOWTO, "kindNames": K.KIND_NAMES, "point": K.POINT}
 
-# --- 結果 ---
-elif st.session_state.jp_state == "ending":
-    score = st.session_state.jp_score
-    st.header("🏆 大冒険お疲れさまでした！ 🏆")
-    st.subheader(f"キミの点数は... 【 {score}点 / 100点 】 🎯")
-    st.write("".join("⭕" if ok else "❌" for ok in st.session_state.jp_log))
-    kinds = [q["kind"] for q in st.session_state.jp_quiz["questions"]]
-    parts = []
-    for kind in dict.fromkeys(kinds):
-        idx = [i for i, k in enumerate(kinds) if k == kind]
-        parts.append(f"{K.KIND_NAMES[kind]}：{sum(1 for i in idx if st.session_state.jp_log[i])} / {len(idx)}")
-    st.caption("　".join(parts))
 
-    # まちがえた問題（自分で書く問題はのぞく）を、AI先生が解説
-    qs = st.session_state.jp_quiz["questions"]
-    wrong = [i for i, ok in enumerate(st.session_state.jp_log) if not ok and qs[i]["kind"] != "essay"]
-    if wrong:
-        st.subheader(f"👀 まちがえた問題を見なおそう（{len(wrong)}問）")
-        rows = st.session_state.jp_rows
-        items = [{"q": rows[i][0], "user": rows[i][1], "correct": rows[i][2], "hint": qs[i].get("ng", "")} for i in wrong]
-        notes = ai_explain.cached_explanations(f"jp-{st.session_state.jp_played_at}-{st.session_state.jp_theme}", "国語",
-                                               K.GRADE_NAMES.get(st.session_state.jp_grade, ""), items)
-        for n, i in enumerate(wrong):
-            with st.container(border=True):
-                st.markdown(f"**第{i + 1}問**　{qs[i]['text']}")
-                st.markdown(f"キミの答え：`{rows[i][1]}`　→　正しい答え：**{rows[i][2]}**")
-                st.info("🤖 **AI先生の解説**\n\n" + notes[n] if notes else "📝 " + qs[i].get("ng", ""))
-
-    if score == 100:
-        st.balloons()
-        st.success("🥇 【ランク：国語マスター神】")
-        st.write("すごすぎる！全問大正解！漢字も読解も完璧（かんぺき）にクリアしたね！")
-    elif score >= 60:
-        st.warning("🥈 【ランク：一流の冒険家】")
-        st.write("素晴らしい！お話の気持ちの変化をしっかり読み解くことができたね。次はちがうテーマで満点を目指そう！")
-    else:
-        st.info("🏃 【ランク：みならい冒険家】")
-        st.write("お疲れさま！AI先生のお話は楽しかったかな？次はキミの大好きな別のテーマを入力してリベンジだ！")
-
-    common.pdf_preview_button(
-        pdfgen.build_pdf(
-            "AI国語アドベンチャー", pdf_info(), st.session_state.get("player_name", ""),
-            st.session_state.jp_played_at, score, st.session_state.jp_rows,
-        ),
-    )
-
-    st.divider()
-    col_same, col_new = st.columns(2)
-    with col_same:
-        if st.button("🔁 同じお話をもう一度", use_container_width=True):
-            ss = st.session_state
-            start_play(K.shuffle_choices(ss.jp_quiz, random), ss.jp_theme, ss.jp_grade, ss.jp_course, ss.jp_passage)
-    with col_new:
-        if st.button("🔄 別のテーマで新しく遊ぶ", type="primary", use_container_width=True):
-            common.reset_state("jp_", DEFAULTS)
-            st.rerun()
+if "jp_lquiz" not in ss:                               # 講座の「やってみよう」（講座ごとに1つ。ちがう問題はたのまれたら作る）
+    ss.jp_lquiz = {lid: KL.make_quiz(lid, random.Random()) for lid in learn_data()["lectures"]}
+age_grade = K.grade_for_age(ss.get("auth_age"))
+js_page.serve(web_games.kokugo_study, "jp", handle,
+              cat=catalog(), learn=learn_data(), lquiz=ss.jp_lquiz, learned=sorted(learn_log.learned(SUBJECT)),
+              me={"grade": age_grade or K.DEFAULT_GRADE, "maxGrade": max_grade(), "age": ss.get("auth_age")})

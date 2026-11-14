@@ -1,38 +1,23 @@
+"""AI英語チャレンジ：年れい・コースをえらぶと、AIが英語の問題を10問つくる。
+画面はぜんぶ JavaScript（web/english）。Python は「AIで10問つくる」「1回分の結果を記録して表彰状をつくる」だけ。"""
 import json
 import random
+import time
 
 import streamlit as st
 from google.genai import types
 
-import time
-
 import common
 import history
+import js_page
 import pdfgen
+import web_games
 
 common.setup_page("AI英語チャレンジ", "🔤")
-common.hero("🔤 AI英語チャレンジ", "年れいに合わせて、AIが英語の問題を10問つくるよ！")
-
+ss = st.session_state
 client = common.get_gemini_client()
 
 TOTAL_Q = 10
-DEFAULTS = {
-    "en_state": "menu",  # menu, playing, ending
-    "en_questions": [],
-    "en_q": 0,
-    "en_score": 0,
-    "en_choice": None,  # 今の問題で「決定」した選択肢
-    "en_hint": False,
-    "en_log": [],  # 各問題の結果 (正解したか)
-    "en_rows": [],  # PDF・履歴用 (問題, あなたの答え, 正しい答え, 正解か)
-    "en_played_at": "",
-    "en_course": "単語",
-    "en_level": "",
-    "en_topic": "",
-    "en_assist": True,
-}
-common.init_state(DEFAULTS)
-
 # 年齢層 -> (AIへの指示, 日本語表示を ひらがな中心にするか)
 LEVELS = {
     "小1〜2年（6〜8さい）": ("英語に初めて触れる子ども向け。色・動物・食べ物・数・家族など、身近で超基本の単語だけ。文は I like ~. / This is ~. 程度の3語前後。", True),
@@ -134,176 +119,34 @@ def generate_questions(course, level, topic):
             return items
         except Exception as e:
             last_error = e
-    st.error(f"AIが問題を作るときにエラーが起きちゃったみたい。もう一度ためしてね：{last_error}")
-    return None
+    raise RuntimeError(f"AIが問題を作るときにエラーが起きちゃったみたい。もう一度ためしてね：{last_error}")
 
 
-def submit_choice(choice):
-    st.session_state.en_choice = choice
+
+def pdf_info(course, level, topic):
+    return f"{course}コース ／ {level} ／ テーマ：{topic or 'おまかせ'}"
 
 
-def pdf_info():
-    ss = st.session_state
-    return f"{ss.en_course}コース ／ {ss.en_level} ／ テーマ：{ss.en_topic or 'おまかせ'}"
+def handle(v):
+    t = v.get("type")
+    if t == "gen":
+        course, level, topic = v.get("course"), v.get("level"), str(v.get("topic") or "").strip()[:40]
+        if course not in COURSES or level not in LEVELS:
+            return {"error": "えらび方がおかしいよ"}
+        return {"questions": generate_questions(course, level, topic)}
+    if t == "log":                              # 10問おわった：記録して、表彰状をつくる
+        course, level, topic = v.get("course"), v.get("level"), v.get("topic") or ""
+        rows = [(str(r[0]), str(r[1]), str(r[2]), bool(r[3])) for r in v.get("rows") or []][:TOTAL_Q]
+        score = sum(1 for r in rows if r[3])
+        info = pdf_info(course, level, topic)
+        history.log_once("英語", f"en-{v.get('run')}", コース=course, 年齢層=level, テーマ=topic or "おまかせ", 点数=score * 10, 正解数=score,
+                         詳細=pdfgen.make_record("AI英語チャレンジ", info, rows))
+        pdf = pdfgen.build_pdf("AI英語チャレンジ", info, ss.get("player_name", ""), time.strftime("%Y-%m-%d %H:%M:%S"), score * 10, rows)
+        return {"pdf": js_page.pdf_b64(pdf)}
+    return {}
 
 
-def go_next(is_correct):
-    q = st.session_state.en_questions[st.session_state.en_q]
-    question = q["prompt"] + (f"\n（{q['translation']}）" if q.get("translation") else "")
-    st.session_state.en_rows.append((question, st.session_state.en_choice, q["answer"], is_correct))
-    st.session_state.en_log.append(is_correct)
-    if is_correct:
-        st.session_state.en_score += 1
-    st.session_state.en_choice = None
-    st.session_state.en_hint = False
-    st.session_state.en_q += 1
-    if st.session_state.en_q >= TOTAL_Q:
-        st.session_state.en_state = "ending"
-        score = st.session_state.en_score
-        st.session_state.en_played_at = time.strftime("%Y-%m-%d %H:%M:%S")
-        history.log_result(
-            "英語", コース=st.session_state.en_course, 年齢層=st.session_state.en_level,
-            テーマ=st.session_state.en_topic or "おまかせ", 点数=score * 10, 正解数=score,
-            詳細=pdfgen.make_record("AI英語チャレンジ", pdf_info(), st.session_state.en_rows),
-        )
-
-
-def show_hint():
-    st.session_state.en_hint = True
-
-
-state = st.session_state.en_state
-
-# --- メニュー ---
-if state == "menu":
-    with st.container(border=True):
-        st.subheader("① 年れいを えらんでね")
-        level_names = list(LEVELS)
-        age = st.session_state.get("auth_age")
-        level = st.radio("年れい", level_names, index=common.age_level_index(len(level_names)), label_visibility="collapsed")
-        if age is not None:
-            st.caption(f"{age}さいなので、このどれかを えらんでおいたよ。かえてもOK！")
-    with st.container(border=True):
-        st.subheader("② コースを えらんでね")
-        course = st.radio(
-            "コース", list(COURSES), horizontal=True, label_visibility="collapsed",
-            format_func=lambda c: f"{COURSE_ICONS[c]} {c}コース",
-        )
-        st.caption(COURSES[course])
-    with st.container(border=True):
-        st.subheader("③ おたすけ・テーマ（どちらもおこのみで）")
-        assist = st.toggle("おたすけモード（読み方・日本語訳・絵文字を見ながら答える）", value=True)
-        topic = st.text_input("テーマ（空らんならおまかせ）", placeholder="例：どうぶつ、りょこう、スポーツ、仕事")
-
-    if st.button("🚀 AIに問題を作ってもらってスタート！", type="primary", use_container_width=True):
-        with st.spinner("🧙‍♂️ AI先生が10問を作っているよ...（10秒くらい待ってね）"):
-            questions = generate_questions(course, level, topic.strip())
-        if questions:
-            common.reset_state("en_", DEFAULTS)
-            st.session_state.en_questions = questions
-            st.session_state.en_course = course
-            st.session_state.en_level = level
-            st.session_state.en_topic = topic.strip()
-            st.session_state.en_assist = assist
-            st.session_state.en_state = "playing"
-            st.rerun()
-
-# --- プレイ ---
-elif state == "playing":
-    idx = st.session_state.en_q
-    q = st.session_state.en_questions[idx]
-    assist = st.session_state.en_assist
-    course_now = st.session_state.en_course
-    is_word = course_now == "単語"
-
-    st.caption(f"{st.session_state.en_level} ／ {st.session_state.en_course}コース　　いまの正解：{st.session_state.en_score}問")
-    st.progress(idx / TOTAL_Q, text=f"{idx + 1} / {TOTAL_Q} 問目")
-
-    with st.container(border=True):
-        if assist and q.get("emoji"):
-            st.markdown(f"<div class='big-center' style='font-size:4rem'>{q['emoji']}</div>", unsafe_allow_html=True)
-        st.markdown(
-            f"<div class='big-center' style='font-size:2rem;color:#542b69'>{q['prompt']}</div>",
-            unsafe_allow_html=True,
-        )
-        if assist and is_word and q.get("reading"):
-            st.markdown(f"<div class='big-center' style='font-size:1.1rem;color:#6b5d68'>（{q['reading']}）</div>", unsafe_allow_html=True)
-    st.markdown(f"**{COURSE_QUESTIONS.get(course_now, '')}**")
-
-    chosen = st.session_state.en_choice
-    if chosen is None:
-        ans = st.radio("こたえ", q["choices"], index=None, key=f"en_radio_{idx}", label_visibility="collapsed")
-        col_go, col_hint = st.columns(2)
-        col_go.button("これで決定！", disabled=ans is None, on_click=submit_choice, args=(ans,), type="primary", use_container_width=True)
-        col_hint.button("💡 ヒント", on_click=show_hint, disabled=st.session_state.en_hint, use_container_width=True)
-        if st.session_state.en_hint:
-            st.info(f"💡 {q.get('hint') or 'よく見て考えてみよう！'}")
-    else:
-        is_correct = chosen == q["answer"]
-        st.radio("こたえ", q["choices"], index=q["choices"].index(chosen), key=f"en_radio_{idx}", disabled=True, label_visibility="collapsed")
-        if is_correct:
-            st.success(f"⭕ せいかい！　{q['answer']}")
-        else:
-            st.error(f"❌ ざんねん… 正しい答えは「{q['answer']}」だよ。")
-        if q.get("translation"):
-            st.markdown(f"📖 日本語訳：{q['translation']}")
-        if q.get("explanation"):
-            st.info(q["explanation"])
-        label = "結果発表へ！ 🏆" if idx == TOTAL_Q - 1 else "次の問題へ ➡️"
-        st.button(label, on_click=go_next, args=(is_correct,), type="primary", use_container_width=True)
-
-# --- 結果 ---
-elif state == "ending":
-    score = st.session_state.en_score
-    st.header("🏆 おつかれさま！")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("🎯 点数", f"{score * 10} / 100 点")
-    c2.metric("✅ 正解数", f"{score} / {TOTAL_Q} 問")
-    c3.metric("コース", f"{st.session_state.en_course}")
-    st.write("".join("⭕" if ok else "❌" for ok in st.session_state.en_log))
-
-    if score == TOTAL_Q:
-        st.balloons()
-        st.success("🥇 パーフェクト！ 英語マスターだ！")
-    elif score >= 7:
-        st.success("🥈 すばらしい！ あと少しで満点だよ。")
-    else:
-        st.info("🌱 よくがんばったね！ まちがえた問題を見なおして、もう一回やってみよう。")
-
-    wrong = [
-        (q, ok) for q, ok in zip(st.session_state.en_questions, st.session_state.en_log) if not ok
-    ]
-    if wrong:
-        with st.expander(f"👀 まちがえた問題を見なおす（{len(wrong)}問）", expanded=True):
-            for q, _ in wrong:
-                st.markdown(f"**{q['emoji'] + ' ' if q.get('emoji') else ''}{q['prompt']}**　→　**{q['answer']}**")
-                if q.get("translation"):
-                    st.caption(f"日本語訳：{q['translation']}")
-                if q.get("explanation"):
-                    st.caption(q["explanation"])
-
-    common.pdf_preview_button(
-        pdfgen.build_pdf(
-            "AI英語チャレンジ", pdf_info(), st.session_state.get("player_name", ""),
-            st.session_state.en_played_at, score * 10, st.session_state.en_rows,
-        ),
-    )
-
-    st.divider()
-    col_same, col_new = st.columns(2)
-    with col_same:
-        if st.button("🔁 同じ問題をもう一度", use_container_width=True):
-            questions = st.session_state.en_questions
-            keep = {k: st.session_state[k] for k in ("en_course", "en_level", "en_topic", "en_assist")}
-            common.reset_state("en_", DEFAULTS)
-            for key, value in keep.items():
-                st.session_state[key] = value
-            for q in questions:
-                random.shuffle(q["choices"])
-            st.session_state.en_questions = questions
-            st.session_state.en_state = "playing"
-            st.rerun()
-    with col_new:
-        if st.button("🔄 べつの問題をつくる", type="primary", use_container_width=True):
-            common.reset_state("en_", DEFAULTS)
-            st.rerun()
+levels = list(LEVELS)
+js_page.serve(web_games.english_study, "en", handle,
+              levels=levels, level=levels[common.age_level_index(len(levels))], age=ss.get("auth_age"),
+              courses=[{"id": c, "desc": COURSES[c], "icon": COURSE_ICONS[c], "ask": COURSE_QUESTIONS[c]} for c in COURSES])

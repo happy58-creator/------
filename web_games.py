@@ -12,6 +12,9 @@ _amida = components.declare_component("amida_game", path=str(_WEB / "amida"))
 _itpass = components.declare_component("itpass_study", path=str(_WEB / "itpass"))
 _fe = components.declare_component("fe_study", path=str(_WEB / "fe"))
 _calc = components.declare_component("calc_study", path=str(_WEB / "calc"))
+_english = components.declare_component("english_study", path=str(_WEB / "english"))
+_programming = components.declare_component("programming_study", path=str(_WEB / "programming"))
+_kokugo = components.declare_component("kokugo_study", path=str(_WEB / "kokugo"))
 # トップ画面の下のメニューとカレンダー（同じ JavaScript。iframe の名前を分けて、CSS で下のメニューだけ画面の下に固定する）
 _home_footer = components.declare_component("home_footer", path=str(_WEB / "home"))
 _home_calendar = components.declare_component("home_calendar", path=str(_WEB / "home"))
@@ -65,3 +68,28 @@ def fe_study(key, **args):
 def calc_study(key, **args):
     """算数・数学マスター（練習問題と学ぶ）。たのみごと {"type": "start" / "check" / "ai" / "learned" / "example", "nonce", ...} を返す。"""
     return _calc(key=key, default=None, **args)
+
+
+def english_study(key, **args):
+    """AI英語チャレンジ。たのみごと {"type": "gen" / "log", "nonce", ...} を返す（js_page.serve で受ける）。"""
+    return _english(key=key, default=None, **args)
+
+
+def programming_study(key, **args):
+    """AIプログラミング教室。たのみごと {"type": "gen" / "log", "nonce", ...} を返す（js_page.serve で受ける）。"""
+    return _programming(key=key, default=None, **args)
+
+
+def kanji_study(key, **args):
+    """漢字のかきとり（えらぶ画面・書き取り・けっか）。たのみごと {"type": "start" / "done", "nonce", ...} を返す（js_page.serve で受ける）。"""
+    return _kanji(key=key, default=None, **args)
+
+
+def typing_study(key, **args):
+    """AIタイピングマスター（えらぶ画面・ゲーム・けっか・裏メニュー）。たのみごと {"type": "gen" / "typing_done" / "code_done", "nonce", ...} を返す。"""
+    return _typing(key=key, default=None, app="study", **args)
+
+
+def kokugo_study(key, **args):
+    """AI国語アドベンチャー（問題にちょうせん・学ぶ）。たのみごと {"type": "gen" / "essay" / "done" / "ai" / "learned" / "lquiz", "nonce", ...} を返す。"""
+    return _kokugo(key=key, default=None, **args)

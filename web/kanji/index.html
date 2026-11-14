@@ -4,20 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="game.css">
+  <link rel="stylesheet" href="base.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app"></div>
+<div id="app"><div class="loading">読みこみ中…</div></div>
 <script src="streamlit.js"></script>
+<script src="vendor/vue.global.prod.js"></script>
+<script src="kit.js"></script>
 <script src="kanji.js"></script>
-<script>
-  // Streamlit から漢字のデータを受けとって、書き取りを始める（最初の1回だけ）
-  let started = false;
-  Streamlit.ready((args) => {
-    if (started) return;
-    started = true;
-    window.kanjiGame = new KanjiGame(document.getElementById("app"), args, (value) => Streamlit.setValue(value));
-  });
-</script>
+<script src="app.js"></script>
 </body>
 </html>
