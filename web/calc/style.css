@@ -93,3 +93,29 @@ h2{margin:2px 0 6px;font-size:21px}
 .party{position:absolute;left:0;right:0;top:0;height:100vh;pointer-events:none;z-index:60;overflow:hidden}
 .party i{position:absolute;top:-10px;width:9px;height:14px;border-radius:2px;animation:fall 2s ease-in forwards}
 @keyframes fall{to{transform:translateY(900px) rotate(540deg)}}
+
+/* 学年えらび（小・中・高ごとに1行） */
+.grades{display:grid;gap:6px}
+.grow-row{display:grid;grid-template-columns:52px 1fr;align-items:center;gap:6px}
+.gname{font-size:12px;font-weight:800;color:var(--sub)}
+.gbtns{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.gbtns button{height:36px;border-radius:10px;border:1.5px solid var(--line);background:#fff;font-weight:800;font-size:13px}
+.gbtns button.on{border-color:var(--pri);background:var(--pri);color:#fff}
+/* 学ぶ：まとめ・学校ごと・学年ごとにたたむ */
+.lsum{display:grid;grid-template-columns:auto auto 1fr;align-items:baseline;gap:6px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px 16px;margin-bottom:12px}
+.lsum span{font-size:13px;font-weight:800}.lsum b{font-size:22px;color:var(--priD)}.lsum i{font-style:normal;color:var(--sub);font-size:13px}
+.lsum .bar{grid-column:1/4;height:8px;background:#f1e6dc;border-radius:99px;overflow:hidden}
+.lsum .bar i{display:block;height:100%;background:var(--pri);border-radius:99px}
+.seg button.on{background:#fff}
+.acc{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:12px}
+.ahead{display:flex;align-items:center;gap:8px;width:100%;padding:13px 16px;border-top:1px solid var(--line);text-align:left}
+.acc .ahead:first-child{border-top:0}
+.ahead b{font-size:15px}.ahead.mine b{color:var(--priD)}
+.ahead em{font-style:normal;font-size:11px;font-weight:800;background:var(--priL);color:var(--priD);border-radius:8px;padding:1px 7px;margin-left:6px;vertical-align:2px}
+.adone{font-size:12px;font-weight:800;color:var(--sub);background:#f1f3f8;border-radius:8px;padding:2px 8px}
+.adone.all{color:var(--ok);background:var(--okL)}
+.achev{font-size:10px;color:#b8bdc8;width:14px;text-align:center}
+.abody{background:#fbfcfe;border-top:1px solid var(--line);padding:0 14px}
+.abody .lrow{padding:10px 2px}
+.rvhead{display:flex;width:100%;justify-content:space-between;border-top:1px solid var(--line);padding:11px 2px;font-size:13px;font-weight:800;color:var(--sub)}
+.urow.rv{padding-left:10px}

@@ -45,7 +45,7 @@ createApp({
       tab: L.tab || "practice",           // practice（練習問題）・learn（学ぶ）
       view: "home",                       // home・lesson・play・result
       grade: L.grade || "", course: L.course || "", unit: L.unit || MIX,
-      lesson: "", open: {},                // 学ぶ：開いている単元
+      lesson: "", open: {}, stage: "", review: false,                // 学ぶ：開いている単元
       set: null, answers: [], blankAsk: 0, // 問題（Python から）と、入れた答え
       result: null, ai: null, aiWait: false,
       focus: -1, howto: false, all: false, toast: "",
@@ -61,11 +61,22 @@ createApp({
       S.args = a; S.ready = true;
       const r = a.reply;
       if (r && r.nonce && r.nonce !== lastReply) { lastReply = r.nonce; const f = waits[r.nonce]; delete waits[r.nonce]; if (f) f(r); }
-      if (!S.grade || !C.value.grades.includes(S.grade)) S.grade = me.value.grade || "小3";
+      if (!S.grade || !allowed.value.includes(S.grade)) S.grade = me.value.grade && allowed.value.includes(me.value.grade) ? me.value.grade : allowed.value[allowed.value.length - 1] || "小3";
+      if (!S.stage) S.stage = stageOf(myHeadGrade());
       fixCourse();
     }
     const C = computed(() => S.args.cat || { grades: [], gradeNames: {}, courses: {}, unitNames: {}, byGrade: {} });
-    const me = computed(() => S.args.me || { grade: "小3", canPick: true, band: "小" });
+    const me = computed(() => S.args.me || { grade: "小3", maxGrade: null, band: "小" });
+    // えらべる学年：管理者（と年齢がわからない人）は全部。ほかの人は、いまの学年まで（下の学年はふくしゅうに使える）
+    const allowed = computed(() => {
+      const gs = C.value.grades, m = me.value.maxGrade, k = gs.indexOf(m);
+      return m && k >= 0 ? gs.slice(0, k + 1) : gs;
+    });
+    const STAGES = [["小", "小学校"], ["中", "中学校"], ["高", "高校"]];
+    const stageOf = g => String(g || "小")[0];
+    const gradeRows = computed(() => STAGES.map(([k, name]) => ({ k, name, grades: allowed.value.filter(g => g[0] === k) })).filter(r => r.grades.length));
+    const shortGrade = g => g.slice(1) + "年";
+    const myHeadGrade = () => ({ 高3: "高2" }[me.value.grade] || me.value.grade || "小3");
     const learned = computed(() => new Set(S.args.learned || []));
     const bestOf = (g, c, u) => (S.args.best || {})[`${g}|${c}|${u}`];
 
@@ -132,15 +143,25 @@ createApp({
     const order = computed(() => S.args.order || []);            // [見出し, 学年, 科目, 単元]
     const lessons = computed(() => S.args.lessons || {});
     const heads = computed(() => {
-      const out = [];
+      const out = [], ok = new Set(allowed.value);
       order.value.forEach((it, n) => {
+        if (!ok.has(it[1])) return;                    // まだ習っていない学年は出さない（管理者は全部）
         let h = out[out.length - 1];
-        if (!h || h.head !== it[0]) out.push(h = { head: it[0], items: [] });
+        if (!h || h.head !== it[0]) out.push(h = { head: it[0], grade: it[1], items: [] });
         h.items.push({ n: n + 1, head: it[0], grade: it[1], course: it[2], uid: it[3] });
       });
+      for (const h of out) h.done = h.items.filter(x => learned.value.has(x.uid)).length;
       return out;
     });
-    const learnDone = computed(() => order.value.filter(it => learned.value.has(it[3])).length);
+    const stageHeads = computed(() => heads.value.filter(h => stageOf(h.grade) === S.stage));
+    const stages = computed(() => STAGES.filter(([k]) => heads.value.some(h => stageOf(h.grade) === k)));
+    const isOpen = h => S.open[h.head] ?? (h.head === myHead.value);
+    function toggle(h) { S.open[h.head] = !isOpen(h); }
+    function pickStage(k) { S.stage = k; }
+    const learnAll = computed(() => heads.value.reduce((a, h) => a + h.items.length, 0));
+    const learnDone = computed(() => heads.value.reduce((a, h) => a + h.done, 0));
+    const reviewUnits = computed(() => units.value.filter(u => !nowUnits.value.includes(u)));
+    const showReview = computed(() => S.review || reviewUnits.value.includes(S.unit));
     const myHead = computed(() => { const g = { 高3: "高2" }[me.value.grade] || me.value.grade; const it = order.value.find(x => x[1] === g); return it ? it[0] : ""; });
     function openLesson(u) { S.lesson = u; S.view = "lesson"; top(); }
     const lessonAt = computed(() => order.value.findIndex(it => it[3] === S.lesson));
@@ -168,7 +189,7 @@ createApp({
     }
     function setTab(t) { S.tab = t; keep(); if (t === "learn") toMine(); }
     // 学ぶの目次は、いまの学年のところを見せる
-    function toMine() { nextTick(() => { const el = document.querySelector(".headrow.mine"); if (el) el.scrollIntoView({ block: "start" }); }); }
+    function toMine() {}
     // 10問のとちゅうで「やめる」：答えを入れていたら、もう一度押したときにやめる
     let quitAt = 0;
     function quit() {
@@ -195,7 +216,7 @@ createApp({
 
     Streamlit.ready(onArgs);
     return { S, C, me, MIX, TOTAL, KEYS, tex, learned, bestOf, courses, units, nowUnits, unitName, doneCount, pickGrade, pickCourse, pickUnit,
-      start, filled, submit, onKey, insert, onFocus, onBlur, heads, lessons, learnDone, myHead, openLesson, lessonAt, lessonItem, stepLesson,
+      start, filled, submit, learnAll, reviewUnits, showReview, allowed, gradeRows, shortGrade, stageHeads, stages, isOpen, toggle, pickStage, onKey, insert, onFocus, onBlur, heads, lessons, learnDone, myHead, openLesson, lessonAt, lessonItem, stepLesson,
       example, moreExample, markLearned, showEx, home, setTab, quit, openPdf, hero, order };
   },
   template: `
@@ -209,11 +230,12 @@ createApp({
 
     <template v-if="S.tab === 'practice'">
       <div class="card">
-        <div class="h3">🎓 学年</div>
-        <div v-if="me.canPick" class="chips">
-          <button v-for="g in C.grades" :key="g" class="chip" :class="{ on: S.grade === g }" @click="pickGrade(g)">{{ C.gradeNames[g] }}</button>
+        <div class="h3">🎓 学年<span v-if="me.maxGrade" class="small muted">{{ C.gradeNames[me.maxGrade] }}までえらべるよ</span></div>
+        <div v-if="allowed.length > 1" class="grades">
+          <div v-for="r in gradeRows" :key="r.k" class="grow-row"><span class="gname">{{ r.name }}</span>
+            <div class="gbtns"><button v-for="g in r.grades" :key="g" :class="{ on: S.grade === g }" @click="pickGrade(g)">{{ shortGrade(g) }}</button></div></div>
         </div>
-        <div v-else class="small"><b>{{ C.gradeNames[S.grade] }}</b> の問題が出るよ（{{ me.age }}さい）</div>
+        <div v-else class="small"><b>{{ C.gradeNames[S.grade] }}</b> の問題が出るよ</div>
         <template v-if="courses.length > 1">
           <div class="h3" style="margin-top:12px">📚 科目</div>
           <div class="chips"><button v-for="c in courses" :key="c" class="chip" :class="{ on: S.course === c }" @click="pickCourse(c)">{{ C.courses[c].name }}</button></div>
@@ -221,28 +243,46 @@ createApp({
         </template>
         <div v-else-if="S.course" class="small muted" style="margin-top:6px">📚 {{ C.courses[S.course].name }}：{{ C.courses[S.course].desc }}</div>
       </div>
-      <div class="h3" style="margin:14px 4px 6px">✏️ 単元<span class="small muted">学んだ単元 {{ doneCount }} / {{ units.length }}（✓）</span></div>
+      <div class="h3" style="margin:14px 4px 6px">✏️ 単元<span class="small muted">学んだ ✓ {{ doneCount }} / {{ units.length }}</span></div>
       <div class="list">
-        <button v-for="u in [MIX, ...units]" :key="u" class="urow" :class="{ on: S.unit === u }" @click="pickUnit(u)">
+        <button v-for="u in [MIX, ...nowUnits]" :key="u" class="urow" :class="{ on: S.unit === u }" @click="pickUnit(u)">
           <span class="radio"></span>
-          <span class="grow"><b>{{ unitName(u) }}</b><small v-if="u !== MIX && !nowUnits.includes(u)">前の学年のふくしゅう</small><small v-if="u === MIX">この学年の単元を まぜて出すよ</small></span>
+          <span class="grow"><b>{{ unitName(u) }}</b><small v-if="u === MIX">この学年の単元を まぜて出すよ</small></span>
           <i v-if="learned.has(u)" class="ok">✓</i>
           <em v-if="bestOf(S.grade, S.course, u) != null" class="best">🏆{{ bestOf(S.grade, S.course, u) }}</em>
         </button>
+        <template v-if="reviewUnits.length">
+          <button class="rvhead" @click="S.review = !showReview">🔁 前の学年の ふくしゅう（{{ reviewUnits.length }}）<span>{{ showReview ? '▲' : '▼' }}</span></button>
+          <template v-if="showReview">
+            <button v-for="u in reviewUnits" :key="u" class="urow rv" :class="{ on: S.unit === u }" @click="pickUnit(u)">
+              <span class="radio"></span><span class="grow"><b>{{ unitName(u) }}</b></span>
+              <i v-if="learned.has(u)" class="ok">✓</i>
+              <em v-if="bestOf(S.grade, S.course, u) != null" class="best">🏆{{ bestOf(S.grade, S.course, u) }}</em>
+            </button>
+          </template>
+        </template>
       </div>
       <button class="big" :disabled="!!S.busy" @click="start()">{{ S.busy === 'start' ? 'つくっています…' : '🏁 ' + TOTAL + '問に挑戦！' }}</button>
     </template>
 
     <template v-else>
-      <div class="card small">📖 学んだ単元：<b>{{ learnDone }} / {{ order.length }}</b>　単元を押すと、説明と例題が見られるよ</div>
-      <template v-for="h in heads" :key="h.head">
-        <div class="h3 headrow" :class="{ mine: h.head === myHead }">🎓 {{ h.head }}<span v-if="h.head === myHead" class="small">いまの学年</span></div>
-        <div class="list">
-          <button v-for="it in h.items" :key="it.uid" class="lrow" @click="openLesson(it.uid)">
-            <span class="num">{{ it.n }}</span><b class="grow">{{ unitName(it.uid) }}</b><i v-if="learned.has(it.uid)" class="ok">✓</i><span class="chev">›</span>
+      <div class="lsum"><span>📖 学んだ単元</span><b>{{ learnDone }}</b><i>/ {{ learnAll }}</i><div class="bar"><i :style="{ width: (learnAll ? learnDone / learnAll * 100 : 0) + '%' }"></i></div></div>
+      <div v-if="stages.length > 1" class="seg" :style="{ gridTemplateColumns: 'repeat(' + stages.length + ',1fr)' }">
+        <button v-for="[k, name] in stages" :key="k" :class="{ on: S.stage === k }" @click="pickStage(k)">{{ name }}</button>
+      </div>
+      <div class="acc">
+        <template v-for="h in stageHeads" :key="h.head">
+          <button class="ahead" :class="{ open: isOpen(h), mine: h.head === myHead }" @click="toggle(h)">
+            <b class="grow">{{ h.head }}<em v-if="h.head === myHead">いまの学年</em></b>
+            <span class="adone" :class="{ all: h.done === h.items.length }">✓ {{ h.done }}/{{ h.items.length }}</span><span class="achev">{{ isOpen(h) ? '▲' : '▼' }}</span>
           </button>
-        </div>
-      </template>
+          <div v-if="isOpen(h)" class="abody">
+            <button v-for="it in h.items" :key="it.uid" class="lrow" @click="openLesson(it.uid)">
+              <span class="num">{{ it.n }}</span><b class="grow">{{ unitName(it.uid) }}</b><i v-if="learned.has(it.uid)" class="ok">✓</i><span class="chev">›</span>
+            </button>
+          </div>
+        </template>
+      </div>
     </template>
   </template>
 

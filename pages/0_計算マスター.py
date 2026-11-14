@@ -164,6 +164,8 @@ def handle(v):
         grade, course, unit = v.get("grade"), v.get("course"), v.get("unit") or MIX
         if grade not in K.GRADES or course not in U.COURSES or (unit != MIX and unit not in U.UNITS):
             return {"error": "えらび方がおかしいよ"}
+        if max_grade and K.GRADES.index(grade) > K.GRADES.index(max_grade):
+            return {"error": "その学年は まだ えらべないよ"}
         return make_questions(grade, course, unit)
     if t == "check":
         return check_answers(v.get("id"), v.get("answers") or [])
@@ -184,8 +186,9 @@ cat, order, lessons = catalog()
 if "calc_examples" not in ss:                      # 学ぶの「数字を変えた例題」（単元ごとに1つ。ほかの数字はたのまれたら作る）
     ss.calc_examples = {uid: one_example(uid) for uid in lessons if uid in U.UNITS}
 age_grade = K.grade_for_age(ss.get("auth_age"))
-me = {"grade": age_grade or ss.get("calc_grade_pick") or "小3", "canPick": bool(auth.is_admin() or age_grade is None),
-      "age": ss.get("auth_age"), "band": common.age_band()}
+# えらべる学年：管理者・年齢がわからない人は全部。ほかの人は、いまの学年まで（maxGrade）
+max_grade = None if (auth.is_admin() or age_grade is None) else age_grade
+me = {"grade": age_grade or "小3", "maxGrade": max_grade, "age": ss.get("auth_age"), "band": common.age_band()}
 done = ss.setdefault("calc_done", set())
 val = web_games.calc_study(key="calc", cat=cat, order=order, lessons=lessons, examples=ss.calc_examples,
                            learned=sorted(learn_log.learned(SUBJECT)), best=ss.get("calc_best2") or {}, me=me, reply=ss.get("calc_reply"))
