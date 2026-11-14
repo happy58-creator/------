@@ -15,6 +15,7 @@ _calc = components.declare_component("calc_study", path=str(_WEB / "calc"))
 _english = components.declare_component("english_study", path=str(_WEB / "english"))
 _programming = components.declare_component("programming_study", path=str(_WEB / "programming"))
 _kokugo = components.declare_component("kokugo_study", path=str(_WEB / "kokugo"))
+_history = components.declare_component("history_view", path=str(_WEB / "history"))
 # トップ画面の下のメニューとカレンダー（同じ JavaScript。iframe の名前を分けて、CSS で下のメニューだけ画面の下に固定する）
 _home_footer = components.declare_component("home_footer", path=str(_WEB / "home"))
 _home_calendar = components.declare_component("home_calendar", path=str(_WEB / "home"))
@@ -93,3 +94,8 @@ def typing_study(key, **args):
 def kokugo_study(key, **args):
     """AI国語アドベンチャー（問題にちょうせん・学ぶ）。たのみごと {"type": "gen" / "essay" / "done" / "ai" / "learned" / "lquiz", "nonce", ...} を返す。"""
     return _kokugo(key=key, default=None, **args)
+
+
+def history_view(key, **args):
+    """せいせきの履歴。たのみごと {"type": "load" / "pdf", "sheet", "nonce", ...} を返す（js_page.serve で受ける）。"""
+    return _history(key=key, default=None, **args)

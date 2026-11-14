@@ -1,71 +1,61 @@
-import pandas as pd
+"""せいせきの履歴：これまでの記録を見る（管理者は みんなの記録）。
+画面はぜんぶ JavaScript（web/history）。Python は「えらんだシートの記録を読む」「その回の結果をPDFにする」だけ。
+スプレッドシートの読みこみをへらすため、シートごとの記録は60秒だけセッションにとっておく。"""
+import time
+
 import streamlit as st
 
 import auth
 import common
 import history
+import js_page
 import pdfgen
+import web_games
 
 common.setup_page("せいせきの履歴", "📒")
-common.hero("📒 せいせきの履歴", "これまでの記録を見よう！")
-
-st.caption(f"保存先：{history.storage_label()}")
-
+ss = st.session_state
 ADMIN_ONLY = {"ログイン", "入力チェック"}   # ログインの記録・ふざけた入力の記録は管理者だけ
-sheet_names = [s for s in history.SHEETS if s not in ADMIN_ONLY or auth.is_admin()]
-sheet = st.radio("ゲームを選んでね", sheet_names, horizontal=True)
-rows = history.read_history(sheet)
-if not rows:
-    st.info("まだ記録がないよ。ゲームをあそぶと、ここに残るよ！")
-    st.stop()
+HIDDEN = {"詳細", "正誤"}                    # 長いので表には出さない（詳細は PDF で見る）
+admin = auth.is_admin()
+me = ss.get("player_name") or ""
+sheets = [s for s in history.SHEETS if s not in ADMIN_ONLY or admin]
 
-df = pd.DataFrame(rows)
-me = st.session_state.get("player_name")
-if auth.is_admin():
-    names = ["みんな"] + sorted(df["名前"].astype(str).unique())
-    who = common.pick("だれの記録？", names, key="hist_who")
-    if who != "みんな":
-        df = df[df["名前"].astype(str) == who]
-else:
-    st.caption(f"{me} さんの記録だけ表示しています。")
-    df = df[df["名前"].astype(str) == me]
-    if df.empty:
-        st.info("まだ記録がないよ。ゲームをあそぶと、ここに残るよ！")
-        st.stop()
 
-c1, c2 = st.columns(2)
-c1.metric("あそんだ回数", f"{len(df)} 回")
-score_col = next((c for c in ("点数", "回数", "ノーミス正解") if c in df.columns), None)
-if score_col:
-    scores = pd.to_numeric(df[score_col], errors="coerce")
-    c2.metric(f"ベスト（{score_col}）", f"{scores.max():g}" if scores.notna().any() else "—")
-    if scores.notna().sum() >= 2:
-        st.line_chart(pd.DataFrame({score_col: scores.values}, index=df["日時"].values))
+def rows_of(sheet):
+    """この人が見てよい記録（新しい順ではなく、記録した順）。60秒はとっておいたものを使う"""
+    cache = ss.setdefault("hist_cache", {})
+    hit = cache.get(sheet)
+    if not hit or time.time() - hit[0] > 60:
+        try:
+            rows = history.read_history(sheet)
+        except Exception:
+            rows = []
+        hit = cache[sheet] = (time.time(), rows)
+    rows = hit[1]
+    return rows if admin else [r for r in rows if str(r.get("名前")) == me]
 
-shown = df.drop(columns=["詳細", "正誤"], errors="ignore")    # 正誤：ITパスポートの1問ごとの記録（長いので表には出さない）
-st.dataframe(shown.iloc[::-1], use_container_width=True, hide_index=True)
 
-# --- そのときの問題・答え・点数を、結果PDFと同じ形で出す ---
-if "詳細" in df.columns:
-    st.subheader("📄 そのときの結果をPDFで見る")
-    records = [r for r in df.iloc[::-1].to_dict("records") if str(r.get("詳細") or "").strip()]
-    if not records:
-        st.caption("PDFにできる記録は、まだありません（詳細つきで記録されたものだけ出せます）。")
-    else:
-        def label(r):
-            extra = r.get("言語") or r.get("コース") or r.get("種類") or ""
-            return f"{r['日時']}　{r['名前']}　{r.get('点数', '')}点　{extra}"
-
-        picked = common.pick("どの回の結果？（新しい順）", range(len(records)), key=f"hist_pick_{sheet}", format_func=lambda i: label(records[i]))
-        pdf = pdfgen.pdf_from_history(records[picked])
+def handle(v):
+    t, sheet = v.get("type"), v.get("sheet")
+    if sheet not in sheets:
+        return {"error": "そのシートは見られないよ"}
+    if t == "load":
+        if v.get("fresh"):
+            ss.get("hist_cache", {}).pop(sheet, None)
+        rows = rows_of(sheet)
+        cols = [c for c in history.BASE_COLUMNS + history.SHEETS[sheet] if c not in HIDDEN]
+        out = [{**{c: r.get(c, "") for c in cols}, "_i": i, "_pdf": bool(str(r.get("詳細") or "").strip())} for i, r in enumerate(rows)]
+        return {"sheet": sheet, "cols": cols, "rows": out}
+    if t == "pdf":
+        rows = rows_of(sheet)
+        i = int(v.get("i", -1))
+        if not 0 <= i < len(rows):
+            return {"error": "記録が見つからないよ。もう一度 読みこんでね"}
+        pdf = pdfgen.pdf_from_history(rows[i])
         if pdf is None:
-            st.warning("この記録は詳細が読みこめませんでした。")
-        else:
-            common.pdf_preview_button(
-                pdf,
-            )
+            return {"error": "この記録は 詳細が 読みこめませんでした"}
+        return {"pdf": js_page.pdf_b64(pdf), "i": i}
+    return {}
 
-st.download_button(
-    "📥 CSVでダウンロード", shown.to_csv(index=False).encode("utf-8-sig"),
-    file_name=f"履歴_{sheet}.csv", mime="text/csv",
-)
+
+js_page.serve(web_games.history_view, "hist", handle, sheets=sheets, admin=admin, me=me, storage=history.storage_label())
