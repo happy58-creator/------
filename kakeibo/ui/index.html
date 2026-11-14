@@ -428,7 +428,7 @@ const dlabel = s => { const d = parse(s); return `${d.getMonth() + 1}月${d.getD
 const uid = () => Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 6);
 const lastDay = (y, m) => new Date(y, m + 1, 0).getDate();     // m は 0 はじまり
 // ===== データ（サーバーのデータ ＋ まだ保存が終わっていない操作） =====
-let SERVER = { shopping: false, records: [], budgets: [], cats: [], tsumi: [], tlog: [], inames: [], sheets: false, password: false, stores: [], rmemo: [], units: {}, ocr: false };
+let SERVER = { shopping: false, records: [], budgets: [], cats: [], tsumi: [], tlog: [], inames: [], sheets: false, password: false, stores: [], branches: [], rmemo: [], units: {}, ocr: false };
 let D = SERVER;
 let QUEUE = [];          // サーバーにまだ届いていない操作
 let firstRender = true;
@@ -442,6 +442,7 @@ function applyOp(d, a) {
     case "save_table": d[{ 積立: "tsumi", 積立記録: "tlog", アイコン名: "inames" }[a.table]] = a.rows; break;
     case "save_cats": d.cats = a.rows; break;
     case "add_records": d.records = [...d.records, ...a.recs]; break;          // レシートから
+    case "add_shop": if (a.store) d.stores = [...(d.stores || []), a.store]; if (a.branch) d.branches = [...(d.branches || []), a.branch]; break;
     case "update_records": {                                                    // 撮影入力の明細を直す
       const up = Object.fromEntries((a.rows || []).map(r => [r.ID, r])), gone = new Set(a.del || []);
       d.records = [...d.records.filter(r => !gone.has(r.ID)).map(r => up[r.ID] || r), ...(a.add || [])]; break;
@@ -1125,6 +1126,7 @@ keyboardHelper(() => document.getElementById("scroll"));
 // receipt.js（下）を読みおえてから、Streamlit に「準備できた」と知らせる
 document.addEventListener("DOMContentLoaded", () => { SL.ready(); SL.height(); });
 </script>
+<script src="geo.js"></script>
 <script src="receipt.js"></script>
 </body>
 </html>

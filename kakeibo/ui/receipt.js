@@ -82,7 +82,7 @@ function fromResult(list) {
     });
     const pay = r.payment === "クレカ" ? CARD : r.payment === "現金" ? CASH : S.pay || CASH;
     return { id: uid(), store: [r.store, r.branch].filter(Boolean).join(" "), date: r.date || today(), tax_mode: r.tax_mode === "外税" ? "外税" : "内税",
-      total: +r.total || 0, base8: +r.base8 || 0, base10: +r.base10 || 0, base_taxed: !!r.base_taxed, pay, chain: r.store || "",
+      total: +r.total || 0, base8: +r.base8 || 0, base10: +r.base10 || 0, base_taxed: !!r.base_taxed, pay, chain: r.store || "", branch: r.branch || "",
       sid: matchStore(`${r.store} ${r.branch}`.trim()) || matchStore(r.store), items, amt: {} };
   });
 }
@@ -146,6 +146,7 @@ function editView(manual) {
           <button class="rmode" data-r="mode" data-i="${i}">${rc.tax_mode}</button>
           <span class="rsumline" id="rsum${i}">${sumLine(rc)}</span></div>
         <div class="rwarns" id="rwarn${i}">${warnLine(rc)}</div>
+        ${manual ? "" : regBanner(rc, i)}
       </div>
       ${groups || `<div class="empty">品物がありません</div>`}
       <div class="rfoot"><button class="radd" data-r="addline" data-i="${i}" data-c="">＋ 品物を足す</button>${manual ? "" : `<button class="rdrop" data-r="dropr" data-i="${i}">このレシートを外す</button>`}</div>
@@ -246,6 +247,88 @@ function saveRec() {
   if (d.shop && d.sid && matchStore(d.shop) !== d.sid) act({ type: "save_receipt_memo", rows: [{ キー: storeKey(d.shop), 品名: d.sid, カテゴリ: "", 更新: today() }] });
   if (d.done) d.done(d.sid);
   toast(`記録しました：${name}（${st ? st["店名"] : "お店未定"}）`); render(true);
+}
+
+// ---------------------------------------------------------------- 未登録のお店・店舗を買い物リストに登録する（任意）
+const nkShop = t => normKey(t).replace(/(店|支店)$/, "");
+function regState(rc) {
+  if (rc.regDone || rc.regSkip || !String(rc.chain || "").trim()) return null;
+  if (!rc.sid || !(D.stores || []).some(s => s.ID === rc.sid)) return "store";
+  const br = nkShop(rc.branch);
+  if (!br) return null;
+  const known = (D.branches || []).filter(b => b["店舗ID"] === rc.sid).map(b => nkShop(b["支店名"])).filter(Boolean);
+  return known.some(k => k.includes(br) || br.includes(k)) ? null : "branch";
+}
+function regBanner(rc, i) {
+  const k = regState(rc); if (!k) return "";
+  const st = (D.stores || []).find(s => s.ID === rc.sid);
+  const msg = k === "store" ? `「${esc(rc.chain)}」は買い物リストに未登録のお店です。登録しますか？`
+    : `「${esc(st ? st["店名"] : rc.chain)} ${esc(rc.branch)}」は未登録の店舗です。登録しますか？`;
+  return `<div class="rreg"><div>🏪 ${msg}</div><div class="rregbtns"><button class="rregno" data-r="regskip" data-i="${i}">しない</button><button class="rregok" data-r="reg" data-i="${i}">登録する</button></div></div>`;
+}
+let regDraft = null;
+function openReg(i) {
+  const rc = RL()[i], kind = regState(rc); if (!kind) return;
+  const st = (D.stores || []).find(s => s.ID === rc.sid);
+  const name = kind === "store" ? String(rc.chain).trim() : st["店名"];
+  regDraft = { i, kind, name, alias: "", branch: String(rc.branch || "").trim(), pos: null, size: "中", q: `${name} ${rc.branch || ""}`.trim(), res: null, busy: false, msg: "" };
+  drawReg();
+}
+function drawReg() {
+  const d = regDraft, sz = SIZES[d.size];
+  modal(`<div class="title" style="margin-top:0">${d.kind === "store" ? "お店を登録" : "店舗を登録"}</div>
+    <div class="small muted" style="margin:-8px 4px 10px;text-align:center">買い物リストの「店舗」に入ります。どれも任意です</div>
+    <div class="card" style="padding:4px 16px">
+      ${d.kind === "store" ? `<div class="field"><label>店名</label><input data-rq="name" value="${esc(d.name)}" maxlength="30"></div>
+        <div class="field"><label>別名</label><input data-rq="alias" value="${esc(d.alias)}" maxlength="40" placeholder="任意（例：COSTCO、無印）"></div>`
+        : `<div class="field"><label>店名</label><div style="padding:12px 0;font-weight:700">${esc(d.name)}</div></div>`}
+      <div class="field"><label>店舗名</label><input data-rq="branch" value="${esc(d.branch)}" maxlength="30" placeholder="任意（例：須恵店）"></div>
+    </div>
+    <div class="sec">位置<span class="small muted">（近くに来たとき、お店がわかります）</span></div>
+    <div class="card rpos">${d.pos ? `📍 <b>${esc(d.pos.label)}</b><button class="link" data-r="regclear">消す</button>` : `<span class="muted">未設定（任意）</span>`}</div>
+    <div class="rsearch"><input data-rq="q" value="${esc(d.q)}" placeholder="店名・住所で探す"><button class="btn" data-r="regfind">探す</button></div>
+    <button class="btn" style="margin-top:8px" data-r="reghere">今いる場所にする</button>
+    ${d.msg ? `<div class="small muted" style="margin:8px 4px 0">${esc(d.msg)}</div>` : ""}
+    ${d.busy ? `<div class="small muted" style="margin:8px 4px 0">さがしています…</div>` : ""}
+    ${d.res && d.res.length ? `<div class="rres">${d.res.map((r, k) => `<button data-r="regpick" data-k="${k}"><b>${esc(r.title)}</b><span>${esc(r.sub || "")}${r.m != null ? "・" + distText(r.m) : ""}</span></button>`).join("")}</div>` : ""}
+    <div class="sec">規模<span class="small muted">（この範囲にいたら、そのお店にいるとみなします）</span></div>
+    <button class="rsize" data-r="regsize"><b>${d.size}</b><span>${sz.m >= 1000 ? sz.m / 1000 + "km" : sz.m + "m"}・${sz.hint}</span><i>押すと 中→小→大</i></button>
+    <div class="row2" style="margin-top:14px"><button class="btn" data-r="mclose">やめる</button><button class="btn pri pink" data-r="regsave">登録する</button></div>`);
+}
+async function regFind() {
+  const d = regDraft; if (!d || !String(d.q).trim()) return;
+  d.busy = true; d.msg = ""; d.res = null; drawReg();
+  let near = null;
+  try { near = await locate(); } catch (e) { d.msg = "現在地がわからないので、全国から探しています"; }
+  const skip = (D.branches || []).filter(b => b["緯度"] !== "" && b["経度"] !== "").map(b => ({ lat: +b["緯度"], lng: +b["経度"] }));
+  let res = [];
+  try { res = await geocode(String(d.q).trim(), near, skip, []); } catch (e) {}
+  if (regDraft !== d) return;
+  res = [...res].sort((x, y) => (y.score >= 2.5) - (x.score >= 2.5));       // 名前がぴったり合うものを先に（あとは近い順のまま）
+  d.busy = false; d.res = res;
+  if (!res.length) d.msg = (near ? "近く（30km以内）に見つかりませんでした。" : "") + "店名を短くするか、住所で探してみてください";
+  drawReg();
+}
+async function regHere() {
+  const d = regDraft; d.busy = true; d.msg = ""; drawReg();
+  try { const p = await locate(true); if (regDraft !== d) return; d.pos = { lat: p.lat, lng: p.lng, label: "今いる場所" }; }
+  catch (e) { d.msg = e.message; }
+  d.busy = false; drawReg();
+}
+function regSave() {
+  const d = regDraft, rc = RL()[d.i]; if (!rc) return;
+  const name = String(d.name || "").trim(); if (!name) { toast("店名を入れてください"); return; }
+  const isNew = d.kind === "store", sid = isNew ? uid() : rc.sid;
+  const order = Math.max(0, ...(D.stores || []).map(s => +s["並び"] || 0)) + 1;
+  const store = isNew ? { ID: sid, 店名: name, 緯度: "", 経度: "", 並び: String(order), 別名: String(d.alias || "").split(/[、,，\s　]+/).filter(Boolean).join("、") } : null;
+  const bname = String(d.branch || "").trim();
+  const branch = d.pos || bname ? { ID: uid(), 店舗ID: sid, 支店名: bname, 緯度: d.pos ? String(+d.pos.lat.toFixed(6)) : "", 経度: d.pos ? String(+d.pos.lng.toFixed(6)) : "", 規模: d.size } : null;
+  act({ type: "add_shop", store, branch });
+  // 同じお店のレシート（ほかにもあれば）も、このお店にする
+  for (const x of RL()) if (x === rc || (!x.sid && nkShop(x.chain) === nkShop(rc.chain))) { x.sid = sid; if (x === rc || nkShop(x.branch) === nkShop(rc.branch)) x.regDone = true; }
+  regDraft = null; closeModal(); rkeep();
+  toast(`「${name}${bname ? " " + bname : ""}」を登録しました${d.pos ? "" : "（位置はあとで買い物リストから入れられます）"}`);
+  render(true);
 }
 
 // ---------------------------------------------------------------- 一覧・カレンダーから明細を見る（撮影入力で保存した記録）
@@ -688,6 +771,14 @@ document.addEventListener("click", e => {
     case "catok": { closeModal(); const fn = catPick; catPick = null; if (fn) fn(b.dataset.v); rkeep(); render(true); break; }
     case "greset": if (rc.amt) delete rc.amt[b.dataset.c]; rkeep(); render(true); break;
     case "rec": openRec(i, j); break;
+    case "reg": openReg(i); break;
+    case "regskip": rc.regSkip = true; rkeep(); render(true); break;
+    case "regfind": regFind(); break;
+    case "reghere": regHere(); break;
+    case "regclear": if (regDraft) { regDraft.pos = null; drawReg(); } break;
+    case "regpick": if (regDraft && regDraft.res) { const r = regDraft.res[+b.dataset.k]; regDraft.pos = { lat: r.lat, lng: r.lng, label: r.title }; regDraft.res = null; drawReg(); } break;
+    case "regsize": if (regDraft) { regDraft.size = SIZE_NEXT[regDraft.size]; drawReg(); } break;
+    case "regsave": regSave(); break;
     case "rdetail": if (!e.target.closest("[data-a]")) openDetail(b.dataset.id); break;
     case "dmove": { const r = D.records.find(x => x.ID === detailId); pickCat("この品物のカテゴリ", r ? r["カテゴリ"] : "", c => moveItem(j, c)); break; }
     case "dcat": { const r = D.records.find(x => x.ID === detailId); pickCat("まとめてカテゴリを変える", r ? r["カテゴリ"] : "", c => recatAll(c)); break; }
@@ -718,6 +809,8 @@ document.addEventListener("input", e => {
     const [i, f] = t.dataset.rh.split("|"), rc = RL()[+i];
     if (rc) { rc[f] = t.value; if (f === "store") rc.sid = matchStore(t.value) || rc.sid; }       // お店の名前から、買い物リストのお店を選んでおく
     rkeep();
+  } else if (t.dataset.rq && regDraft) {
+    regDraft[t.dataset.rq] = t.value;
   } else if (t.dataset.rd && recDraft && t.tagName !== "SELECT") {
     if (["price", "pack"].includes(t.dataset.rd)) t.value = t.value.replace(/[^0-9]/g, "");
     if (t.dataset.rd === "amt") t.value = t.value.replace(/[^0-9.]/g, "");

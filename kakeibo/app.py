@@ -81,6 +81,15 @@ def apply(a):
         rows = [up.pop(r["ID"], r) for r in store.load("記録") if r["ID"] not in gone]
         rows += [pick("記録", r) for r in a.get("add") or []]
         store.save("記録", rows)
+    elif t == "add_shop":             # 撮影入力：未登録のお店・店舗を買い物リストに登録（位置・規模つき）
+        if a.get("store"):
+            rows = store.load("店舗")
+            if not any(r["ID"] == a["store"]["ID"] for r in rows):
+                store.save("店舗", rows + [pick("店舗", a["store"])])
+        if a.get("branch"):
+            rows = store.load("支店")
+            if not any(r["ID"] == a["branch"]["ID"] for r in rows):
+                store.save("支店", rows + [pick("支店", a["branch"])])
     elif t == "add_price":            # レシートの「記録」：買い物リストの値段の記録に入れる
         store.append("価格記録", pick("価格記録", a["row"]))
     elif t == "save_receipt_memo":    # 直した品名・カテゴリを覚える（変わった分だけ足して、表は1回で書く）
@@ -141,7 +150,9 @@ data = {
     "shopping": True,       # 買い物リスト（同じアプリの /kaimono）へのボタンを出す
     "sheets": store.using_sheets(), "password": bool(auth.secret("KAKEIBO_PASSWORD")),
     # レシートの読み取り：お店（買い物リストの登録店）・覚えた直し方・品名ごとの前の単位
-    "stores": [{"ID": r["ID"], "店名": r["店名"], "別名": r.get("別名", "")} for r in store.load("店舗") if r.get("店名")],
+    "stores": [{"ID": r["ID"], "店名": r["店名"], "別名": r.get("別名", ""), "並び": r.get("並び", ""), "緯度": r.get("緯度", ""), "経度": r.get("経度", "")}
+               for r in store.load("店舗") if r.get("店名")],
+    "branches": store.load("支店"),
     "rmemo": store.load("レシートの記憶"), "units": last_units(), "ocr": ocr.available(),
 }
 val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", ocr=ss.get("kb_ocr"), key="kb_ui", default=None)

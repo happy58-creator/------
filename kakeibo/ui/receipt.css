@@ -120,3 +120,23 @@ body.rc-edit #foot{display:none}
 body.kbd .rbar{display:none}
 .rwarns:empty{display:none}
 .rwarn{color:#8a5200;background:#fff1d6;border-radius:8px;padding:6px 10px;margin-top:8px;font-size:12px;font-weight:700;line-height:1.5}
+
+/* 未登録のお店・店舗 */
+.rreg{margin-top:10px;background:#eef5ff;border:1px solid #cfe0fb;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:700;color:#2b4a7a;line-height:1.5}
+.rregbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+.rregbtns button{height:34px;padding:0 14px;border-radius:999px;font-size:13px;font-weight:800}
+.rregok{background:#3a6fd8;color:#fff}
+.rregno{background:#fff;color:#667;border:1px solid #d5d8de}
+.rpos{padding:12px 16px;display:flex;align-items:center;gap:6px;font-size:14px}
+.rpos .link{margin-left:auto;color:var(--accent);font-weight:700;font-size:13px}
+.rsearch{display:flex;gap:8px;margin-top:8px}
+.rsearch input{flex:1;min-width:0;height:44px;border:1px solid var(--line);border-radius:12px;padding:0 12px;font-size:16px;background:#fff}
+.rsearch .btn{width:auto;padding:0 16px;flex:none}
+.rres{margin-top:8px;background:#fff;border-radius:12px;box-shadow:var(--shadow);max-height:34vh;overflow:auto}
+.rres button{display:block;width:100%;text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+.rres b{display:block;font-size:14px}
+.rres span{font-size:11px;color:var(--sub)}
+.rsize{display:flex;align-items:center;gap:10px;width:100%;background:#fff;border-radius:12px;box-shadow:var(--shadow);padding:10px 14px;text-align:left}
+.rsize b{width:34px;height:34px;border-radius:50%;background:var(--pinkL);color:#b24d72;display:grid;place-items:center;font-size:15px;flex:none}
+.rsize span{font-size:13px;font-weight:700;flex:1}
+.rsize i{font-style:normal;font-size:10px;color:var(--sub)}

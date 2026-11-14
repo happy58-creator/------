@@ -11,6 +11,7 @@ _kanji = components.declare_component("kanji_game", path=str(_WEB / "kanji"))
 _amida = components.declare_component("amida_game", path=str(_WEB / "amida"))
 _itpass = components.declare_component("itpass_study", path=str(_WEB / "itpass"))
 _fe = components.declare_component("fe_study", path=str(_WEB / "fe"))
+_calc = components.declare_component("calc_study", path=str(_WEB / "calc"))
 # トップ画面の下のメニューとカレンダー（同じ JavaScript。iframe の名前を分けて、CSS で下のメニューだけ画面の下に固定する）
 _home_footer = components.declare_component("home_footer", path=str(_WEB / "home"))
 _home_calendar = components.declare_component("home_calendar", path=str(_WEB / "home"))
@@ -59,3 +60,8 @@ def home_calendar(key, **args):
 def fe_study(key, **args):
     """基本情報技術者試験の学習画面（ITパスポートと同じつくり）。結果 {"type": "log", ...} や AIへの質問 {"type": "ask", ...} を返す。"""
     return _fe(key=key, default=None, **args)
+
+
+def calc_study(key, **args):
+    """算数・数学マスター（練習問題と学ぶ）。たのみごと {"type": "start" / "check" / "ai" / "learned" / "example", "nonce", ...} を返す。"""
+    return _calc(key=key, default=None, **args)

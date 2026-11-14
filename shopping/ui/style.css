@@ -309,3 +309,7 @@ body.kbd .gdial .gscroll{padding:0 calc(50% - 29px)}
 .sizehint{font-size:13px;font-weight:700;line-height:1.4}.sizehint small{display:block;font-size:11px;font-weight:600;color:var(--sub)}
 .sizetag{font-style:normal;color:#fff;font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:2px}
 .sizerow label{white-space:nowrap;flex:none;width:54px}
+
+/* 記録：お店を選びなおす */
+.storepick{font:inherit;font-weight:800;color:inherit;padding:0;background:none;border:0;display:inline-flex;align-items:center;gap:3px;text-align:left}
+.storepick i{font-style:normal;font-size:11px;color:var(--sub,#8a8f99)}

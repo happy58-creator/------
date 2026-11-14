@@ -237,7 +237,7 @@ const App = {
       listMode: "todo", storeMode: "all", storeSel: "", here: null, hereErr: "", hereBusy: false,
       // 計算
       price: "", qty: "1", lines: [], tax: "込",
-      ctab: "cmp", cmp: [], taxIn: "", cmpFocus: "", saveFocus: false, histDraft: null, priceQ: "", priceSave: null, priceOpen: "", taxRateT: "8", taxDir: "in",
+      ctab: "cmp", cmp: [], taxIn: "", cmpFocus: "", saveFocus: false, histDraft: null, priceQ: "", priceSave: null, priceOpen: "", recStore: null, taxRateT: "8", taxDir: "in",
       // 店舗の登録・ジャンル
       storeDraft: null, genreDraft: null, pickFor: -1, addrQ: "", addrRes: null, addrBusy: false,
       toast: "", toastOn: false, saving: 0, confirm: null,
@@ -808,6 +808,19 @@ const App = {
       toast(`記録 ${add.length}件を足しました`);
     }
     const cmpLabel = c => (c.name || "") + (c.from ? `（${c.from.store}）` : S.cmp.some(x => x.from) ? "（いま）" : "");
+    // 記録のお店を選びなおす（ids：直す記録。まとめた行なら、そのお店の記録ぜんぶ）
+    function groupIds(nm, base, x) {
+      const key = x.sid || ("n:" + (x.best["店名"] || ""));
+      return S.prices.filter(r => normName(r["品名"]) === normName(nm) && recInfo(r).base === base && (r["店舗ID"] || ("n:" + (r["店名"] || ""))) === key).map(r => r.ID);
+    }
+    function openRecStore(ids, sid, title) { S.recStore = { ids, sid: sid || "", title }; }
+    function setRecStore(sid) {
+      const rs = S.recStore; if (!rs) return;
+      const st = storeOf(sid), set = new Set(rs.ids);
+      save("価格記録", S.prices.map(r => set.has(r.ID) ? { ...r, 店舗ID: sid || "", 店名: st ? st["店名"] : "" } : r));
+      S.recStore = null;
+      toast(`${rs.ids.length > 1 ? rs.ids.length + "件の" : ""}お店を「${st ? st["店名"] : "お店未定"}」にしました`);
+    }
     function removePrice(r) { save("価格記録", S.prices.filter(x => x.ID !== r.ID)); toast("記録を消しました"); }
     const recDetail = r => `${Number(r["値段"]).toLocaleString()}円・${isCount(r["単位"]) ? (num(r["量"]) > 1 ? r["量"] + r["単位"] : "1" + r["単位"]) : r["量"] + r["単位"] + (num(r["入数"]) > 1 ? "×" + r["入数"] : "")}・${String(r["日付"]).slice(5).replace("-", "/")}${r["メモ"] ? "・" + r["メモ"] : ""}`;
     const cycleTax = c => { c.tax = c.tax === "込" ? "8" : c.tax === "8" ? "10" : "込"; keep(); };
@@ -968,7 +981,7 @@ const App = {
     keyboardHelper(() => document.getElementById("app"));
     SL.ready(); SL.height();
     return { S, svg, gIcon, yen, distText, NEAR, SIZES, SIZE_NEXT, sizeOf, radiusOf, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
-      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, openHist, saveHist, histPrice, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, recDetail, num, normName, genreFor, cmpCands, cmpFocus, cmpBlur, cmpName, pickCmpName, cancelBlur, saveBlur, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
+      taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, openHist, saveHist, histPrice, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, groupIds, openRecStore, setRecStore, recDetail, num, normName, genreFor, cmpCands, cmpFocus, cmpBlur, cmpName, pickCmpName, cancelBlur, saveBlur, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
       editStore, useHere, clearPin, saveStore, editBranch, saveBranch, deleteBranch, backToStore, draftBranches, branchesOf, branchLabel, addSuggest, dismissSuggest, hasPos, storeOf, meters, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
@@ -1145,18 +1158,19 @@ const App = {
       <div class="addr" style="grid-template-columns:1fr"><input v-model="S.priceQ" placeholder="品名で探す（例：豚こま）" @input="S.priceOpen = ''"></div>
       <div v-if="!S.prices.length" class="card small muted" style="margin-top:10px">まだ記録がありません。「比べる」で値段を入れて、行の「記録」を押すと、お店ごとに残ります</div>
       <div v-else-if="!priceNames.length" class="card small muted" style="margin-top:10px">「{{ S.priceQ }}」の記録はありません</div>
+      <div v-else class="small muted" style="margin:8px 4px 0">お店の名前（▾）を押すと、お店を選びなおせます</div>
       <template v-for="nm in priceNames" :key="nm">
         <div class="day recname" @click="S.priceOpen = S.priceOpen === nm ? '' : nm"><span class="bic" v-html="gIcon(genreFor(nm))"></span>{{ nm }}<span class="muted small" style="margin-left:auto">{{ S.priceOpen === nm ? '閉じる' : 'くわしく' }}</span>
           <button class="cmpgo" @click.stop="compareFromRec(nm)">比べる</button></div>
         <div v-for="g in priceBook(nm)" :key="nm + g.base" class="list">
           <div class="small muted recbase" v-if="priceBook(nm).length > 1">{{ g.per === 1 ? '1' + g.base : g.per + g.base }}あたりで比べた記録<button class="link" @click="compareFromRec(nm, g.base)">この単位で比べる ›</button></div>
           <div v-for="(x, k) in g.list" :key="x.sid + x.name" class="item recrow" :class="{ top: k === 0 && g.list.length > 1 }" style="grid-template-columns:1fr auto">
-            <div class="t"><b>{{ x.name }}<em v-if="k === 0 && g.list.length > 1" class="besttag">最安</em></b><span>{{ recDetail(x.best) }}{{ x.n > 1 ? '（記録 ' + x.n + '件の最安）' : '' }}</span></div>
+            <div class="t"><b><button class="storepick" @click="openRecStore(groupIds(nm, g.base, x), x.sid, nm + '・' + x.name + 'の記録' + (x.n > 1 ? x.n + '件' : ''))">{{ x.name }}<i>▾</i></button><em v-if="k === 0 && g.list.length > 1" class="besttag">最安</em></b><span>{{ recDetail(x.best) }}{{ x.n > 1 ? '（記録 ' + x.n + '件の最安）' : '' }}</span></div>
             <div class="recv">{{ fmtPer(num(x.best['単価']), g.base, g.per) }}<small v-if="k > 0">+{{ Math.round((num(x.best['単価']) / num(g.list[0].best['単価']) - 1) * 100) }}%</small></div>
           </div>
           <template v-if="S.priceOpen === nm">
             <div v-for="r in S.prices.filter(r => normName(r['品名']) === normName(nm) && recInfo(r).base === g.base).slice().reverse()" :key="r.ID" class="item recall" style="grid-template-columns:1fr auto auto">
-              <div class="t"><b>{{ (storeOf(r['店舗ID']) || {})['店名'] || r['店名'] || 'お店未定' }}</b><span>{{ recDetail(r) }}</span></div>
+              <div class="t"><b><button class="storepick" @click="openRecStore([r.ID], r['店舗ID'], nm + '・' + (r['日付'] || '') + 'の記録')">{{ (storeOf(r['店舗ID']) || {})['店名'] || r['店名'] || 'お店未定' }}<i>▾</i></button></b><span>{{ recDetail(r) }}</span></div>
               <div class="recv small">{{ fmtPer(num(r['単価']), g.base, g.per) }}</div>
               <button class="del" @click="removePrice(r)" aria-label="消す">✕</button>
             </div>
@@ -1386,6 +1400,16 @@ const App = {
   </div>
   <div v-if="priceBook(S.priceSave.name).length" class="hint" style="margin-top:10px">{{ rowHint({ ...S.priceSave.c, name: S.priceSave.name }).text }}</div>
   <div class="row2" style="margin-top:14px"><button class="btn" @click="S.priceSave = null">やめる</button><button class="btn pri" @click="savePrice">記録する</button></div>
+</div></div>
+<div v-if="S.recStore" class="modal" @click.self="S.recStore = null"><div class="sheet">
+  <div style="font-weight:800;font-size:17px;margin-bottom:4px">お店を選ぶ</div>
+  <div class="small muted" style="margin-bottom:12px">{{ S.recStore.title }}</div>
+  <div class="chips" style="flex-wrap:wrap">
+    <button v-for="s in sortedStores" :key="s.ID" class="chip" :class="{ on: S.recStore.sid === s.ID }" @click="setRecStore(s.ID)">{{ s['店名'] }}</button>
+    <button class="chip" :class="{ on: !S.recStore.sid }" @click="setRecStore('')">お店未定</button>
+  </div>
+  <div v-if="!sortedStores.length" class="small muted" style="margin-top:10px">お店は「店舗」の画面で登録できます</div>
+  <button class="btn" style="margin-top:14px" @click="S.recStore = null">閉じる</button>
 </div></div>
 <div v-if="S.confirm" class="modal" @click.self="S.confirm = null"><div class="sheet center">
   <div style="font-weight:800;font-size:16px;margin:4px 0 16px;text-align:center" v-html="S.confirm.msg"></div>
