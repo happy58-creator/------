@@ -28,16 +28,24 @@ LEVELS = {
     "大人（社会人・学び直し）": ("大人向け。日常会話と職場で使う実用英語（TOEIC 600点前後）。メール・会議・旅行・買い物でよく使う語彙や表現。", False),
 }
 
+# コース → 向き（英→和・和→英）。向きのないコースは "" だけ
 COURSES = {
-    "単語": "英単語を見て、意味を答えよう（絵文字つき）",
-    "文": "短い英語の文の ＿＿ に入ることばを選ぼう",
-    "和英": "日本語を見て、正しい英語を選ぼう（日本語 → 英語）",
+    "単語": {"icon": "🔤", "dirs": {
+        "英→和": ("英単語を見て、日本語の意味を選ぼう（絵文字つき）", "この単語の意味は？"),
+        "和→英": ("日本語を見て、正しい英単語を選ぼう", "これを 英語にすると？")}},
+    "文": {"icon": "📝", "dirs": {
+        "英→和": ("英語の文を読んで、正しい日本語訳を選ぼう", "この文の意味は？"),
+        "和→英": ("日本語の文を見て、正しい英語の文を選ぼう", "これを 英語にすると？")}},
+    "穴うめ": {"icon": "✏️", "dirs": {
+        "": ("短い英語の文の ＿＿ に入ることばを選ぼう", "＿＿ に入ることばは？")}},
 }
-COURSE_ICONS = {"単語": "🔤", "文": "📝", "和英": "🇯🇵"}
-COURSE_QUESTIONS = {"単語": "この単語の意味は？", "文": "＿＿ に入ることばは？", "和英": "これを 英語にすると？"}
 
 
-def build_prompt(course, level, topic, kana_only):
+def course_label(course, d):
+    return f"{course}（{d}）" if d else course
+
+
+def build_prompt(course, d, level, topic, kana_only):
     guide = LEVELS[level][0]
     topic_line = f"- テーマは「{topic}」に関連づけてください。" if topic else "- テーマはおまかせ（いろいろな分野から出す）。"
     ja_rule = (
@@ -45,22 +53,36 @@ def build_prompt(course, level, topic, kana_only):
         if kana_only
         else "日本語の説明は、年齢に合った自然な表現にしてください。"
     )
-    if course == "単語":
-        form = """- 「単語コース」です。1問ごとに英単語を1つ出し、その日本語の意味を3〜4択で答えさせます。
+    if course == "単語" and d == "和→英":
+        form = """- 「単語コース（日本語→英語）」です。1問ごとに日本語の単語を1つ出し、それを表す正しい英単語を3〜4択で答えさせます。
+- promptには日本語の単語（または短いことば）だけを書きます。年齢が低いときは、ひらがなだけで書きます。
+- emojiには、その単語を表す絵文字を1〜2個入れます（抽象語で合う絵文字がなければ空文字）。
+- readingには、正解の英単語のカタカナの読みを入れます。
+- translationは使わず空文字にします。
+- choicesは英単語（または熟語）の選択肢。つづりが似ている語や、意味が近い語など、まぎらわしい誤答を混ぜてください。"""
+    elif course == "単語":
+        form = """- 「単語コース（英語→日本語）」です。1問ごとに英単語を1つ出し、その日本語の意味を3〜4択で答えさせます。
 - promptには英単語（または熟語）だけを書きます。
 - emojiには、その単語を表す絵文字を1〜2個入れます（抽象語で合う絵文字がなければ空文字）。
 - readingには、カタカナの読みを入れます。
 - translationは使わず空文字にします。
 - choicesは日本語の意味の選択肢。紛らわしい誤答を混ぜてください。"""
-    elif course == "和英":
-        form = """- 「和英コース（日本語→英語）」です。1問ごとに日本語を出し、それを表す正しい英語を3〜4択で答えさせます。
-- promptには日本語を書きます。年齢が低いときは、ひらがなだけで書きます。レベルが上がるほど、短い文（例：わたしは毎日学校に行きます。）も混ぜてください。
-- emojiには、場面や意味を表す絵文字を1〜2個入れます（なければ空文字）。
+    elif course == "文" and d == "和→英":
+        form = """- 「文コース（日本語→英語）」です。1問ごとに日本語の短い文を出し、それを表す正しい英語の文を3〜4択で答えさせます。
+- promptには日本語の文を書きます（例：わたしは毎日学校に行きます。）。年齢が低いときは、ひらがなだけで書きます。
+- emojiには、場面を表す絵文字を1〜2個入れます（なければ空文字）。
 - readingとtranslationは使わず空文字にします。
-- choicesは英語の選択肢（単語・熟語・短い文）。つづりや文法がまぎらわしい誤答を混ぜてください。
-- answerは正しい英語で、choicesの中の1つと完全に一致させてください。"""
+- choicesは英語の文。語順・時制・三単現の s・前置詞などが少しだけちがう、まぎらわしい誤答を混ぜてください。
+- answerは正しい英語の文で、choicesの中の1つと完全に一致させてください。"""
+    elif course == "文":
+        form = """- 「文コース（英語→日本語）」です。1問ごとに英語の短い文を出し、その正しい日本語訳を3〜4択で答えさせます。
+- promptには英語の文を書きます。
+- emojiには、場面を表す絵文字を1〜2個入れます（なければ空文字）。
+- readingとtranslationは使わず空文字にします。
+- choicesは日本語訳。主語・時制・否定・疑問などが少しだけちがう、まぎらわしい誤答を混ぜてください。
+- answerは正しい日本語訳で、choicesの中の1つと完全に一致させてください。"""
     else:
-        form = """- 「文コース」です。1問ごとに英語の文の一部を ＿＿ にして、入る英語を3〜4択で答えさせます。
+        form = """- 「穴うめコース」です。1問ごとに英語の文の一部を ＿＿ にして、入る英語を3〜4択で答えさせます。
 - promptには ＿＿ を1か所含む英語の文を書きます。
 - emojiには場面を表す絵文字を1〜2個入れます（なければ空文字）。
 - readingは使わず空文字にします。
@@ -100,8 +122,8 @@ def valid_question(q):
     )
 
 
-def generate_questions(course, level, topic):
-    prompt = build_prompt(course, level, topic, LEVELS[level][1])
+def generate_questions(course, d, level, topic):
+    prompt = build_prompt(course, d, level, topic, LEVELS[level][1])
     last_error = None
     for model in (common.GEMINI_MODEL, getattr(common, "GEMINI_FALLBACK_MODEL", common.GEMINI_MODEL)):   # 失敗したら予備のモデルで1回だけ
         try:
@@ -132,12 +154,13 @@ def pdf_info(course, level, topic):
 def handle(v):
     t = v.get("type")
     if t == "gen":
-        course, level, topic = v.get("course"), v.get("level"), str(v.get("topic") or "").strip()[:40]
-        if course not in COURSES or level not in LEVELS:
+        course, d, level, topic = v.get("course"), v.get("dir") or "", v.get("level"), str(v.get("topic") or "").strip()[:40]
+        if course not in COURSES or d not in COURSES[course]["dirs"] or level not in LEVELS:
             return {"error": "えらび方がおかしいよ"}
-        return {"questions": generate_questions(course, level, topic)}
+        return {"questions": generate_questions(course, d, level, topic)}
     if t == "log":                              # 10問おわった：記録して、表彰状をつくる
-        course, level, topic = v.get("course"), v.get("level"), v.get("topic") or ""
+        course = course_label(str(v.get("course") or ""), str(v.get("dir") or ""))
+        level, topic = v.get("level"), v.get("topic") or ""
         rows = [(str(r[0]), str(r[1]), str(r[2]), bool(r[3])) for r in v.get("rows") or []][:TOTAL_Q]
         score = sum(1 for r in rows if r[3])
         info = pdf_info(course, level, topic)
@@ -151,4 +174,4 @@ def handle(v):
 levels = list(LEVELS)
 js_page.serve(web_games.english_study, "en", handle,
               levels=levels, level=levels[common.age_level_index(len(levels))], age=ss.get("auth_age"),
-              courses=[{"id": c, "desc": COURSES[c], "icon": COURSE_ICONS[c], "ask": COURSE_QUESTIONS[c]} for c in COURSES])
+              courses=[{"id": c, "icon": v["icon"], "dirs": [{"id": d, "desc": x[0], "ask": x[1]} for d, x in v["dirs"].items()]} for c, v in COURSES.items()])

@@ -10,17 +10,24 @@ createApp({
     const L = Kit.load("en_v1", {});
     const S = reactive({
       ready: false, args: {}, view: "menu",
-      level: L.level || "", course: L.course || "単語", assist: L.assist ?? true, topic: "",
+      level: L.level || "", course: L.course || "単語", dirs: L.dirs || {}, assist: L.assist ?? true, topic: "",
       qs: [], i: 0, pick: null, decided: null, hint: false, log: [], rows: [], run: "",
       busy: false, sec: 0, err: "", pdf: "", toast: "",
     });
-    const keep = () => Kit.save("en_v1", { level: S.level, course: S.course, assist: S.assist });
+    const keep = () => Kit.save("en_v1", { level: S.level, course: S.course, dirs: S.dirs, assist: S.assist });
     function onArgs(a) {
       S.args = a; S.ready = true; Kit.takeReply(a);
       if (!S.level || !(a.levels || []).includes(S.level)) S.level = a.level;
+      if (S.course === "和英") { S.course = "文"; S.dirs["文"] = "和→英"; }        // 前の「和英コース」→ 文コースの 和→英
+      if (!(a.courses || []).some(c => c.id === S.course)) S.course = ((a.courses || [])[0] || {}).id || "";
     }
     const courses = computed(() => S.args.courses || []);
-    const courseOf = id => courses.value.find(c => c.id === id) || {};
+    const courseOf = id => courses.value.find(c => c.id === id) || { dirs: [] };
+    // そのコースで えらんでいる向き（英→和・和→英）。向きのないコースは ""
+    const dirOf = id => { const ds = courseOf(id).dirs.map(d => d.id); return ds.includes(S.dirs[id]) ? S.dirs[id] : (ds[0] || ""); };
+    const infoOf = (id, d) => courseOf(id).dirs.find(x => x.id === d) || {};
+    const label = (id, d) => d ? `${id}（${d}）` : id;
+    function setDir(id, d) { S.course = id; S.dirs[id] = d; keep(); }
     let toastT = 0;
     function toast(m) { Kit.placeToast(); S.toast = m; clearTimeout(toastT); toastT = setTimeout(() => S.toast = "", 2600); }
 
@@ -33,7 +40,7 @@ createApp({
         S.sec++;
         if (S.sec >= 90) { clearInterval(waitT); S.busy = false; S.err = "AIの返事が 来ないみたい…。通信を たしかめて、もう一度 押してみてね"; }
       }, 1000);
-      Kit.ask({ type: "gen", course: S.course, level: S.level, topic: S.topic.trim() }, r => {
+      Kit.ask({ type: "gen", course: S.course, dir: dirOf(S.course), level: S.level, topic: S.topic.trim() }, r => {
         clearInterval(waitT); S.busy = false;
         if (r.error || !r.questions) { if (S.view === "menu") S.err = r.error || "うまく作れなかったよ。もう一度ためしてね"; return; }
         if (S.view !== "menu") return;
@@ -42,7 +49,7 @@ createApp({
     }
     function begin(qs, topic) {
       S.qs = qs.map(q => ({ ...q, choices: Kit.shuffle(q.choices) }));
-      S.playTopic = topic; S.playCourse = S.course; S.playLevel = S.level; S.playAssist = S.assist;
+      S.playTopic = topic; S.playCourse = S.course; S.playDir = dirOf(S.course); S.playLevel = S.level; S.playAssist = S.assist;
       S.i = 0; S.pick = null; S.decided = null; S.hint = false; S.log = []; S.rows = []; S.pdf = ""; S.run = Kit.uid();
       S.view = "play"; Kit.top();
     }
@@ -59,7 +66,7 @@ createApp({
       if (S.i < TOTAL - 1 && S.i < S.qs.length - 1) { S.i++; S.pick = null; S.decided = null; S.hint = false; Kit.top(); return; }
       S.view = "end"; Kit.top();
       if (score.value === S.qs.length) Kit.party();
-      Kit.ask({ type: "log", run: S.run, course: S.playCourse, level: S.playLevel, topic: S.playTopic, rows: S.rows }, r => { S.pdf = r.pdf || ""; });
+      Kit.ask({ type: "log", run: S.run, course: S.playCourse, dir: S.playDir, level: S.playLevel, topic: S.playTopic, rows: S.rows }, r => { S.pdf = r.pdf || ""; });
     }
     function again() { begin(S.qs, S.playTopic); }
     const wrong = computed(() => S.qs.filter((x, k) => S.log[k] === false));
@@ -70,7 +77,7 @@ createApp({
     }
     const optClass = c => S.decided == null ? { on: S.pick === c } : { right: c === q.value.answer, wrong: c === S.decided && c !== q.value.answer };
     Streamlit.ready(onArgs);
-    return { S, TOTAL, TOPICS, courses, courseOf, start, q, score, decide, next, again, wrong, quit, optClass, Kit };
+    return { S, TOTAL, TOPICS, courses, courseOf, dirOf, infoOf, label, setDir, keep, start, q, score, decide, next, again, wrong, quit, optClass, Kit };
   },
   template: `
 <div class="wrap" v-if="S.ready">
@@ -87,7 +94,11 @@ createApp({
     <div class="card">
       <div class="h3">② コース</div>
       <div class="pick">
-        <button v-for="c in courses" :key="c.id" class="pk" :class="{ on: S.course === c.id }" @click="S.course = c.id"><span class="ic">{{ c.icon }}</span><span class="grow"><b>{{ c.id }}コース</b><small>{{ c.desc }}</small></span></button>
+        <div v-for="c in courses" :key="c.id" class="pk crs" :class="{ on: S.course === c.id }" @click="S.course = c.id; keep()">
+          <span class="ic">{{ c.icon }}</span>
+          <span class="grow"><b>{{ c.id }}コース</b><small>{{ infoOf(c.id, dirOf(c.id)).desc }}</small></span>
+          <span v-if="c.dirs.length > 1" class="dirs" @click.stop><button v-for="d in c.dirs" :key="d.id" :class="{ on: dirOf(c.id) === d.id }" @click="setDir(c.id, d.id)">{{ d.id }}</button></span>
+        </div>
       </div>
     </div>
     <div class="card">
@@ -102,14 +113,14 @@ createApp({
   </template>
 
   <template v-else-if="S.view === 'play'">
-    <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ S.playCourse }}コース・{{ S.i + 1 }} / {{ S.qs.length }}問目</b><span class="cnt">⭕{{ score }}</span></div>
+    <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ label(S.playCourse, S.playDir) }}・{{ S.i + 1 }} / {{ S.qs.length }}問目</b><span class="cnt">⭕{{ score }}</span></div>
     <div class="prog"><i :style="{ width: (S.i / S.qs.length * 100) + '%' }"></i></div>
     <div class="card center qbox">
       <div v-if="S.playAssist && q.emoji" class="emoji">{{ q.emoji }}</div>
       <div class="prompt">{{ q.prompt }}</div>
-      <div v-if="S.playAssist && S.playCourse === '単語' && q.reading" class="reading">（{{ q.reading }}）</div>
+      <div v-if="S.playAssist && S.playCourse === '単語' && S.playDir !== '和→英' && q.reading" class="reading">（{{ q.reading }}）</div>
     </div>
-    <div class="h3" style="margin:4px 4px 0">{{ courseOf(S.playCourse).ask }}</div>
+    <div class="h3" style="margin:4px 4px 0">{{ infoOf(S.playCourse, S.playDir).ask }}</div>
     <div class="opts">
       <button v-for="(c, k) in q.choices" :key="S.i + '-' + k" class="opt" :class="optClass(c)" :disabled="S.decided != null" @click="S.pick = c"><span class="mk">{{ 'ABCDE'[k] }}</span><span class="grow">{{ c }}</span></button>
     </div>
@@ -119,7 +130,7 @@ createApp({
     </template>
     <template v-else>
       <div class="fb" :class="S.decided === q.answer ? 'ok' : 'ng'">{{ S.decided === q.answer ? '⭕ せいかい！ ' + q.answer : '❌ ざんねん… 正しい答えは「' + q.answer + '」だよ' }}
-        <small v-if="q.translation">📖 日本語訳：{{ q.translation }}</small><small v-if="q.explanation">{{ q.explanation }}</small></div>
+        <small v-if="S.playCourse === '単語' && S.playDir === '和→英' && q.reading">🔊 読み方：{{ q.reading }}</small><small v-if="q.translation">📖 日本語訳：{{ q.translation }}</small><small v-if="q.explanation">{{ q.explanation }}</small></div>
       <button class="big" @click="next">{{ S.i >= S.qs.length - 1 ? '結果発表へ！ 🏆' : '次の問題へ ➡️' }}</button>
     </template>
   </template>
@@ -129,7 +140,7 @@ createApp({
     <div class="card score">
       <div><small>点数</small><b>{{ score * 10 }}</b><i>/ 100点</i></div>
       <div><small>正解</small><b>{{ score }}</b><i>/ {{ S.qs.length }}問</i></div>
-      <div><small>コース</small><b style="font-size:20px">{{ S.playCourse }}</b></div>
+      <div><small>コース</small><b style="font-size:16px">{{ label(S.playCourse, S.playDir) }}</b></div>
     </div>
     <div class="marks">{{ S.log.map(o => o ? '⭕' : '❌').join('') }}</div>
     <div class="note" :class="score >= 7 ? 'good' : 'warn'">{{ score === S.qs.length ? '🥇 パーフェクト！ 英語マスターだ！' : score >= 7 ? '🥈 すばらしい！ あと少しで満点だよ。' : '🌱 よくがんばったね！ まちがえた問題を見なおして、もう一回やってみよう。' }}</div>
