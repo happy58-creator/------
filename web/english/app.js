@@ -10,24 +10,24 @@ createApp({
     const L = Kit.load("en_v1", {});
     const S = reactive({
       ready: false, args: {}, view: "menu",
-      level: L.level || "", course: L.course || "単語", dirs: L.dirs || {}, assist: L.assist ?? true, topic: "",
+      level: L.level || "", course: L.course || "単語", dir: L.dir === "和→英" ? "和→英" : "英→和", assist: L.assist ?? true, topic: "",
       qs: [], i: 0, pick: null, decided: null, hint: false, log: [], rows: [], run: "",
       busy: false, sec: 0, err: "", pdf: "", toast: "",
     });
-    const keep = () => Kit.save("en_v1", { level: S.level, course: S.course, dirs: S.dirs, assist: S.assist });
+    const keep = () => Kit.save("en_v1", { level: S.level, course: S.course, dir: S.dir, assist: S.assist });
     function onArgs(a) {
       S.args = a; S.ready = true; Kit.takeReply(a);
       if (!S.level || !(a.levels || []).includes(S.level)) S.level = a.level;
-      if (S.course === "和英") { S.course = "文"; S.dirs["文"] = "和→英"; }        // 前の「和英コース」→ 文コースの 和→英
+      if (S.course === "和英") { S.course = "文"; S.dir = "和→英"; }        // 前の「和英コース」→ 文コースの 和→英
       if (!(a.courses || []).some(c => c.id === S.course)) S.course = ((a.courses || [])[0] || {}).id || "";
     }
     const courses = computed(() => S.args.courses || []);
     const courseOf = id => courses.value.find(c => c.id === id) || { dirs: [] };
-    // そのコースで えらんでいる向き（英→和・和→英）。向きのないコースは ""
-    const dirOf = id => { const ds = courseOf(id).dirs.map(d => d.id); return ds.includes(S.dirs[id]) ? S.dirs[id] : (ds[0] || ""); };
+    // 向き（英→和・和→英）は全コースまとめて1つ。向きのないコース（穴うめ）は ""
+    const dirOf = id => { const ds = courseOf(id).dirs.map(d => d.id); return ds.includes(S.dir) ? S.dir : (ds[0] || ""); };
     const infoOf = (id, d) => courseOf(id).dirs.find(x => x.id === d) || {};
     const label = (id, d) => d ? `${id}（${d}）` : id;
-    function setDir(id, d) { S.course = id; S.dirs[id] = d; keep(); }
+    function setDir(d) { S.dir = d; keep(); }
     let toastT = 0;
     function toast(m) { Kit.placeToast(); S.toast = m; clearTimeout(toastT); toastT = setTimeout(() => S.toast = "", 2600); }
 
@@ -92,12 +92,12 @@ createApp({
       </div>
     </div>
     <div class="card">
-      <div class="h3">② コース</div>
+      <div class="h3">② 向きと コース</div>
+      <div class="seg two"><button v-for="d in ['英→和', '和→英']" :key="d" :class="{ on: S.dir === d }" @click="setDir(d)">{{ d === '英→和' ? '🔤 英語 → 日本語' : '🇯🇵 日本語 → 英語' }}</button></div>
       <div class="pick">
         <div v-for="c in courses" :key="c.id" class="pk crs" :class="{ on: S.course === c.id }" @click="S.course = c.id; keep()">
           <span class="ic">{{ c.icon }}</span>
-          <span class="grow"><b>{{ c.id }}コース</b><small>{{ infoOf(c.id, dirOf(c.id)).desc }}</small></span>
-          <span v-if="c.dirs.length > 1" class="dirs" @click.stop><button v-for="d in c.dirs" :key="d.id" :class="{ on: dirOf(c.id) === d.id }" @click="setDir(c.id, d.id)">{{ d.id }}</button></span>
+          <span class="grow"><b>{{ c.id }}コース<em v-if="c.dirs.length < 2" class="nodir">英語だけ</em></b><small>{{ infoOf(c.id, dirOf(c.id)).desc }}</small></span>
         </div>
       </div>
     </div>
