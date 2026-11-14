@@ -13,6 +13,7 @@ _itpass = components.declare_component("itpass_study", path=str(_WEB / "itpass")
 _fe = components.declare_component("fe_study", path=str(_WEB / "fe"))
 _calc = components.declare_component("calc_study", path=str(_WEB / "calc"))
 _english = components.declare_component("english_study", path=str(_WEB / "english"))
+_speaking = components.declare_component("speaking_study", path=str(_WEB / "speaking"))
 _programming = components.declare_component("programming_study", path=str(_WEB / "programming"))
 _kokugo = components.declare_component("kokugo_study", path=str(_WEB / "kokugo"))
 _history = components.declare_component("history_view", path=str(_WEB / "seiseki"))   # "history" は .gitignore で外されるので別の名前
@@ -74,6 +75,11 @@ def calc_study(key, **args):
 def english_study(key, **args):
     """AI英語チャレンジ。たのみごと {"type": "gen" / "log", "nonce", ...} を返す（js_page.serve で受ける）。"""
     return _english(key=key, default=None, **args)
+
+
+def speaking_study(key, **args):
+    """AI英語スピーキング（聞いて答える・見て話す）。たのみごと {"type": "gen" / "done", "nonce", ...} を返す（js_page.serve で受ける）。"""
+    return _speaking(key=key, default=None, **args)
 
 
 def programming_study(key, **args):
