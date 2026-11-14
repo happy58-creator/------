@@ -74,3 +74,4 @@
 .tile.right{border-color:var(--ok);background:var(--okL)}.tile.right b{color:var(--ok)}
 .tile.wrong{border-color:var(--ng);background:var(--ngL)}.tile.wrong b{color:var(--ng)}
 .link{display:inline-flex;align-items:center;gap:4px;margin-top:4px}
+.seg.three{grid-template-columns:1fr 1fr 1.3fr}.seg.three button{font-size:14px}

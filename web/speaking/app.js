@@ -6,6 +6,10 @@ const { createApp, reactive, computed } = Vue;
 const TOPICS = ["どうぶつ", "たべもの", "スポーツ", "がっこう", "りょこう", "しごと"];
 const COURSE_IC = { 単語: "word", 文: "lines", しつもん: "question" };
 const MODE_IC = { 聞く: "headphones", 話す: "talk" };
+const SHOWS = [["en", "英語"], ["ja", "日本語"], ["enja", "英語＋日本語"]];
+// 答えの表示：大きい字（main）と、下の小さいメモ（memo）。答えたあとは のこりの方もメモに出す
+const mainOf = (show, en, ja) => show === "ja" && ja ? ja : en;
+const memoOf = (show, en, ja, after) => show === "enja" ? ja : after ? (show === "ja" ? en : ja) : "";
 
 createApp({
   components: { ic: Ic },
@@ -13,7 +17,7 @@ createApp({
     const L = Kit.load("sp_v1", {});
     const S = reactive({
       ready: false, args: {}, view: "menu",
-      level: L.level || "", mode: L.mode || "聞く", courses: L.courses || {}, slow: !!L.slow, assist: L.assist ?? true, show: L.show === "en" ? "en" : "enja", topic: "",
+      level: L.level || "", mode: L.mode || "聞く", courses: L.courses || {}, slow: !!L.slow, assist: L.assist ?? true, show: ["en", "ja", "enja"].includes(L.show) ? L.show : "enja", topic: "",
       busy: false, sec: 0, err: "", toast: "",
       qs: [], i: 0, pick: null, decided: null, hint: false, log: [], rows: [], run: "",
       rec: "idle", live: "", takes: [], built: [], playing: "", heard: 0, play: null,
@@ -147,7 +151,7 @@ createApp({
     const label = p => p ? `${p.mode === "聞く" ? "聞く" : "話す"}・${p.course}` : "";
 
     Streamlit.ready(onArgs);
-    return { S, TOPICS, COURSE_IC, MODE_IC, Voice, Rec, keep, modeOf, courseList, courseNow, infoOf, start, q, isListen, say, listen, score, decide, optClass, isBuild, tileOf, put, pull, slotOk, isRight,
+    return { S, TOPICS, SHOWS, mainOf, memoOf, COURSE_IC, MODE_IC, Voice, Rec, keep, modeOf, courseList, courseNow, infoOf, start, q, isListen, say, listen, score, decide, optClass, isBuild, tileOf, put, pull, slotOk, isRight,
       take, mic, playMine, pctClass, next, again, quit, toMenu, wrong, scoreOf, label, Kit };
   },
   template: `
@@ -179,7 +183,7 @@ createApp({
       <div class="h3"><ic n="sliders" :s="17"></ic>せってい・テーマ<span class="small muted">おこのみで</span></div>
       <template v-if="S.mode === '聞く'">
         <div class="small muted" style="margin-bottom:4px">答えの 表示</div>
-        <div class="seg two"><button :class="{ on: S.show === 'en' }" @click="S.show = 'en'; keep()">英語だけ</button><button :class="{ on: S.show === 'enja' }" @click="S.show = 'enja'; keep()">英語 ＋ 日本語</button></div>
+        <div class="seg three"><button v-for="o in SHOWS" :key="o[0]" :class="{ on: S.show === o[0] }" @click="S.show = o[0]; keep()">{{ o[1] }}</button></div>
       </template>
       <button v-if="S.mode === '聞く'" class="toggle" :class="{ on: S.slow }" @click="S.slow = !S.slow; keep()"><span class="sw"></span><span class="grow"><b>はじめから ゆっくり読む</b><small class="muted tsub">あとから「ゆっくり」ボタンでも 聞けるよ</small></span></button>
       <button v-else class="toggle" :class="{ on: S.assist }" @click="S.assist = !S.assist; keep()"><span class="sw"></span><span class="grow"><b>おたすけモード</b><small class="muted tsub">カタカナの読み方と 日本語の意味を 見ながら話す</small></span></button>
@@ -217,16 +221,16 @@ createApp({
       <template v-if="isBuild">
         <div class="build" :class="{ done: S.decided != null }">
           <span v-if="!S.built.length" class="small muted bph">下の パーツを タップして ならべよう</span>
-          <button v-for="(id, k) in S.built" :key="id" class="tile on" :class="S.decided != null ? (slotOk(k) ? 'right' : 'wrong') : ''" @click="pull(k)"><b>{{ tileOf(id).w }}</b><small v-if="S.play.show === 'enja' && tileOf(id).ja">{{ tileOf(id).ja }}</small></button>
+          <button v-for="(id, k) in S.built" :key="id" class="tile on" :class="S.decided != null ? (slotOk(k) ? 'right' : 'wrong') : ''" @click="pull(k)"><b>{{ mainOf(S.play.show, tileOf(id).w, tileOf(id).ja) }}</b><small v-if="memoOf(S.play.show, tileOf(id).w, tileOf(id).ja, S.decided != null)">{{ memoOf(S.play.show, tileOf(id).w, tileOf(id).ja, S.decided != null) }}</small></button>
         </div>
         <div class="bank">
-          <button v-for="t in q.tiles" :key="t.id" class="tile" :class="{ used: S.built.includes(t.id) }" :disabled="S.built.includes(t.id) || S.decided != null" @click="put(t)"><b>{{ t.w }}</b><small v-if="S.play.show === 'enja' && t.ja">{{ t.ja }}</small></button>
+          <button v-for="t in q.tiles" :key="t.id" class="tile" :class="{ used: S.built.includes(t.id) }" :disabled="S.built.includes(t.id) || S.decided != null" @click="put(t)"><b>{{ mainOf(S.play.show, t.w, t.ja) }}</b><small v-if="memoOf(S.play.show, t.w, t.ja, S.decided != null)">{{ memoOf(S.play.show, t.w, t.ja, S.decided != null) }}</small></button>
         </div>
         <button v-if="S.built.length && S.decided == null" class="link" @click="S.built = []; S.pick = null"><ic n="again" :s="14"></ic> 全部もどす</button>
       </template>
       <div v-else class="opts">
         <button v-for="(o, k) in q.options" :key="S.i + '-' + k" class="opt" :class="optClass(o.en)" :disabled="S.decided != null" @click="S.pick = o.en"><span class="mk">{{ 'ABCDE'[k] }}</span>
-          <span class="grow"><b class="oen">{{ o.en }}</b><small v-if="(S.play.show === 'enja' || S.decided != null) && o.ja" class="oja">{{ o.ja }}</small></span></button>
+          <span class="grow"><b class="oen">{{ mainOf(S.play.show, o.en, o.ja) }}</b><small v-if="memoOf(S.play.show, o.en, o.ja, S.decided != null)" class="oja">{{ memoOf(S.play.show, o.en, o.ja, S.decided != null) }}</small></span></button>
       </div>
       <template v-if="S.decided == null">
         <div v-if="S.hint" class="note warn" style="margin-top:10px"><ic n="bulb" :s="16"></ic> {{ q.hint || 'よく聞いて 考えてみよう！' }}</div>
