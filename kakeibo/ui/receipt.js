@@ -346,6 +346,24 @@ let detailId = "";
 let ED = null;
 function openDetail(id) {
   const r = D.records.find(x => x.ID === id); if (!r) { closeModal(); return; }
+  const d = detailOf(r) || { i: [] };
+  detailId = id; ED = null;
+  const exp = cats(r["種類"]), icon = c => svgIcon(iconKey(exp.find(x => x["名前"] === c) || { 名前: c }));
+  const sum = d.i.reduce((a, it) => a + int(it.p), 0), isE = r["種類"] === EXP;
+  modal(`<div class="dhead"><div class="ic">${icon(r["カテゴリ"])}</div><div><b>${esc(r["カテゴリ"])}</b><span>${dlabel(r["日付"])}${d.s ? "・" + esc(d.s) : ""}${isE ? "・" + esc(payOf(r)) : ""}${r["メモ"] && !d.i.length ? "・" + esc(r["メモ"]) : ""}</span></div><div class="v ${isE ? "exp" : "inc"}">${yen(int(r["金額"]))}</div></div>
+    <div class="dlist">${d.i.map((it, j) => `<div class="drow">
+      <div class="dn"><b>${esc(it.n)}</b><span>${it.q > 1 ? `×${it.q}・` : ""}${taxText(+it.t || 0)}</span></div>
+      <div class="dp">${yen(int(it.p))}</div>
+      <button class="rmove" data-r="dmove" data-j="${j}" aria-label="カテゴリを変える">${icon(r["カテゴリ"])}</button>
+      <button class="rrec ${it.rec ? "done" : ""}" data-r="drec" data-j="${j}">${it.rec ? "記録済" : "記録"}</button></div>`).join("") || `<div class="empty" style="padding:14px">品物の明細はありません</div>`}</div>
+    ${d.i.length && sum !== int(r["金額"]) ? `<div class="small muted" style="margin:6px 4px 0">品物の合計 ${yen(sum)}（まとめ金額・端数のちがいがあります）</div>` : ""}
+    ${d.i.length ? `<div class="small muted" style="margin:8px 4px 12px">品物のアイコンでカテゴリを変えると、その品物の金額がそのカテゴリの記録へ移ります。「記録」で買い物リストの値段の記録に入れます</div>` : `<div style="height:12px"></div>`}
+    ${d.i.length ? `<button class="btn" style="margin-bottom:8px" data-r="dcat">全部のカテゴリを変える</button>` : ""}
+    <div class="row2"><button class="btn" data-r="mclose">閉じる</button><button class="btn pri pink" data-r="dedit">編集する</button></div>`);
+}
+// 編集画面（明細の画面の「編集する」から）
+function openEdit(id) {
+  const r = D.records.find(x => x.ID === id); if (!r) { closeModal(); return; }
   const d = detailOf(r);
   detailId = id;
   ED = { id, kind: r["種類"], date: r["日付"], cat: r["カテゴリ"], amt: String(int(r["金額"])), memo: r["メモ"] || "", pay: payOf(r), oldPay: payOf(r),
@@ -388,7 +406,7 @@ function drawEdit() {
     </div>`).join("") || `<div class="empty" style="padding:14px">品物の明細はありません</div>`}</div>
     <button class="radd" data-r="eadd">＋ 品物を足す</button>
     <div class="small muted" style="margin:6px 4px 0">金額は税込みです。品物のアイコンでカテゴリを変えると、保存したときに その品物の金額が そのカテゴリの記録へ移ります</div>` : ""}
-    <div class="row2" style="margin-top:14px"><button class="btn" data-r="mclose">閉じる</button><button class="btn pri pink" data-r="esave">保存する</button></div>
+    <div class="row2" style="margin-top:14px"><button class="btn" data-r="eback">もどる</button><button class="btn pri pink" data-r="esave">保存する</button></div>
     <button class="link edrop" data-r="edrop">この記録を消す</button>`);
 }
 // 品物を直したら、品物の合計と（合わせているときは）金額を直す。書きなおさない（キーボードが閉じないように）
@@ -437,7 +455,9 @@ function edSave() {
   ED.items.forEach(it => { const o = (ED.det && ED.det.i || []).find(x => x.k && x.k === it.k); if (it.k && o && o.n !== String(it.n).trim() && it.cat === ED.cat) memo.push({ キー: it.k, 品名: String(it.n).trim(), カテゴリ: ED.cat, 更新: today() }); });
   act({ type: "update_records", rows, add, del });
   if (memo.length) act({ type: "save_receipt_memo", rows: memo });
-  ED = null; closeModal(); render(true); toast("保存しました");
+  const back = del.includes(r.ID) ? (add[0] || rows[0] || {}).ID : r.ID;
+  ED = null; render(true); toast("保存しました");
+  if (back && D.records.some(x => x.ID === back)) openDetail(back); else closeModal();     // 保存したら、明細の画面にもどる
 }
 // 同じレシートで、そのカテゴリの記録（なければ作る）
 function siblingOf(r, d, cat) {
@@ -856,7 +876,7 @@ document.addEventListener("click", e => {
       });
       break;
     }
-    case "catcancel": catPick = null; if (ED) drawEdit(); else closeModal(); break;
+    case "catcancel": catPick = null; if (ED) drawEdit(); else if (detailId && D.records.some(x => x.ID === detailId)) openDetail(detailId); else closeModal(); break;
     case "catok": { closeModal(); const fn = catPick; catPick = null; if (fn) fn(b.dataset.v); rkeep(); render(true); break; }
     case "greset": if (rc.amt) delete rc.amt[b.dataset.c]; rkeep(); render(true); break;
     case "rec": openRec(i, j); break;
@@ -879,6 +899,8 @@ document.addEventListener("click", e => {
     case "erec": if (ED && ED.items[j]) { const it = ED.items[j], d = ED.det || {}, id = ED.id, keepEd = ED;
       openRecWith({ name: it.n, price: int(it.p), qty: int(it.q) || 1, sid: d.sid, date: ED.date, shop: d.c || d.s, done: sid => { it.rec = 1; if (sid && keepEd.det && !keepEd.det.sid) keepEd.det.sid = sid; ED = keepEd; setTimeout(drawEdit, 50); } }); } break;
     case "esave": if (ED) edSave(); break;
+    case "dedit": openEdit(detailId); break;
+    case "eback": { const id = ED ? ED.id : detailId; ED = null; openDetail(id); break; }
     case "edrop": if (ED) { const id = ED.id; confirmBox("この記録を消しますか？（もとにもどせません）", "消す", () => { act({ type: "update_records", rows: [], del: [id] }); ED = null; closeModal(); render(true); toast("消しました"); }); } break;
     case "dcat": { const r = D.records.find(x => x.ID === detailId); pickCat("まとめてカテゴリを変える", r ? r["カテゴリ"] : "", c => recatAll(c)); break; }
     case "drec": recFromDetail(j); break;
