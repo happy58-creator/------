@@ -1,8 +1,9 @@
 import streamlit as st
 
 import common
+import icons
 
-common.setup_page("きょうざい・ゲームひろば", "🏠", home_link=False)
+common.setup_page("きょうざい・ゲームひろば", ":material/home:", home_link=False)
 
 BAND = common.age_band()   # "小"（小学生・年齢がわからない）/ "中"（中学生）/ "高"（高校生以上・管理者）
 
@@ -15,63 +16,63 @@ def by_band(small, middle=None, high=None):
 
 APPS = [
     (by_band("べんきょう", "学習"), [
-        ("🧮", by_band("算数マスター", "数学マスター"),
+        ("calc", by_band("算数マスター", "数学マスター"),
          by_band("学年に合わせた 算数の10問チャレンジ。とき方つき・賞状PDFもできるよ！",
                  "方程式・関数・確率など、中学数学を単元ごとに10問チャレンジ。解き方つき。",
                  "数学I・A・II・B・C・IIIを単元ごとに10問演習。答えの形（約分・有理化など）まで判定、解き方つき。"),
          "calc", ""),
-        ("🧙‍♂️", by_band("AI国語アドベンチャー", "AI国語"),
+        ("wand", by_band("AI国語アドベンチャー", "AI国語"),
          by_band("すきな言葉から AIがお話と問題を作ってくれる！ 漢字の読み書きと読解に挑戦しよう。",
                  "テーマに合わせてAIが文章と問題を作成。「現代文中心」と「古典中心」から選べるよ。",
                  "現代の国語・言語文化・論理国語・文学国語・国語表現・古典探究から選んで演習。古典は原文を収録。"),
          "kokugo", "AI"),
-        ("✍️", by_band("漢字のかきとり", "漢字の書き取り"),
+        ("pen", by_band("漢字のかきとり", "漢字の書き取り"),
          by_band("指やペンで書いて、書き順・形をチェック！ タブレットやスマホでも使えるよ。",
                  "指やペンで書いて、筆順と字形をチェック。タブレット・スマホにも対応。"),
          "kanji", ""),
-        ("⌨️", "AIタイピング",
+        ("keyboard", "AIタイピング",
          by_band("1キーずつ判定する本格タイピング。5分以内なら ロボットを動かすプログラミングも！",
                  "1キーずつ判定する本格タイピング。5分以内にクリアすると、ロボット操作のプログラミングにも挑戦できる。"),
          "typing", "AI"),
-        ("🔤", by_band("AI英語チャレンジ", "AI英語"),
+        ("lang", by_band("AI英語チャレンジ", "AI英語"),
          by_band("単語コースと文コース。年れいに合わせた問題が出るよ！",
                  "単語コースと文コース。学年に合わせた問題をAIが作成。",
                  "単語コースと文コース。レベルに合わせた問題をAIが作成（大人まで対応）。"),
          "english", "AI"),
-        ("🎤", by_band("AI英語スピーキング", "AI英語スピーキング"),
+        ("mic", by_band("AI英語スピーキング", "AI英語スピーキング"),
          by_band("英語を 聞いて答える・見て声に出す。さいごに AI先生が 発音を 採点してくれるよ！",
                  "リスニング（聞いて答える）とスピーキング（見て話す）。録音をAIが1問ずつ採点し、発音をアドバイス。"),
          "speaking", "AI"),
-        ("💻", "AIプログラミング教室",
+        ("code", "AIプログラミング教室",
          by_band("Python・JavaScriptなどを、たんご→ぶんぽう→書いてみよう→クイズで学ぼう！",
                  "Python・JavaScriptなどを、用語 → 文法 → 実際に書く → クイズの順に学習。"),
          "programming", "AI"),
     ] + ([] if BAND == "小" else [
-        ("🖥️", "ITパスポート",
+        ("monitor", "ITパスポート",
          "本番形式の模試（100問・120分・合否判定）、分野別の解説と問題演習、用語カード。シラバス Ver.6.5 対応。",
          "itpass", "AI"),
-        ("🧑‍💻", "基本情報技術者",
+        ("terminal", "基本情報技術者",
          "科目A（60問・90分）と科目B（擬似言語16問＋セキュリティ4問・100分）の模試、分野別の解説と問題演習、用語カード。",
          "fe", "AI"),
     ])),
     ("ゲーム", [
-        ("⚡", "限界突破！連打ゲーム", by_band("制限時間内にどれだけ連打できるかな？", "制限時間内に何回連打できるか挑戦！"),
+        ("zap", "限界突破！連打ゲーム", by_band("制限時間内にどれだけ連打できるかな？", "制限時間内に何回連打できるか挑戦！"),
          "rapid", ""),
-        ("⚔️", "ストーリーモード",
+        ("swords", "ストーリーモード",
          by_band("敵をタップして たおそう！ 仲間・装備・アイテムを集めて ステージに挑戦。",
                  "敵をタップして倒すバトル。仲間・装備・アイテムを集めて、高難度ステージに挑戦。"),
          "story", ""),
-        ("✊", "じゃんけんゲーム", by_band("コンピューターと勝負、または2人でたいせん！", "コンピューターと勝負、または2人で対戦。"),
+        ("hand", "じゃんけんゲーム", by_band("コンピューターと勝負、または2人でたいせん！", "コンピューターと勝負、または2人で対戦。"),
          "janken", ""),
-        ("🎉", by_band("くじ引き・じゅんばん決め", "くじ引き・順番決め"),
+        ("gift", by_band("くじ引き・じゅんばん決め", "くじ引き・順番決め"),
          by_band("あみだ風のドキドキ演出で決めよう。", "あみだ風の演出で、くじ引きや順番を決められる。"),
          "lottery", ""),
-        ("♟️", "チェス", by_band("駒をクリック・ドラッグで動かせる本格チェス。CPUは4段階、ヒントつき！",
+        ("crown", "チェス", by_band("駒をクリック・ドラッグで動かせる本格チェス。CPUは4段階、ヒントつき！",
                                  "クリック・ドラッグで操作する本格チェス。CPUは4段階、ヒントつき。"),
          "chess", ""),
     ]),
     (by_band("きろく", "記録"), [
-        ("📒", by_band("せいせきの履歴", "成績の履歴"),
+        ("clip", by_band("せいせきの履歴", "成績の履歴"),
          by_band("これまでの点数やタイムを 名前ごとに見られるよ。", "これまでの点数やタイムを振り返ろう。", "これまでの点数やタイムを確認できます。"),
          "history", ""),
     ]),
@@ -111,11 +112,11 @@ iframe[title*="home_footer"] { position: fixed !important; left: 0 !important; r
 </style>""", unsafe_allow_html=True)
 
 TITLES = {
-    "study": by_band(("📚 べんきょう", "やりたい べんきょうを えらんでね！"), ("📚 学習", "学習したい教材を選ぼう。"), ("📚 学習", "学習したい教材を選んでください。")),
-    "game": by_band(("🎮 ゲーム", "あそびたい ゲームを えらんでね！"), ("🎮 ゲーム", "遊びたいゲームを選ぼう。"), ("🎮 ゲーム", "遊びたいゲームを選んでください。")),
-    "calendar": by_band(("📅 カレンダー", "いつ なにを べんきょうしたか 見られるよ。"), ("📅 カレンダー", "いつ・何を学習したかを確認しよう。"), ("📅 カレンダー", "いつ・何を学習したかを確認できます。")),
-    "record": by_band(("📒 きろく", "これまでの 点数を 見よう！"), ("📒 記録", "これまでの成績を振り返ろう。"), ("📒 記録", "これまでの成績を確認できます。")),
-    "settings": by_band(("⚙️ せってい", ""), ("⚙️ 設定", ""), ("⚙️ 設定", "")),
+    "study": by_band((icons.svg("books") + "べんきょう", "やりたい べんきょうを えらんでね！"), (icons.svg("books") + "学習", "学習したい教材を選ぼう。"), (icons.svg("books") + "学習", "学習したい教材を選んでください。")),
+    "game": by_band((icons.svg("gamepad") + "ゲーム", "あそびたい ゲームを えらんでね！"), (icons.svg("gamepad") + "ゲーム", "遊びたいゲームを選ぼう。"), (icons.svg("gamepad") + "ゲーム", "遊びたいゲームを選んでください。")),
+    "calendar": by_band((icons.svg("calendar") + "カレンダー", "いつ なにを べんきょうしたか 見られるよ。"), (icons.svg("calendar") + "カレンダー", "いつ・何を学習したかを確認しよう。"), (icons.svg("calendar") + "カレンダー", "いつ・何を学習したかを確認できます。")),
+    "record": by_band((icons.svg("clip") + "きろく", "これまでの 点数を 見よう！"), (icons.svg("clip") + "記録", "これまでの成績を振り返ろう。"), (icons.svg("clip") + "記録", "これまでの成績を確認できます。")),
+    "settings": by_band((icons.svg("sliders") + "せってい", ""), (icons.svg("sliders") + "設定", ""), (icons.svg("sliders") + "設定", "")),
 }
 common.hero(*TITLES[tab])
 
@@ -124,13 +125,13 @@ def cards(items):
     """教材・ゲームのカード（2列）"""
     for row_start in range(0, len(items), 2):
         cols = st.columns(2)
-        for col, (emoji, title, desc, page, tag) in zip(cols, items[row_start:row_start + 2]):
+        for col, (icon, title, desc, page, tag) in zip(cols, items[row_start:row_start + 2]):
             with col, st.container(key=f"appcard-{page}"):
-                tag_html = f"<span class='tag ai'>🤖 {by_band('AIつき', 'AI搭載')}</span>" if tag == "AI" else ""
-                st.markdown(f"<div class='topic-card'>{tag_html}<div class='emoji'>{emoji}</div><h3>{title}</h3><p>{desc}</p></div>",
+                tag_html = f"<span class='tag ai'>{icons.svg('spark')}{by_band('AIつき', 'AI搭載')}</span>" if tag == "AI" else ""
+                st.markdown(f"<div class='topic-card'>{tag_html}<div class='emoji'>{icons.svg(icon)}</div><h3>{title}</h3><p>{desc}</p></div>",
                             unsafe_allow_html=True)
                 if page in common.PAGES:
-                    st.page_link(common.PAGES[page], label=OPEN_LABEL, icon="▶️", use_container_width=True)
+                    st.page_link(common.PAGES[page], label=OPEN_LABEL, icon=":material/play_arrow:", use_container_width=True)
 
 
 # ---- カレンダー：だれが・いつ・何をして・何点だったか ----
@@ -240,7 +241,7 @@ def calendar_tab():
             if pdf is not None:
                 import base64
                 data = base64.b64encode(pdf).decode("ascii")
-                st.html(f'<button type="button" class="pdf-open" data-pdf="{data}">📄 PDFを見る</button>', unsafe_allow_javascript=True)
+                st.html(f'<button type="button" class="pdf-open" data-pdf="{data}">{icons.svg("file")}PDFを見る</button>', unsafe_allow_javascript=True)
     if admin:
         st.caption("管理者なので、みんなの記録を表示しています。")
 
@@ -248,8 +249,8 @@ def calendar_tab():
 def settings_tab():
     name = ss.get("auth_name") or ss.get("player_name") or ""
     with st.container(border=True):
-        st.markdown(f"👤 **{name}**" + ("（ゲスト）" if ss.get("auth_guest") else "") + by_band(" さん", " さん")
-                    + ("　🛡️管理者" if auth.is_admin() else ""))
+        st.markdown(f":material/person: **{name}**" + ("（ゲスト）" if ss.get("auth_guest") else "") + by_band(" さん", " さん")
+                    + ("　:material/shield: 管理者" if auth.is_admin() else ""))
         if ss.get("auth_age") is not None:
             st.caption(f"年齢：{ss.get('auth_age')}さい" if BAND == "小" else f"年齢：{ss.get('auth_age')}歳")
         if st.button(by_band("ログアウト", "ログアウト"), key="home_logout", use_container_width=True):

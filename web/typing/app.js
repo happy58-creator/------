@@ -2,10 +2,12 @@
    Python へ：gen（AIで10問つくる）・typing_done / code_done（おわった：点数・記録・表彰状）。どれも nonce つき（kit.js） */
 "use strict";
 const { createApp, reactive, computed, nextTick } = Vue;
-const MODES = [["みながらモード", "👀", "ローマ字が みえるよ"], ["あんもくモード", "🙈", "ひらがなだけで ちょうせん！"]];
+const MODES = [["みながらモード", "eye", "ローマ字が みえるよ"], ["あんもくモード", "lock", "ひらがなだけで ちょうせん！"]];
 const THEMES = ["どうぶつ", "マインクラフト", "おかし", "うちゅう", "サッカー", "きょうりゅう"];
 
 createApp({
+  components: { ic: Ic },
+  methods: { I(n, c) { return Icon.svg(n, c); }, iO: e => Icon.of(e), iL: s => Icon.lead(s), iX: s => Icon.strip(s) },
   setup() {
     const L = Kit.load("ty_v1", {});
     const S = reactive({
@@ -81,13 +83,13 @@ createApp({
   },
   template: `
 <div class="wrap" v-if="S.ready">
-  <div v-if="S.toast" class="toast">{{ S.toast }}</div>
+  <div v-if="S.toast" class="toast"><ic v-if="iL(S.toast)[0]" :n="iL(S.toast)[0]"></ic>{{ iX(iL(S.toast)[1]) }}</div>
 
   <template v-if="S.view === 'menu'">
-    <div class="hero"><div class="hero-t"><div class="logo">⌨</div><div><b>AIタイピングマスター</b><small>すきな テーマを 入れると、AIが キミ専用の もんだいを 10問 つくるよ！</small></div></div></div>
+    <div class="hero"><div class="hero-t"><div class="logo"><ic n="keyboard"></ic></div><div><b>AIタイピングマスター</b><small>すきな テーマを 入れると、AIが キミ専用の もんだいを 10問 つくるよ！</small></div></div></div>
     <div class="card">
       <div class="h3">① モード</div>
-      <div class="pick two"><button v-for="m in MODES" :key="m[0]" class="pk" :class="{ on: S.mode === m[0] }" @click="S.mode = m[0]"><span class="ic">{{ m[1] }}</span><span class="grow"><b>{{ m[0] }}</b><small>{{ m[2] }}</small></span></button></div>
+      <div class="pick two"><button v-for="m in MODES" :key="m[0]" class="pk" :class="{ on: S.mode === m[0] }" @click="S.mode = m[0]"><span class="ico"><ic :n="m[1]"></ic></span><span class="grow"><b>{{ m[0] }}</b><small>{{ m[2] }}</small></span></button></div>
     </div>
     <div class="card">
       <div class="h3">② 年れい<span class="small muted">点数の「スピード」の目標に つかうよ</span></div>
@@ -98,18 +100,18 @@ createApp({
       <input class="tin" v-model="S.theme" maxlength="40" placeholder="ここに 文字を 入力してね" @keydown.enter.prevent="!$event.isComposing && start()">
       <div class="sugg"><button v-for="t in THEMES" :key="t" @click="S.theme = t">{{ t }}</button></div>
     </div>
-    <button class="big" :disabled="S.busy" @click="start">{{ S.busy ? '🧙‍♂️ AI先生が 10問を 作っているよ…' : '🚀 AIに もんだいを 作ってもらって スタート！' }}</button>
+    <button class="big" :disabled="S.busy" @click="start"><ic v-if="iL(S.busy ? '🧙‍♂️ AI先生が 10問を 作っているよ…' : '🚀 AIに もんだいを 作ってもらって スタート！')[0]" :n="iL(S.busy ? '🧙‍♂️ AI先生が 10問を 作っているよ…' : '🚀 AIに もんだいを 作ってもらって スタート！')[0]"></ic>{{ iX(iL(S.busy ? '🧙‍♂️ AI先生が 10問を 作っているよ…' : '🚀 AIに もんだいを 作ってもらって スタート！')[1]) }}</button>
     <div class="small muted" style="margin:10px 4px 0">コツ：「si / shi」「ti / chi」「tu / tsu」など、どの打ち方でも 正解に なるよ！ 1文字ずつ その場で 判定するよ。</div>
     <div v-if="ura" class="card ura">
-      <div class="h3">{{ S.args.adminUra && !S.args.unlocked ? '🛡️ 裏メニュー（管理者の直接入口）' : '🔓 ひらいた 裏メニュー' }}</div>
-      <div class="row2"><button class="btn pri" @click="playCode">🤖 プログラミング・ミッション</button><button class="btn" @click="playSandbox">🎨 じゆうに プログラミング</button></div>
+      <div class="h3"><ic v-if="iL(S.args.adminUra && !S.args.unlocked ? '🛡️ 裏メニュー（管理者の直接入口）' : '🔓 ひらいた 裏メニュー')[0]" :n="iL(S.args.adminUra && !S.args.unlocked ? '🛡️ 裏メニュー（管理者の直接入口）' : '🔓 ひらいた 裏メニュー')[0]"></ic>{{ iX(iL(S.args.adminUra && !S.args.unlocked ? '🛡️ 裏メニュー（管理者の直接入口）' : '🔓 ひらいた 裏メニュー')[1]) }}</div>
+      <div class="row2"><button class="btn pri" @click="playCode"><ic n="spark"></ic>プログラミング・ミッション</button><button class="btn" @click="playSandbox"><ic n="brush"></ic>じゆうに プログラミング</button></div>
     </div>
-    <div v-else class="small muted center" style="margin-top:12px">💡 5分（300秒）以内に クリアすると、ひみつの「裏メニュー」が 出てくるよ！</div>
+    <div v-else class="small muted center" style="margin-top:12px"><ic n="bulb"></ic>5分（300秒）以内に クリアすると、ひみつの「裏メニュー」が 出てくるよ！</div>
   </template>
 
   <div v-show="['play', 'code', 'sandbox'].includes(S.view)">
     <div class="bar-top"><button class="back" @click="quit(S.view === 'sandbox')">‹ {{ S.view === 'sandbox' ? 'メニュー' : 'やめる' }}</button>
-      <b>{{ S.view === 'play' ? 'テーマ：' + S.play.theme : S.view === 'code' ? '💻 プログラミング・ミッション' : '🎨 じゆうに プログラミング' }}</b><span></span></div>
+      <b><ic v-if="iL(S.view === 'play' ? 'テーマ：' + S.play.theme : S.view === 'code' ? '💻 プログラミング・ミッション' : '🎨 じゆうに プログラミング')[0]" :n="iL(S.view === 'play' ? 'テーマ：' + S.play.theme : S.view === 'code' ? '💻 プログラミング・ミッション' : '🎨 じゆうに プログラミング')[0]"></ic>{{ iX(iL(S.view === 'play' ? 'テーマ：' + S.play.theme : S.view === 'code' ? '💻 プログラミング・ミッション' : '🎨 じゆうに プログラミング')[1]) }}</b><span></span></div>
     <div v-if="S.view === 'sandbox'" class="small muted" style="margin:-4px 4px 8px">左に コードを 書いて「▶ じっこう」。ほしを ぜんぶ あつめたり、色で 絵を かいたり してみよう！</div>
     <div id="game"></div>
   </div>
@@ -117,44 +119,44 @@ createApp({
   <template v-if="S.view === 'end'">
     <div v-if="!S.result" class="card center wait"><div class="spin"></div>けっかを 計算中…</div>
     <template v-else>
-      <h2 class="center" style="margin-top:6px">🏆 タイピング大冒険クリア！</h2>
-      <div class="note good center">{{ S.result.rankText }}</div>
+      <h2 class="center" style="margin-top:6px"><ic n="trophy"></ic>タイピング大冒険クリア！</h2>
+      <div class="note good center"><ic v-if="iL(S.result.rankText)[0]" :n="iL(S.result.rankText)[0]"></ic>{{ iX(iL(S.result.rankText)[1]) }}</div>
       <div class="card score one"><div><small>点数</small><b>{{ S.result.score }}</b><i>/ 100点</i></div></div>
-      <div class="small muted center" style="margin:-4px 0 10px">✅ 正確さ {{ S.result.accuracyPt }} / 60点 ＋ ⚡ スピード {{ S.result.speedPt }} / 40点（{{ S.play.level }}）</div>
+      <div class="small muted center" style="margin:-4px 0 10px"><ic n="checkc"></ic>正確さ {{ S.result.accuracyPt }} / 60点 ＋ <ic n="zap"></ic>スピード {{ S.result.speedPt }} / 40点（{{ S.play.level }}）</div>
       <div class="stats">
-        <div><small>🎯 ノーミス正解</small><b>{{ S.raw.perfect }} / {{ S.raw.total }}問</b></div>
-        <div><small>⏱️ ごうけいタイム</small><b>{{ fmtTime(S.raw.time) }}</b></div>
-        <div><small>⚡ はやさ</small><b>{{ S.raw.kpm }} 打/分</b></div>
-        <div><small>✅ 正確さ</small><b>{{ S.raw.accuracy }} %</b></div>
-        <div><small>❌ ミスタイプ</small><b>{{ S.raw.misses }} 回</b></div>
-        <div><small>🔥 さいだいコンボ</small><b>{{ S.raw.maxCombo }}</b></div>
+        <div><small><ic n="target"></ic>ノーミス正解</small><b>{{ S.raw.perfect }} / {{ S.raw.total }}問</b></div>
+        <div><small><ic n="timer"></ic>ごうけいタイム</small><b>{{ fmtTime(S.raw.time) }}</b></div>
+        <div><small><ic n="zap"></ic>はやさ</small><b>{{ S.raw.kpm }} 打/分</b></div>
+        <div><small><ic n="checkc"></ic>正確さ</small><b>{{ S.raw.accuracy }} %</b></div>
+        <div><small><ic n="x"></ic>ミスタイプ</small><b>{{ S.raw.misses }} 回</b></div>
+        <div><small><ic n="flame"></ic>さいだいコンボ</small><b>{{ S.raw.maxCombo }}</b></div>
       </div>
-      <div v-if="S.raw.misses === 0" class="note good">✨ ノーミス達成！ パーフェクト！</div>
-      <div v-else-if="weak" class="note warn">🔍 まちがえやすかったキー：{{ weak }}　つぎは ここを 意識してみよう！</div>
-      <button class="btn pdf" @click="Kit.openPdf(S.result.pdf)">📄 表彰状を 見る</button>
+      <div v-if="S.raw.misses === 0" class="note good"><ic n="spark"></ic>ノーミス達成！ パーフェクト！</div>
+      <div v-else-if="weak" class="note warn"><ic n="search"></ic>まちがえやすかったキー：{{ weak }}　つぎは ここを 意識してみよう！</div>
+      <button class="btn pdf" @click="Kit.openPdf(S.result.pdf)"><ic n="file"></ic>表彰状を 見る</button>
       <div v-if="S.result.unlocked" class="gate">
-        <b>✨ 5分以内で クリア達成！ ひみつのゲートが 開いたよ！ ✨</b>
+        <b><ic n="spark"></ic>5分以内で クリア達成！ ひみつのゲートが 開いたよ！ <ic n="spark"></ic></b>
         <p>本物の Python のコードを 打つと ロボットが 動く「プログラミング・ミッション（全6ステージ）」に 挑戦しよう！</p>
-        <button class="big" @click="playCode">🔥 プログラミング・ミッションを 始める！</button>
+        <button class="big" @click="playCode"><ic n="flame"></ic>プログラミング・ミッションを 始める！</button>
       </div>
-      <div v-else class="note warn">💡 5分（300秒）以内で クリアすると、特別な「裏メニュー」が 出現するよ！ 次は もっと早く 打てるように 挑戦してみよう！</div>
-      <div class="row2" style="margin-top:10px"><button class="btn pri" @click="playTyping">🔁 同じ もんだいで もう一度</button><button class="btn" @click="quit(true)">🔄 別の テーマで 遊ぶ</button></div>
+      <div v-else class="note warn"><ic n="bulb"></ic>5分（300秒）以内で クリアすると、特別な「裏メニュー」が 出現するよ！ 次は もっと早く 打てるように 挑戦してみよう！</div>
+      <div class="row2" style="margin-top:10px"><button class="btn pri" @click="playTyping"><ic n="again"></ic>同じ もんだいで もう一度</button><button class="btn" @click="quit(true)"><ic n="refresh"></ic>別の テーマで 遊ぶ</button></div>
     </template>
   </template>
 
   <template v-if="S.view === 'codeEnd'">
     <div v-if="!S.result" class="card center wait"><div class="spin"></div>けっかを 計算中…</div>
     <template v-else>
-      <h2 class="center" style="margin-top:6px">👑 プログラミング・マスター達成！</h2>
+      <h2 class="center" style="margin-top:6px"><ic n="crown"></ic>プログラミング・マスター達成！</h2>
       <div class="card score one"><div><small>点数</small><b>{{ S.result.score }}</b><i>/ 100点</i></div></div>
       <div class="stats three">
-        <div><small>🌟 ノーミス ステージ</small><b>{{ S.raw.perfect }} / {{ S.raw.stages }}</b></div>
-        <div><small>❌ バグ（ミス）</small><b>{{ S.raw.misses }} 回</b></div>
-        <div><small>⏱️ クリアタイム</small><b>{{ fmtTime(S.raw.time) }}</b></div>
+        <div><small><ic n="star"></ic>ノーミス ステージ</small><b>{{ S.raw.perfect }} / {{ S.raw.stages }}</b></div>
+        <div><small><ic n="x"></ic>バグ（ミス）</small><b>{{ S.raw.misses }} 回</b></div>
+        <div><small><ic n="timer"></ic>クリアタイム</small><b>{{ fmtTime(S.raw.time) }}</b></div>
       </div>
-      <div class="note good">🤖 全ステージ クリア おめでとう！ move・for・変数・if は、本物の プログラマーも 毎日つかっている 命令だよ。つぎは「じゆうモード」で、自分だけの プログラムを 書いてみよう！</div>
-      <button class="btn pdf" @click="Kit.openPdf(S.result.pdf)">📄 表彰状を 見る</button>
-      <div class="row2"><button class="btn pri" @click="playSandbox">🎨 じゆうに プログラミングする</button><button class="btn" @click="quit(true)">🔄 もう一度 最初から 遊ぶ</button></div>
+      <div class="note good"><ic n="spark"></ic>全ステージ クリア おめでとう！ move・for・変数・if は、本物の プログラマーも 毎日つかっている 命令だよ。つぎは「じゆうモード」で、自分だけの プログラムを 書いてみよう！</div>
+      <button class="btn pdf" @click="Kit.openPdf(S.result.pdf)"><ic n="file"></ic>表彰状を 見る</button>
+      <div class="row2"><button class="btn pri" @click="playSandbox"><ic n="brush"></ic>じゆうに プログラミングする</button><button class="btn" @click="quit(true)"><ic n="refresh"></ic>もう一度 最初から 遊ぶ</button></div>
     </template>
   </template>
 </div>

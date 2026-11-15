@@ -25,11 +25,11 @@ class TypingGame {
     root.innerHTML = `
       <div class="game">
         <div class="hud">
-          <span class="pill">📝 <b data-r="qno">1</b> / ${this.questions.length}</span>
-          <span class="pill">⏱ <b data-r="time">0:00</b></span>
-          <span class="pill">⚡ <b data-r="speed">0</b> 打/分</span>
-          <span class="pill">❌ ミス <b data-r="miss">0</b></span>
-          <span class="pill combo" data-r="comboBox">🔥 <b data-r="combo">0</b> コンボ</span>
+          <span class="pill">${Icon.svg("note")}<b data-r="qno">1</b> / ${this.questions.length}</span>
+          <span class="pill">${Icon.svg("timer")}<b data-r="time">0:00</b></span>
+          <span class="pill">${Icon.svg("zap")}<b data-r="speed">0</b> 打/分</span>
+          <span class="pill">${Icon.svg("x")}ミス <b data-r="miss">0</b></span>
+          <span class="pill combo" data-r="comboBox">${Icon.svg("flame")}<b data-r="combo">0</b> コンボ</span>
           <button class="icon" data-r="sound"></button>
         </div>
         <div class="progress"><div data-r="bar"></div></div>
@@ -40,20 +40,20 @@ class TypingGame {
           <div class="praise" data-r="praise"></div>
         </div>
         <div data-r="kb"></div>
-        <div class="ime" data-r="ime" hidden>⚠️ 日本語入力が オンに なっているよ！「英数」キー（または 半角/全角キー）を おしてね</div>
+        <div class="ime" data-r="ime" hidden>${Icon.svg("warn")}日本語入力が オンに なっているよ！「英数」キー（または 半角/全角キー）を おしてね</div>
         <div class="overlay" data-r="overlay"></div>
       </div>`;
     this.$ = (name) => root.querySelector(`[data-r="${name}"]`);
     this.kb = new UI.Keyboard(this.$("kb"));
-    this.$("sound").onclick = (e) => { e.currentTarget.textContent = UI.toggleSound() ? "🔊" : "🔇"; };
-    this.$("sound").textContent = UI.sound.on ? "🔊" : "🔇";
+    this.$("sound").onclick = (e) => { e.currentTarget.innerHTML = UI.toggleSound() ? Icon.svg("speaker") : Icon.svg("mute"); };
+    this.$("sound").innerHTML = UI.sound.on ? Icon.svg("speaker") : Icon.svg("mute");
     this.$("overlay").onclick = () => this.overlayClick();
     window.addEventListener("keydown", (e) => this.onKey(e));
     UI.watchFocus(() => this.pause(), () => {});
     this.timer = setInterval(() => this.tick(), 200);
     this.loadQuestion();
     this.showOverlay(`
-      <div class="big">⌨️</div>
+      <div class="big">${Icon.svg("keyboard")}</div>
       <h2>じゅんび OK？</h2>
       <p>${this.hideRomaji ? "あんもくモード：ローマ字は かくれているよ。" : "みながらモード：ローマ字を 見ながら 打とう。"}<br>
       「shi / si」「chi / ti」など、どの打ち方でも OK！</p>
@@ -103,7 +103,7 @@ class TypingGame {
     if (this.state !== "play") return;
     this.elapsed += performance.now() - this.runningSince;
     this.state = "pause";
-    this.showOverlay(`<div class="big">⏸</div><h2>ひとやすみ中</h2>
+    this.showOverlay(`<div class="big">${Icon.svg("pause")}</div><h2>ひとやすみ中</h2>
       <p>ゲームの画面から はなれたので 止めたよ。</p><button class="primary">クリックして つづける</button>`);
   }
 
@@ -207,8 +207,8 @@ class TypingGame {
     this.details.push({ text: this.questions[this.q].text, miss: this.qMissCount });
     UI.sfx.clear();
     this.draw();
-    const words = this.qMissed ? ["クリア！", "いいね！", "その調子！"] : ["パーフェクト！✨", "ノーミス！🌟", "すごい！💯"];
-    this.$("praise").textContent = words[Math.floor(Math.random() * words.length)];
+    const words = this.qMissed ? ["クリア！", "いいね！", "その調子！"] : ["パーフェクト！" + Icon.svg("spark"), "ノーミス！" + Icon.svg("star"), "すごい！" + Icon.svg("award")];
+    this.$("praise").innerHTML = words[Math.floor(Math.random() * words.length)];
     this.$("card").classList.add("cleared");
     this.state = "between";
     setTimeout(() => {
@@ -233,7 +233,7 @@ class TypingGame {
     const accuracy = this.keys + this.misses ? Math.round((this.keys * 1000) / (this.keys + this.misses)) / 10 : 100;
     const rank = kpm >= 180 && accuracy >= 95 ? "S" : kpm >= 120 && accuracy >= 90 ? "A" : kpm >= 80 ? "B" : kpm >= 40 ? "C" : "D";
     const weakKeys = Object.entries(this.weak).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    this.showOverlay(`<div class="big">🏁</div><h2>FINISH！</h2><p>けっかを 計算中…</p>`);
+    this.showOverlay(`<div class="big">${Icon.svg("flag")}</div><h2>FINISH！</h2><p>けっかを 計算中…</p>`);
     setTimeout(() => this.onDone({
       type: "typing_done", round: this.round, time, keys: this.keys, misses: this.misses, kpm, accuracy, rank,
       perfect: this.perfect, missedQuestions: this.missedQuestions, maxCombo: this.maxCombo, weakKeys,

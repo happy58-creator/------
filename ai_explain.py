@@ -59,6 +59,6 @@ def cached_explanations(key, subject, grade_name, items):
     """同じ結果画面で何度も呼ばないよう、セッションにとっておく"""
     store = st.session_state.setdefault("ai_explain_cache", {})
     if key not in store:
-        with st.spinner("🤖 AI先生が、まちがえた問題の解説を書いているよ..."):
+        with st.spinner("AI先生が、まちがえた問題の解説を書いているよ..."):
             store[key] = explain_mistakes(subject, grade_name, items)
     return store[key]

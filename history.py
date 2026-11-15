@@ -98,7 +98,7 @@ def log_result(sheet, who=None, **fields):
             _worksheet(book, sheet).append_row(row, value_input_option="USER_ENTERED")
             return "sheets"
         except Exception as e:
-            st.toast(f"スプレッドシートに保存できなかったので、パソコンのCSVに保存したよ：{e}", icon="⚠️")
+            st.toast(f"スプレッドシートに保存できなかったので、パソコンのCSVに保存したよ：{e}", icon=":material/warning:")
     try:
         _append_csv(sheet, row)
         return "csv"

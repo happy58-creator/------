@@ -1,0 +1,17 @@
+/* AIタイピングマスターの色（あとは base.css。ゲームの本体の見た目は game.css） */
+:root{--h1:#7c3aed;--h2:#c084fc;--b1:#9b5de5;--b2:#7c3aed;--shadowc:rgba(124,58,237,.28);--pri:#7c3aed;--priD:#6427c9;--priL:#f3ecff}
+.logo{font-size:26px}
+.radio{width:20px;height:20px;border-radius:50%;border:2px solid #c9ced8;flex:none;position:relative}
+.pk.on .radio{border-color:var(--pri)}.pk.on .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--pri)}
+.pick.two{grid-template-columns:1fr 1fr}.pick.two .pk{padding:9px 10px;gap:8px}.lv{font-size:13px!important;line-height:1.35}
+.pk .ic{font-size:22px;width:26px}
+.ura{border-color:#f0d28a;background:#fffbea}
+.score.one{grid-template-columns:1fr}.score.one b{font-size:40px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.stats div{background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px 6px;text-align:center}
+.stats small{display:block;font-size:11px;color:var(--sub)}.stats b{font-size:15px}
+.gate{background:#fff3cd;border-left:6px solid #ffc107;border-radius:14px;padding:14px;margin:10px 0;color:#856404;text-align:center}
+.gate p{margin:6px 0 8px;font-size:14px}
+/* ゲームの本体（typing.js・code.js）の中の .big・.card は、そのゲームの見た目のまま */
+#game .big{display:block;width:auto;margin:0;padding:0;border-radius:0;background:none;box-shadow:none;color:inherit}
+#game button{padding:revert;border:revert;background:revert}

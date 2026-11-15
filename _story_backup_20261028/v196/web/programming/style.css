@@ -1,0 +1,20 @@
+/* AIプログラミング教室の色（あとは base.css） */
+:root{--h1:#13795b;--h2:#2fae7f;--b1:#28a374;--b2:#13795b;--shadowc:rgba(19,121,91,.28);--pri:#1d8f69;--priD:#13795b;--priL:#e6f6ef}
+.logo{font-size:15px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.radio{width:20px;height:20px;border-radius:50%;border:2px solid #c9ced8;flex:none;position:relative}
+.pk.on .radio{border-color:var(--pri)}.pk.on .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--pri)}
+.pick.two{grid-template-columns:1fr 1fr}.pick.two .pk{padding:9px 10px;gap:8px}.lv{font-size:13px!important;line-height:1.35}
+.phases{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:#e9edf3;border-radius:12px;padding:4px;margin-bottom:12px}
+.phases button{border-radius:9px;padding:8px 2px;font-size:12px;font-weight:800;color:var(--sub)}
+.phases button.past{color:var(--priD)}
+.phases button.on{background:#fff;color:var(--priD);box-shadow:0 1px 4px rgba(20,30,60,.08)}
+.note.info{background:#eef6ff;color:#25456e;font-weight:600}
+.term{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px;font-weight:800;background:#1f2633;color:#9ef0c4;border-radius:8px;padding:3px 10px}
+.code{background:#1f2633;color:#e8edf5;border-radius:12px;padding:12px 14px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;line-height:1.55;overflow-x:auto;white-space:pre;margin:6px 0}
+.code.done{background:#27324a;color:#b9c6dd}.code.out{background:#0f1720;color:#9ef0c4}
+.codein{font-family:ui-monospace,Menlo,Consolas,monospace;margin-top:8px}
+.live{margin-top:8px;background:#1f2633;border-radius:12px;padding:10px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px;word-break:break-all;line-height:1.6}
+.live .ok{color:#2ecc71;font-weight:800}.live .ng{color:#ff6b5e;font-weight:800;text-decoration:underline}.live .rest{color:#6f7a8c}
+.live .over{color:#fff;background:#d6453d;border-radius:3px;padding:0 2px}
+.qtext{font-size:17px;font-weight:700;white-space:pre-wrap}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;word-break:break-all}

@@ -119,3 +119,9 @@ h2{margin:2px 0 6px;font-size:21px}
 .abody .lrow{padding:10px 2px}
 .rvhead{display:flex;width:100%;justify-content:space-between;border-top:1px solid var(--line);padding:11px 2px;font-size:13px;font-weight:800;color:var(--sub)}
 .urow.rv{padding-left:10px}
+
+/* アイコン（icons.js）。文字の大きさに合わせる */
+.ic{width:1.15em;height:1.15em;vertical-align:-.2em;flex:none;margin-right:.3em;display:inline-block}
+.ic:last-child{margin-right:0}
+.rrow .mk.o{color:var(--ok,#1f9d63)}.rrow .mk.x{color:var(--ng,#d6453d)}.rrow .mk .ic{width:1.3em;height:1.3em;stroke-width:2.6}
+.h3 .ic,.sub .ic,.lsum .ic{color:var(--pri)}

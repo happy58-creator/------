@@ -4,6 +4,8 @@
 const { createApp, reactive, computed, nextTick } = Vue;
 
 createApp({
+  components: { ic: Ic },
+  methods: { I(n, c) { return Icon.svg(n, c); }, iO: e => Icon.of(e), iL: s => Icon.lead(s), iX: s => Icon.strip(s) },
   setup() {
     const L = Kit.load("kj_v1", {});
     const S = reactive({
@@ -49,14 +51,14 @@ createApp({
       game = null; S.view = "menu"; Kit.top();
     }
     const fmtTime = s => { const m = Math.floor(s / 60), r = Math.round((s % 60) * 10) / 10; return m ? `${m}分 ${r}秒` : `${r}秒`; };
-    const mark = it => it.points >= 9 ? "🌟" : it.points >= (S.args.okPoints || 8) ? "⭐" : !it.skipped ? "👍" : "🙈";
+    const mark = it => it.points >= 9 ? "award" : it.points >= (S.args.okPoints || 8) ? "star" : !it.skipped ? "thumb" : "minus";   // けっかの しるし（アイコン）
     const readingOf = ch => ((S.result && S.result.rows) || []).find(r => r.ch === ch)?.reading || "";
     Streamlit.ready(onArgs);
     return { S, modeOf, start, quit, fmtTime, mark, readingOf, Kit };
   },
   template: `
 <div class="wrap" v-if="S.ready">
-  <div v-if="S.toast" class="toast">{{ S.toast }}</div>
+  <div v-if="S.toast" class="toast"><ic v-if="iL(S.toast)[0]" :n="iL(S.toast)[0]"></ic>{{ iX(iL(S.toast)[1]) }}</div>
 
   <template v-if="S.view === 'menu'">
     <div class="hero"><div class="hero-t"><div class="logo kanji">字</div><div><b>漢字のかきとり</b><small>指やペンで 書いてみよう！ 書き順と 形を チェックするよ。</small></div></div></div>
@@ -67,40 +69,40 @@ createApp({
     </div>
     <div class="card">
       <div class="h3">② 書きかた</div>
-      <div class="pick"><button v-for="m in S.args.modes" :key="m.id" class="pk" :class="{ on: S.mode === m.id }" @click="S.mode = m.id"><span class="grow"><b>{{ m.name }}</b><small>{{ m.desc }}</small></span></button></div>
+      <div class="pick"><button v-for="m in S.args.modes" :key="m.id" class="pk" :class="{ on: S.mode === m.id }" @click="S.mode = m.id"><span class="grow"><b><ic v-if="iL(m.name)[0]" :n="iL(m.name)[0]"></ic>{{ iX(iL(m.name)[1]) }}</b><small>{{ m.desc }}</small></span></button></div>
     </div>
     <div class="card">
       <div class="h3">③ 年れい<span class="small muted">判定の ゆるさに つかうよ（低いほど ゆるい）</span></div>
       <div class="pick two"><button v-for="l in S.args.levels" :key="l.id" class="pk" :class="{ on: S.level === l.id }" @click="S.level = l.id"><span class="radio"></span><b class="lv">{{ l.id }}</b></button></div>
     </div>
-    <button class="big" :disabled="S.busy" @click="start(false)">{{ S.busy ? 'じゅんび中…' : '🚀 スタート！' }}</button>
+    <button class="big" :disabled="S.busy" @click="start(false)"><ic v-if="iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[0]" :n="iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[0]"></ic>{{ iX(iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[1]) }}</button>
     <div class="small muted" style="margin:12px 4px 0;line-height:1.6">書き順データ：KanjiVG（CC BY-SA 3.0, kanjivg.tagaini.net）　学年・読み：KANJIDIC2（kanjiapi.dev 経由）。「とめ・はね・はらい」の細かい判定は しないよ（書き順・画数・形を 大まかに チェック）。</div>
   </template>
 
   <div v-show="S.view === 'play'">
-    <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ S.play.grade }}年生・{{ modeOf(S.play.mode).name }}</b><span></span></div>
+    <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ S.play.grade }}年生・<ic v-if="iL(modeOf(S.play.mode).name)[0]" :n="iL(modeOf(S.play.mode).name)[0]"></ic>{{ iX(iL(modeOf(S.play.mode).name)[1]) }}</b><span></span></div>
     <div id="game"></div>
   </div>
 
   <template v-if="S.view === 'end'">
     <div v-if="!S.result" class="card center wait"><div class="spin"></div>けっかを 計算中…</div>
     <template v-else>
-      <h2 class="center" style="margin-top:6px">🏆 おつかれさま！</h2>
+      <h2 class="center" style="margin-top:6px"><ic n="trophy"></ic>おつかれさま！</h2>
       <div class="card score">
         <div><small>点数</small><b>{{ S.result.score }}</b><i>/ 100点</i></div>
         <div><small>よくできた</small><b>{{ S.result.good }}</b><i>/ {{ S.result.items.length }}字</i></div>
         <div><small>タイム</small><b style="font-size:20px">{{ fmtTime(S.result.time) }}</b></div>
       </div>
       <div class="small muted center" style="margin-bottom:8px">{{ S.result.info }}</div>
-      <button class="btn pdf" @click="Kit.openPdf(S.result.pdf)">📄 表彰状を 見る</button>
-      <div class="h3" style="margin:12px 4px 6px">📋 1字ずつの けっか</div>
+      <button class="btn pdf" @click="Kit.openPdf(S.result.pdf)"><ic n="file"></ic>表彰状を 見る</button>
+      <div class="h3" style="margin:12px 4px 6px"><ic n="clip"></ic>1字ずつの けっか</div>
       <div class="kgrid">
         <div v-for="(it, k) in S.result.items" :key="k" class="kcell" :class="{ good: it.points >= (S.args.okPoints || 8), skip: it.skipped }">
-          <span class="km">{{ mark(it) }}</span><b class="kc">{{ it.ch }}</b><span class="kr">{{ readingOf(it.ch) }}</span>
+          <span class="km" :class="mark(it)"><ic :n="mark(it)"></ic></span><b class="kc">{{ it.ch }}</b><span class="kr">{{ readingOf(it.ch) }}</span>
           <span class="kp">{{ it.points }}点</span><small>{{ it.skipped ? 'わからなかった' : 'ミス' + it.misses + '・ヒント' + it.hints }}</small>
         </div>
       </div>
-      <div class="row2" style="margin-top:12px"><button class="btn pri" :disabled="S.busy" @click="start(true)">🔁 おなじ学年で もう一度</button><button class="btn" @click="S.view = 'menu'; Kit.top()">🔄 学年や書きかたを かえる</button></div>
+      <div class="row2" style="margin-top:12px"><button class="btn pri" :disabled="S.busy" @click="start(true)"><ic n="again"></ic>おなじ学年で もう一度</button><button class="btn" @click="S.view = 'menu'; Kit.top()"><ic n="refresh"></ic>学年や書きかたを かえる</button></div>
     </template>
   </template>
 </div>

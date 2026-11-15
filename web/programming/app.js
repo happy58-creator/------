@@ -10,6 +10,8 @@ const normalize = t => [...String(t || "")].map(c => QUOTES[c] ?? (c >= "！" &&
 const squash = t => normalize(t).replace(/\s+/g, "");     // 空白はぜんぶ気にしない
 
 createApp({
+  components: { ic: Ic },
+  methods: { I(n, c) { return Icon.svg(n, c); }, iO: e => Icon.of(e), iL: s => Icon.lead(s), iX: s => Icon.strip(s) },
   setup() {
     const L = Kit.load("pg_v1", {});
     const S = reactive({
@@ -96,14 +98,14 @@ createApp({
   },
   template: `
 <div class="wrap" v-if="S.ready">
-  <div v-if="S.toast" class="toast">{{ S.toast }}</div>
+  <div v-if="S.toast" class="toast"><ic v-if="iL(S.toast)[0]" :n="iL(S.toast)[0]"></ic>{{ iX(iL(S.toast)[1]) }}</div>
 
   <template v-if="S.view === 'menu'">
     <div class="hero"><div class="hero-t"><div class="logo">&lt;/&gt;</div><div><b>AIプログラミング教室</b><small>言語と年れいを えらぶと、AI先生が ぴったりの レッスンを つくるよ！</small></div></div></div>
     <div class="card">
       <div class="h3">① 言語</div>
       <div class="chips"><button v-for="l in S.args.langs" :key="l.id" class="chip" :class="{ on: S.lang === l.id }" @click="pickLang(l.id)">{{ l.id }}</button></div>
-      <div class="small muted" style="margin-top:8px">💡 {{ langOf.desc }}</div>
+      <div class="small muted" style="margin-top:8px"><ic n="bulb"></ic>{{ langOf.desc }}</div>
     </div>
     <div class="card">
       <div class="h3">② 年れい<span v-if="S.args.age != null" class="small muted">{{ S.args.age }}さいに合わせて えらんでおいたよ</span></div>
@@ -116,7 +118,7 @@ createApp({
         <button v-for="t in langOf.topics" :key="t" class="chip" :class="{ on: S.topic === t }" @click="S.topic = t">{{ t }}</button>
       </div>
     </div>
-    <button class="big" :disabled="S.busy" @click="start">{{ S.busy ? '🧙‍♂️ AI先生が レッスンを 作っているよ…（15秒くらい）' : '🚀 AI先生に レッスンを 作ってもらう！' }}</button>
+    <button class="big" :disabled="S.busy" @click="start"><ic v-if="iL(S.busy ? '🧙‍♂️ AI先生が レッスンを 作っているよ…（15秒くらい）' : '🚀 AI先生に レッスンを 作ってもらう！')[0]" :n="iL(S.busy ? '🧙‍♂️ AI先生が レッスンを 作っているよ…（15秒くらい）' : '🚀 AI先生に レッスンを 作ってもらう！')[0]"></ic>{{ iX(iL(S.busy ? '🧙‍♂️ AI先生が レッスンを 作っているよ…（15秒くらい）' : '🚀 AI先生に レッスンを 作ってもらう！')[1]) }}</button>
   </template>
 
   <template v-else-if="S.view === 'learn' && S.lesson">
@@ -127,7 +129,7 @@ createApp({
       <div class="note info">{{ S.lesson.overview }}</div>
       <div v-for="(w, k) in S.lesson.words" :key="k" class="card"><code class="term">{{ w.term }}</code>
         <div style="margin-top:6px"><b>意味：</b>{{ w.meaning }}</div><div class="small"><b>何に使う？</b> {{ w.usage }}</div></div>
-      <button class="big" @click="go('grammar')">つぎへ：文法を見る ➡️</button>
+      <button class="big" @click="go('grammar')">つぎへ：文法を見る <ic n="next"></ic></button>
     </template>
 
     <template v-else-if="S.phase === 'grammar'">
@@ -137,7 +139,7 @@ createApp({
         <div style="margin:6px 0">{{ g.explain }}</div>
         <template v-if="g.example"><div class="sub">れい</div><pre class="code">{{ g.example }}</pre></template>
       </div>
-      <div class="row2"><button class="btn" @click="go('words')">⬅️ 単語にもどる</button><button class="btn pri" @click="go('write')">つぎへ：書いてみよう ➡️</button></div>
+      <div class="row2"><button class="btn" @click="go('words')"><ic n="prev"></ic>単語にもどる</button><button class="btn pri" @click="go('write')">つぎへ：書いてみよう <ic n="next"></ic></button></div>
     </template>
 
     <template v-else-if="S.phase === 'write'">
@@ -146,46 +148,46 @@ createApp({
       <template v-if="step">
         <div class="prog"><i :style="{ width: (S.w / steps.length * 100) + '%' }"></i></div>
         <div class="small muted" style="margin:-6px 4px 8px">{{ S.w + 1 }} / {{ steps.length }} ステップ</div>
-        <div class="note info">🗣️ {{ step.explain }}</div>
-        <div class="sub">👇 この1行を打とう</div><pre class="code">{{ step.code }}</pre>
+        <div class="note info"><ic n="talk"></ic>{{ step.explain }}</div>
+        <div class="sub"><ic n="down"></ic>この1行を打とう</div><pre class="code">{{ step.code }}</pre>
         <input class="tin codein" v-model="S.typed" :disabled="S.wDone" placeholder="ここに打って Enter（または 決定）" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" @keydown="onKey">
         <div v-if="S.typed" class="live"><span v-for="(m, k) in marks" :key="k" :class="m.c">{{ m.ch }}</span></div>
-        <div v-if="S.wDone" class="fb ok">🎉 せいかい！</div>
-        <div v-else-if="S.wMiss" class="fb ng">❌ おしい！ 赤い文字を なおして もう一回 ためしてね。</div>
+        <div v-if="S.wDone" class="fb ok"><ic n="party"></ic>せいかい！</div>
+        <div v-else-if="S.wMiss" class="fb ng"><ic n="x"></ic>おしい！ 赤い文字を なおして もう一回 ためしてね。</div>
         <button v-if="!S.wDone" class="big" :disabled="!S.typed.trim()" @click="check">決定！</button>
-        <button v-else class="big" @click="nextStep">{{ S.w === steps.length - 1 ? '完成！ 実行結果を見る ➡️' : 'つぎのステップへ ➡️' }}</button>
+        <button v-else class="big" @click="nextStep"><ic v-if="iL(S.w === steps.length - 1 ? '完成！ 実行結果を見る ➡️' : 'つぎのステップへ ➡️')[0]" :n="iL(S.w === steps.length - 1 ? '完成！ 実行結果を見る ➡️' : 'つぎのステップへ ➡️')[0]"></ic>{{ iX(iL(S.w === steps.length - 1 ? '完成！ 実行結果を見る ➡️' : 'つぎのステップへ ➡️')[1]) }}</button>
       </template>
       <template v-else>
-        <div class="fb ok">🎉 プログラムが 完成したよ！</div>
-        <div class="sub" style="margin-top:10px">💻 実行すると こうなるよ</div><pre class="code out">{{ S.lesson.output }}</pre>
-        <button class="big" @click="go('quiz')">つぎへ：クイズに挑戦 ➡️</button>
+        <div class="fb ok"><ic n="party"></ic>プログラムが 完成したよ！</div>
+        <div class="sub" style="margin-top:10px"><ic n="monitor"></ic>実行すると こうなるよ</div><pre class="code out">{{ S.lesson.output }}</pre>
+        <button class="big" @click="go('quiz')">つぎへ：クイズに挑戦 <ic n="next"></ic></button>
       </template>
     </template>
 
     <template v-else>
       <div class="prog"><i :style="{ width: (S.qi / quiz.length * 100) + '%' }"></i></div>
-      <div class="h3">❓ {{ S.qi + 1 }} / {{ quiz.length }}<span class="small muted">⭕{{ score }}</span></div>
+      <div class="h3"><ic n="question"></ic>{{ S.qi + 1 }} / {{ quiz.length }}<span class="small muted"><ic n="o"></ic>{{ score }}</span></div>
       <div class="card qtext">{{ q.question }}</div>
       <div class="opts"><button v-for="(c, k) in q.choices" :key="S.qi + '-' + k" class="opt" :class="optClass(c)" :disabled="S.decided != null" @click="S.pick = c"><span class="mk">{{ 'ABCD'[k] }}</span><span class="grow mono">{{ c }}</span></button></div>
       <button v-if="S.decided == null" class="big" :disabled="S.pick == null" @click="decide">これで決定！</button>
       <template v-else>
-        <div class="fb" :class="S.decided === q.answer ? 'ok' : 'ng'">{{ S.decided === q.answer ? '⭕ せいかい！' : '❌ ざんねん… 正しい答えは「' + q.answer + '」だよ' }}<small v-if="q.explanation">{{ q.explanation }}</small></div>
-        <button class="big" @click="nextQ">{{ S.qi >= quiz.length - 1 ? '結果発表へ！ 🏆' : '次の問題へ ➡️' }}</button>
+        <div class="fb" :class="S.decided === q.answer ? 'ok' : 'ng'"><ic v-if="iL(S.decided === q.answer ? '⭕ せいかい！' : '❌ ざんねん… 正しい答えは「' + q.answer + '」だよ')[0]" :n="iL(S.decided === q.answer ? '⭕ せいかい！' : '❌ ざんねん… 正しい答えは「' + q.answer + '」だよ')[0]"></ic>{{ iX(iL(S.decided === q.answer ? '⭕ せいかい！' : '❌ ざんねん… 正しい答えは「' + q.answer + '」だよ')[1]) }}<small v-if="q.explanation">{{ q.explanation }}</small></div>
+        <button class="big" @click="nextQ"><ic v-if="iL(S.qi >= quiz.length - 1 ? '結果発表へ！ 🏆' : '次の問題へ ➡️')[0]" :n="iL(S.qi >= quiz.length - 1 ? '結果発表へ！ 🏆' : '次の問題へ ➡️')[0]"></ic>{{ iX(iL(S.qi >= quiz.length - 1 ? '結果発表へ！ 🏆' : '次の問題へ ➡️')[1]) }}</button>
       </template>
     </template>
   </template>
 
   <template v-else-if="S.view === 'end'">
-    <h2 class="center" style="margin-top:6px">🏆 レッスンクリア！</h2>
+    <h2 class="center" style="margin-top:6px"><ic n="trophy"></ic>レッスンクリア！</h2>
     <div class="card score">
       <div><small>点数</small><b>{{ score * 20 }}</b><i>/ 100点</i></div>
       <div><small>正解</small><b>{{ score }}</b><i>/ {{ quiz.length }}問</i></div>
       <div><small>言語</small><b style="font-size:17px">{{ S.play.lang }}</b></div>
     </div>
-    <div class="marks">{{ S.log.map(o => o ? '⭕' : '❌').join('') }}</div>
-    <div class="note" :class="score >= 3 ? 'good' : 'warn'">{{ score === quiz.length ? '🥇 パーフェクト！ もう立派なプログラマーだ！' : score >= 3 ? '🥈 いいね！ 単語と文法をもう一度見ると、さらに身につくよ。' : '🌱 よくがんばったね！ レッスンをもう一度やってみよう。' }}</div>
-    <button class="btn pdf" :disabled="!S.pdf" @click="Kit.openPdf(S.pdf)">{{ S.pdf ? '📄 表彰状を 見る' : '📄 表彰状を 作っています…' }}</button>
-    <div class="row2" style="margin-top:12px"><button class="btn" @click="begin">🔁 同じレッスンを もう一度</button><button class="btn pri" @click="S.view = 'menu'; Kit.top()">🔄 べつのレッスンを 作る</button></div>
+    <div class="marks"><ic v-for="(o, k) in S.log" :key="k" :n="o ? 'o' : 'x'" :class="o ? 'mok' : 'mng'"></ic></div>
+    <div class="note" :class="score >= 3 ? 'good' : 'warn'"><ic v-if="iL(score === quiz.length ? '🥇 パーフェクト！ もう立派なプログラマーだ！' : score >= 3 ? '🥈 いいね！ 単語と文法をもう一度見ると、さらに身につくよ。' : '🌱 よくがんばったね！ レッスンをもう一度やってみよう。')[0]" :n="iL(score === quiz.length ? '🥇 パーフェクト！ もう立派なプログラマーだ！' : score >= 3 ? '🥈 いいね！ 単語と文法をもう一度見ると、さらに身につくよ。' : '🌱 よくがんばったね！ レッスンをもう一度やってみよう。')[0]"></ic>{{ iX(iL(score === quiz.length ? '🥇 パーフェクト！ もう立派なプログラマーだ！' : score >= 3 ? '🥈 いいね！ 単語と文法をもう一度見ると、さらに身につくよ。' : '🌱 よくがんばったね！ レッスンをもう一度やってみよう。')[1]) }}</div>
+    <button class="btn pdf" :disabled="!S.pdf" @click="Kit.openPdf(S.pdf)"><ic v-if="iL(S.pdf ? '📄 表彰状を 見る' : '📄 表彰状を 作っています…')[0]" :n="iL(S.pdf ? '📄 表彰状を 見る' : '📄 表彰状を 作っています…')[0]"></ic>{{ iX(iL(S.pdf ? '📄 表彰状を 見る' : '📄 表彰状を 作っています…')[1]) }}</button>
+    <div class="row2" style="margin-top:12px"><button class="btn" @click="begin"><ic n="again"></ic>同じレッスンを もう一度</button><button class="btn pri" @click="S.view = 'menu'; Kit.top()"><ic n="refresh"></ic>べつのレッスンを 作る</button></div>
   </template>
 </div>
 <div v-else class="loading">読みこみ中…</div>`,

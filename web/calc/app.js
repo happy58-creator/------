@@ -38,6 +38,8 @@ function tex(src) {
 const KEYS = ["√", "π", "²", "/", "±", "(", ")", "≧", "≦", ",", "x", "="];
 
 createApp({
+  components: { ic: Ic },
+  methods: { I(n, c) { return Icon.svg(n, c); }, iO: e => Icon.of(e), iL: s => Icon.lead(s), iX: s => Icon.strip(s) },
   setup() {
     const L = (() => { try { return JSON.parse(sessionStorage.getItem("calc_v1") || "{}"); } catch (e) { return {}; } })();
     const S = reactive({
@@ -221,52 +223,52 @@ createApp({
   },
   template: `
 <div class="wrap" v-if="S.ready">
-  <div v-if="S.toast" class="toast">{{ S.toast }}</div>
+  <div v-if="S.toast" class="toast"><ic v-if="iL(S.toast)[0]" :n="iL(S.toast)[0]"></ic>{{ iX(iL(S.toast)[1]) }}</div>
 
   <!-- ホーム -->
   <template v-if="S.view === 'home'">
     <div class="hero"><div class="hero-t"><div class="logo">∑</div><div><b>{{ hero[0] }}</b><small>{{ hero[1] }}</small></div></div></div>
-    <div class="seg two"><button :class="{ on: S.tab === 'practice' }" @click="setTab('practice')">🏁 練習問題</button><button :class="{ on: S.tab === 'learn' }" @click="setTab('learn')">📖 学ぶ</button></div>
+    <div class="seg two"><button :class="{ on: S.tab === 'practice' }" @click="setTab('practice')"><ic n="flag"></ic>練習問題</button><button :class="{ on: S.tab === 'learn' }" @click="setTab('learn')"><ic n="book"></ic>学ぶ</button></div>
 
     <template v-if="S.tab === 'practice'">
       <div class="card">
-        <div class="h3">🎓 学年<span v-if="me.maxGrade" class="small muted">{{ C.gradeNames[me.maxGrade] }}までえらべるよ</span></div>
+        <div class="h3"><ic n="cap"></ic>学年<span v-if="me.maxGrade" class="small muted">{{ C.gradeNames[me.maxGrade] }}までえらべるよ</span></div>
         <div v-if="allowed.length > 1" class="grades">
           <div v-for="r in gradeRows" :key="r.k" class="grow-row"><span class="gname">{{ r.name }}</span>
             <div class="gbtns"><button v-for="g in r.grades" :key="g" :class="{ on: S.grade === g }" @click="pickGrade(g)">{{ shortGrade(g) }}</button></div></div>
         </div>
         <div v-else class="small"><b>{{ C.gradeNames[S.grade] }}</b> の問題が出るよ</div>
         <template v-if="courses.length > 1">
-          <div class="h3" style="margin-top:12px">📚 科目</div>
+          <div class="h3" style="margin-top:12px"><ic n="books"></ic>科目</div>
           <div class="chips"><button v-for="c in courses" :key="c" class="chip" :class="{ on: S.course === c }" @click="pickCourse(c)">{{ C.courses[c].name }}</button></div>
           <div class="small muted" style="margin-top:4px">{{ (C.courses[S.course] || {}).desc }}</div>
         </template>
-        <div v-else-if="S.course" class="small muted" style="margin-top:6px">📚 {{ C.courses[S.course].name }}：{{ C.courses[S.course].desc }}</div>
+        <div v-else-if="S.course" class="small muted" style="margin-top:6px"><ic n="books"></ic>{{ C.courses[S.course].name }}：{{ C.courses[S.course].desc }}</div>
       </div>
-      <div class="h3" style="margin:14px 4px 6px">✏️ 単元<span class="small muted">学んだ ✓ {{ doneCount }} / {{ units.length }}</span></div>
+      <div class="h3" style="margin:14px 4px 6px"><ic n="pen"></ic>単元<span class="small muted">学んだ ✓ {{ doneCount }} / {{ units.length }}</span></div>
       <div class="list">
         <button v-for="u in [MIX, ...nowUnits]" :key="u" class="urow" :class="{ on: S.unit === u }" @click="pickUnit(u)">
           <span class="radio"></span>
           <span class="grow"><b>{{ unitName(u) }}</b><small v-if="u === MIX">この学年の単元を まぜて出すよ</small></span>
           <i v-if="learned.has(u)" class="ok">✓</i>
-          <em v-if="bestOf(S.grade, S.course, u) != null" class="best">🏆{{ bestOf(S.grade, S.course, u) }}</em>
+          <em v-if="bestOf(S.grade, S.course, u) != null" class="best"><ic n="trophy"></ic>{{ bestOf(S.grade, S.course, u) }}</em>
         </button>
         <template v-if="reviewUnits.length">
-          <button class="rvhead" @click="S.review = !showReview">🔁 前の学年の ふくしゅう（{{ reviewUnits.length }}）<span>{{ showReview ? '▲' : '▼' }}</span></button>
+          <button class="rvhead" @click="S.review = !showReview"><ic n="again"></ic>前の学年の ふくしゅう（{{ reviewUnits.length }}）<span>{{ showReview ? '▲' : '▼' }}</span></button>
           <template v-if="showReview">
             <button v-for="u in reviewUnits" :key="u" class="urow rv" :class="{ on: S.unit === u }" @click="pickUnit(u)">
               <span class="radio"></span><span class="grow"><b>{{ unitName(u) }}</b></span>
               <i v-if="learned.has(u)" class="ok">✓</i>
-              <em v-if="bestOf(S.grade, S.course, u) != null" class="best">🏆{{ bestOf(S.grade, S.course, u) }}</em>
+              <em v-if="bestOf(S.grade, S.course, u) != null" class="best"><ic n="trophy"></ic>{{ bestOf(S.grade, S.course, u) }}</em>
             </button>
           </template>
         </template>
       </div>
-      <button class="big" :disabled="!!S.busy" @click="start()">{{ S.busy === 'start' ? 'つくっています…' : '🏁 ' + TOTAL + '問に挑戦！' }}</button>
+      <button class="big" :disabled="!!S.busy" @click="start()"><template v-if="S.busy === 'start'">つくっています…</template><template v-else><ic n="flag"></ic>{{ TOTAL }}問に挑戦！</template></button>
     </template>
 
     <template v-else>
-      <div class="lsum"><span>📖 学んだ単元</span><b>{{ learnDone }}</b><i>/ {{ learnAll }}</i><div class="bar"><i :style="{ width: (learnAll ? learnDone / learnAll * 100 : 0) + '%' }"></i></div></div>
+      <div class="lsum"><span><ic n="book"></ic>学んだ単元</span><b>{{ learnDone }}</b><i>/ {{ learnAll }}</i><div class="bar"><i :style="{ width: (learnAll ? learnDone / learnAll * 100 : 0) + '%' }"></i></div></div>
       <div v-if="stages.length > 1" class="seg" :style="{ gridTemplateColumns: 'repeat(' + stages.length + ',1fr)' }">
         <button v-for="[k, name] in stages" :key="k" :class="{ on: S.stage === k }" @click="pickStage(k)">{{ name }}</button>
       </div>
@@ -291,31 +293,31 @@ createApp({
     <div class="bar-top"><button class="back" @click="home('learn')">‹ 目次</button><b>{{ lessonItem[0] }}</b><span></span></div>
     <div class="card lesson">
       <div class="lt"><span class="num">{{ lessonAt + 1 }}</span><h2>{{ unitName(S.lesson) }}</h2><i v-if="learned.has(S.lesson)" class="ok big">✓</i></div>
-      <p class="intro" v-html="'💡 ' + tex(lessons[S.lesson].intro)"></p>
+      <p class="intro" v-html="I('bulb') + '' + tex(lessons[S.lesson].intro)"></p>
       <div class="sub">おぼえよう</div>
       <ul class="points"><li v-for="(p, k) in lessons[S.lesson].points" :key="k" v-html="tex(p)"></li></ul>
-      <div v-if="lessons[S.lesson].caution" class="caution" v-html="'⚠️ ' + tex(lessons[S.lesson].caution)"></div>
+      <div v-if="lessons[S.lesson].caution" class="caution" v-html="I('warn') + '' + tex(lessons[S.lesson].caution)"></div>
     </div>
     <div class="card">
-      <div class="sub">✏️ 例題</div>
+      <div class="sub"><ic n="pen"></ic>例題</div>
       <div class="q" v-html="tex(lessons[S.lesson].example.q)"></div>
       <ol class="steps"><li v-for="(st, k) in lessons[S.lesson].example.steps" :key="k" v-html="tex(st)"></li></ol>
-      <div class="ans">👉 答え：<b v-html="tex(lessons[S.lesson].example.answer)"></b></div>
+      <div class="ans"><ic n="point"></ic>答え：<b v-html="tex(lessons[S.lesson].example.answer)"></b></div>
     </div>
     <div class="card" v-if="example(S.lesson)">
-      <div class="sub">🔁 数字を変えた例題</div>
+      <div class="sub"><ic n="again"></ic>数字を変えた例題</div>
       <div class="q" v-html="tex(example(S.lesson).q)"></div>
       <button v-if="!showEx[S.lesson]" class="btn" @click="showEx[S.lesson] = true">答えを見る</button>
       <template v-else>
-        <div class="ans">👉 答え：<b>{{ example(S.lesson).show }}</b></div>
-        <div class="small muted" style="margin-top:4px" v-html="'📝 ' + tex(example(S.lesson).explain)"></div>
+        <div class="ans"><ic n="point"></ic>答え：<b>{{ example(S.lesson).show }}</b></div>
+        <div class="small muted" style="margin-top:4px" v-html="I('note') + '' + tex(example(S.lesson).explain)"></div>
       </template>
       <button class="link" :disabled="S.exWait === S.lesson" @click="showEx[S.lesson] = false; moreExample(S.lesson)">{{ S.exWait === S.lesson ? 'つくっています…' : 'ほかの数字で ›' }}</button>
     </div>
     <div class="row2">
       <button v-if="learned.has(S.lesson)" class="btn done" disabled>✓ 学んだ！</button>
-      <button v-else class="btn ok" @click="markLearned(lessonItem)">✅ 学んだ！</button>
-      <button class="btn pri" :disabled="!!S.busy" @click="start(lessonItem[1], lessonItem[2], lessonItem[3])">🏁 この単元を練習</button>
+      <button v-else class="btn ok" @click="markLearned(lessonItem)"><ic n="checkc"></ic>学んだ！</button>
+      <button class="btn pri" :disabled="!!S.busy" @click="start(lessonItem[1], lessonItem[2], lessonItem[3])"><ic n="flag"></ic>この単元を練習</button>
     </div>
     <div class="row2" style="margin-top:8px">
       <button class="btn" :disabled="lessonAt <= 0" @click="stepLesson(-1)">‹ 前の単元</button>
@@ -327,7 +329,7 @@ createApp({
   <template v-else-if="S.view === 'play' && S.set">
     <div class="bar-top"><button class="back" @click="quit()">‹ やめる</button><b>{{ C.gradeNames[S.set.grade] }}・{{ unitName(S.set.unit) }}</b><span class="cnt">{{ filled }}/{{ S.set.questions.length }}</span></div>
     <div class="small muted" style="margin:-4px 4px 8px">わからない問題は 空らんのままでも OK。ぜんぶできたら 一番下の「答えあわせ」を押してね。</div>
-    <button class="howto-b" @click="S.howto = !S.howto">✍️ 答えの書き方 {{ S.howto ? '▲' : '▼' }}</button>
+    <button class="howto-b" @click="S.howto = !S.howto"><ic n="pen"></ic>答えの書き方 {{ S.howto ? '▲' : '▼' }}</button>
     <div v-if="S.howto" class="card small howto">
       <div><b>分数</b> 3/4　<b>帯分数</b> 2と1/3　<b>小数</b> 0.25</div>
       <div><b>ルート</b> √3、2√3、√(x+1)（ルートの中は いちばん小さく、分母は有理化）</div>
@@ -350,44 +352,44 @@ createApp({
       <b>まだ {{ S.blankAsk }}問 空らんだよ。このまま答えあわせしてもいい？</b>
       <div class="row2" style="margin-top:10px"><button class="btn" @click="S.blankAsk = 0">もどって答える</button><button class="btn pri" @click="submit(true)">このまま答えあわせ</button></div>
     </div>
-    <button v-else class="big red" @click="submit(false)">🚨 答えあわせをする！</button>
+    <button v-else class="big red" @click="submit(false)"><ic n="alarm"></ic>答えあわせをする！</button>
   </template>
 
   <!-- 結果 -->
   <template v-else-if="S.view === 'result'">
     <div v-if="!S.result" class="card center wait"><div class="spin"></div>答えあわせ中…</div>
     <template v-else>
-      <h2 class="center" style="margin-top:6px">🏆 チャレンジ おつかれさま！</h2>
+      <h2 class="center" style="margin-top:6px"><ic n="trophy"></ic>チャレンジ おつかれさま！</h2>
       <div class="card score">
         <div><small>今回の点数</small><b>{{ S.result.score }}</b><i>/ 100点</i></div>
         <div><small>正解</small><b>{{ S.result.correct }}</b><i>/ {{ S.result.n }}問</i></div>
         <div><small>ベスト</small><b>{{ S.result.best }}</b><i>点</i></div>
       </div>
-      <div v-if="S.result.newBest" class="note good">🎉 ベストスコア更新！</div>
+      <div v-if="S.result.newBest" class="note good"><ic n="party"></ic>ベストスコア更新！</div>
       <div v-if="S.result.blank" class="small muted center">未入力の問題が {{ S.result.blank }}問 あったよ。</div>
-      <div class="note" :class="S.result.score >= 80 ? 'good' : 'warn'">💬 {{ S.result.comment }}</div>
-      <button v-if="S.result.pdf" class="btn pdf" @click="openPdf(S.result.pdf)">📄 表彰状を 見る</button>
+      <div class="note" :class="S.result.score >= 80 ? 'good' : 'warn'"><ic n="chat"></ic>{{ S.result.comment }}</div>
+      <button v-if="S.result.pdf" class="btn pdf" @click="openPdf(S.result.pdf)"><ic n="file"></ic>表彰状を 見る</button>
 
       <template v-if="S.result.wrong.length">
-        <div class="h3" style="margin:16px 4px 8px">👀 まちがえた問題を 見なおそう（{{ S.result.wrong.length }}問）</div>
+        <div class="h3" style="margin:16px 4px 8px"><ic n="eye"></ic>まちがえた問題を 見なおそう（{{ S.result.wrong.length }}問）</div>
         <div v-for="(i, n) in S.result.wrong" :key="i" class="card">
           <div class="qh"><b>問 {{ i + 1 }}</b><small>{{ unitName(S.set.questions[i].unit) }}</small></div>
           <div class="q" v-html="tex(S.set.questions[i].q)"></div>
           <div class="cmp"><span>あなたの答え</span><code>{{ S.result.rows[i].user || '（未入力）' }}</code><span>正しい答え</span><b>{{ S.result.rows[i].show }}</b></div>
-          <div v-if="S.result.rows[i].note && S.result.rows[i].note !== '（未入力）'" class="small hintline">💡 {{ S.result.rows[i].note }}</div>
-          <div v-if="S.ai && S.ai[n]" class="aibox"><b>🤖 AI先生の解説</b><div v-html="tex(S.ai[n])"></div><div class="small muted" v-html="'📝 解き方のポイント：' + tex(S.result.rows[i].explain)"></div></div>
+          <div v-if="S.result.rows[i].note && S.result.rows[i].note !== '（未入力）'" class="small hintline"><ic n="bulb"></ic>{{ S.result.rows[i].note }}</div>
+          <div v-if="S.ai && S.ai[n]" class="aibox"><b><ic n="spark"></ic>AI先生の解説</b><div v-html="tex(S.ai[n])"></div><div class="small muted" v-html="I('note') + '解き方のポイント：' + tex(S.result.rows[i].explain)"></div></div>
           <div v-else-if="S.aiWait" class="aibox wait"><div class="spin sm"></div>AI先生が 解説を 書いているよ…</div>
-          <div v-else class="aibox" v-html="'📝 解き方：' + tex(S.result.rows[i].explain)"></div>
+          <div v-else class="aibox" v-html="I('note') + '解き方：' + tex(S.result.rows[i].explain)"></div>
         </div>
       </template>
-      <button class="link" style="margin:6px 4px" @click="S.all = !S.all">📊 全部の結果を{{ S.all ? 'とじる' : '見る' }}</button>
+      <button class="link" style="margin:6px 4px" @click="S.all = !S.all"><ic n="chart"></ic>全部の結果を{{ S.all ? 'とじる' : '見る' }}</button>
       <div v-if="S.all" class="list">
-        <div v-for="(r, i) in S.result.rows" :key="i" class="rrow"><span class="mk" :class="r.ok ? 'o' : 'x'">{{ r.ok ? '⭕' : '❌' }}</span>
+        <div v-for="(r, i) in S.result.rows" :key="i" class="rrow"><span class="mk" :class="r.ok ? 'o' : 'x'"><ic :n="r.ok ? 'o' : 'x'"></ic></span>
           <div class="grow"><div class="q sm" v-html="tex(S.set.questions[i].q)"></div><small>あなた：{{ r.user || '（未入力）' }}　正解：{{ r.show }}</small></div></div>
       </div>
       <div class="row2" style="margin-top:14px">
-        <button class="btn pri" :disabled="!!S.busy" @click="start(S.set.grade, S.set.course, S.set.unit)">🔁 同じ単元で もう一度</button>
-        <button class="btn" @click="home('practice')">🔄 単元を えらびなおす</button>
+        <button class="btn pri" :disabled="!!S.busy" @click="start(S.set.grade, S.set.course, S.set.unit)"><ic n="again"></ic>同じ単元で もう一度</button>
+        <button class="btn" @click="home('practice')"><ic n="refresh"></ic>単元を えらびなおす</button>
       </div>
     </template>
   </template>

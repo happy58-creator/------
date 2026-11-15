@@ -32,6 +32,12 @@ const nowStamp = () => { const d = new Date(); return `${ymd(d)} ${pad(d.getHour
 // ---------------------------------------------------------------- 計算
 const lineExact = (rc, it) => rnum(it.price) * (rc.tax_mode === "外税" ? 1 + (+it.tax || 0) / 100 : 1);
 const lineYen = (rc, it) => Math.round(lineExact(rc, it));
+// 行の下の「税込 ○円」（外税）・「うち消費税 ○円」（内税）。税率を変えると、ここが変わる
+function taxNote(rc, it) {
+  const t = +it.tax || 0, p = rnum(it.price);
+  if (rc.tax_mode === "外税") return `税込 ${yen(lineYen(rc, it))}${t ? `（税 ${yen(Math.round(p * t / 100))}）` : ""}`;
+  return t ? `税込みの値段・うち消費税 ${yen(Math.floor(p * t / (100 + t)))}` : "非課税";
+}
 function receiptCalc(rc) {          // レシートと同じ出し方の合計（外税は税率ごとに1円未満を切りすて）
   if (rc.tax_mode !== "外税") return rc.items.reduce((a, it) => a + Math.round(rnum(it.price)), 0);
   const by = {};
@@ -130,8 +136,8 @@ function editView(manual) {
           <label class="rqty">×<input data-ri="${i}|${j}|qty" inputmode="numeric" value="${esc(it.qty)}" placeholder="1"></label>
           <button class="rmove" data-r="move" data-i="${i}" data-j="${j}" aria-label="カテゴリを変える">${icon(it.cat)}</button>
           <button class="rdel" data-r="dline" data-i="${i}" data-j="${j}" aria-label="消す">✕</button></div>
-        ${it.raw && normKey(it.raw) !== normKey(it.name) || it.unsure || it.mem ? `<div class="rraw">${it.raw ? `レシート：${esc(it.raw)}` : ""}${it.unsure ? `<i class="runsure">要確認</i>` : ""}${it.mem ? `<i class="rmem">覚えた直し方</i>` : ""}${rc.tax_mode === "外税" ? `<span id="ty${i}_${j}">税込 ${yen(lineYen(rc, it))}</span>` : ""}</div>`
-          : rc.tax_mode === "外税" ? `<div class="rraw"><span id="ty${i}_${j}">税込 ${yen(lineYen(rc, it))}</span></div>` : ""}
+        ${it.raw && normKey(it.raw) !== normKey(it.name) || it.unsure || it.mem ? `<div class="rraw">${it.raw ? `レシート：${esc(it.raw)}` : ""}${it.unsure ? `<i class="runsure">要確認</i>` : ""}${it.mem ? `<i class="rmem">覚えた直し方</i>` : ""}<span id="ty${i}_${j}">${taxNote(rc, it)}</span></div>`
+          : `<div class="rraw"><span id="ty${i}_${j}">${taxNote(rc, it)}</span></div>`}
       </div>`).join("");
       return `<div class="rgroup"><div class="ghead"><button class="gcat" data-r="gcat" data-i="${i}" data-c="${esc(c)}"><span class="bic">${icon(c)}</span><b>${esc(c)}</b><i class="chev">▾</i></button>
           <label class="gamt ${own ? "own" : ""}">まとめて<input data-rg="${i}" data-c="${esc(c)}" inputmode="numeric" value="${groupAmt(rc, c)}">円</label></div>
@@ -335,21 +341,103 @@ function regSave() {
 function detailOf(r) { try { const d = JSON.parse(r["明細"] || ""); return d && Array.isArray(d.i) ? d : null; } catch (e) { return null; } }
 function detailCount(r) { const d = r["明細"] ? detailOf(r) : null; return d ? d.i.length : 0; }
 let detailId = "";
+// ---------------------------------------------------------------- 記録の編集（カレンダー・一覧で記録を押したとき）
+// 日付・カテゴリ・金額・支払方法・メモと、明細の品物（品名・金額・個数・税率・カテゴリ・記録）を直して、まとめて保存する
+let ED = null;
 function openDetail(id) {
-  const r = D.records.find(x => x.ID === id), d = r && detailOf(r);
-  if (!d) { closeModal(); return; }
+  const r = D.records.find(x => x.ID === id); if (!r) { closeModal(); return; }
+  const d = detailOf(r);
   detailId = id;
-  const exp = cats(EXP), icon = c => svgIcon(iconKey(exp.find(x => x["名前"] === c) || { 名前: c }));
-  const sum = d.i.reduce((a, it) => a + int(it.p), 0);
-  modal(`<div class="dhead"><div class="ic">${icon(r["カテゴリ"])}</div><div><b>${esc(r["カテゴリ"])}</b><span>${dlabel(r["日付"])}${d.s ? "・" + esc(d.s) : ""}・${esc(payOf(r))}</span></div><div class="v exp">${yen(int(r["金額"]))}</div></div>
-    <div class="dlist">${d.i.map((it, j) => `<div class="drow">
-      <div class="dn"><b>${esc(it.n)}</b><span>${it.q > 1 ? `×${it.q}・` : ""}${taxText(+it.t || 0)}</span></div>
-      <div class="dp">${yen(int(it.p))}</div>
-      <button class="rmove" data-r="dmove" data-j="${j}" aria-label="カテゴリを変える">${icon(r["カテゴリ"])}</button>
-      <button class="rrec ${it.rec ? "done" : ""}" data-r="drec" data-j="${j}">${it.rec ? "記録済" : "記録"}</button></div>`).join("")}</div>
-    ${sum !== int(r["金額"]) ? `<div class="small muted" style="margin:6px 4px 0">品物の合計 ${yen(sum)}（まとめ金額・端数のちがいがあります）</div>` : ""}
-    <div class="small muted" style="margin:8px 4px 12px">品物のアイコンでカテゴリを変えると、その品物の金額がそのカテゴリの記録へ移ります。「記録」で買い物リストの値段の記録に入れます</div>
-    <div class="row2"><button class="btn" data-r="dcat">全部のカテゴリを変える</button><button class="btn pri pink" data-r="mclose">閉じる</button></div>`);
+  ED = { id, kind: r["種類"], date: r["日付"], cat: r["カテゴリ"], amt: String(int(r["金額"])), memo: r["メモ"] || "", pay: payOf(r), oldPay: payOf(r),
+    det: d ? { ...d } : null, items: d ? d.i.map(it => ({ ...it, cat: r["カテゴリ"], p: String(int(it.p)), q: String(it.q || 1) })) : [],
+    sibs: true };
+  // 金額が品物の合計とほぼ同じ（端数のちがいだけ）なら、品物を直すと金額も合わせる（端数のちがいはそのまま）
+  const sum = d ? d.i.reduce((a, it) => a + int(it.p), 0) : 0;
+  ED.off = int(r["金額"]) - sum; ED.sync = !!d && d.i.length > 0 && Math.abs(ED.off) <= Math.max(2, d.i.length);
+  drawEdit();
+}
+const edSum = () => ED.items.reduce((a, it) => a + (it.cat === ED.cat ? int(it.p) : 0), 0);
+// 同じレシートの、ほかのカテゴリの記録
+function edSiblings() {
+  const r = D.records.find(x => x.ID === ED.id), d = r && detailOf(r);
+  return d && d.r ? D.records.filter(x => x.ID !== r.ID && (detailOf(x) || {}).r === d.r) : [];
+}
+function drawEdit() {
+  if (!ED) return;
+  const kind = ED.kind, isE = kind === EXP, list = cats(kind);
+  const icon = c => svgIcon(iconKey(list.find(x => x["名前"] === c) || { 名前: c }));
+  const sibs = isE ? edSiblings() : [];
+  const moved = ED.items.filter(it => it.cat !== ED.cat);
+  modal(`<div class="dhead"><button class="ebic" data-r="ecat">${icon(ED.cat)}</button><div><b>${esc(ED.cat)}<button class="rename" data-r="ecat">カテゴリを変える</button></b><span>${esc(kind)}の記録を 直す</span></div></div>
+    <div class="card eform">
+      <div class="field"><label>日付</label><input type="date" data-ed="date" value="${esc(ED.date)}"></div>
+      <div class="field"><label>金額</label><div class="amount"><input data-ed="amt" inputmode="numeric" value="${esc(ED.amt)}">円${isE ? `<button class="paybtn ${ED.pay === CARD ? "is-card" : ED.pay === FURI ? "is-furi" : ""}" data-r="epay">${ED.pay}</button>` : ""}</div></div>
+      <div class="field"><label>メモ</label><input data-ed="memo" value="${esc(ED.memo)}" maxlength="60" placeholder="未入力"></div>
+      ${isE && sibs.length && ED.pay !== ED.oldPay ? `<label class="esibs"><input type="checkbox" data-ed="sibs" ${ED.sibs ? "checked" : ""}> 同じレシートのほかの記録（${sibs.map(x => esc(x["カテゴリ"])).join("・")}）も ${ED.pay} にする</label>` : ""}
+    </div>
+    ${isE ? `<div class="sec" style="margin-top:12px">品物${ED.items.length ? `（${ED.items.length}品）` : ""}<span class="small muted" style="margin-left:auto;font-weight:600">品物の合計 <b id="esum">${yen(edSum())}</b></span></div>
+    <div class="elist">${ED.items.map((it, j) => `<div class="eline ${it.cat !== ED.cat ? "moved" : ""}">
+      <div class="rl1"><input data-ei="${j}|n" value="${esc(it.n)}" placeholder="品名" maxlength="40">
+        <button class="rrec ${it.rec ? "done" : ""}" data-r="erec" data-j="${j}">${it.rec ? "記録済" : "記録"}</button></div>
+      <div class="rl2"><label class="ryen"><input data-ei="${j}|p" inputmode="numeric" value="${esc(it.p)}" placeholder="0">円</label>
+        <button class="rtax t${+it.t || 0}" data-r="etax" data-j="${j}">${taxText(+it.t || 0)}</button>
+        <label class="rqty">×<input data-ei="${j}|q" inputmode="numeric" value="${esc(it.q)}" placeholder="1"></label>
+        <button class="rmove" data-r="emove" data-j="${j}" aria-label="カテゴリを変える">${icon(it.cat)}</button>
+        <button class="rdel" data-r="edel" data-j="${j}" aria-label="消す">✕</button></div>
+      ${it.cat !== ED.cat ? `<div class="rraw"><i class="rmem">保存すると「${esc(it.cat)}」へ移ります</i></div>` : ""}
+    </div>`).join("") || `<div class="empty" style="padding:14px">品物の明細はありません</div>`}</div>
+    <button class="radd" data-r="eadd">＋ 品物を足す</button>
+    <div class="small muted" style="margin:6px 4px 0">金額は税込みです。品物のアイコンでカテゴリを変えると、保存したときに その品物の金額が そのカテゴリの記録へ移ります</div>` : ""}
+    <div class="row2" style="margin-top:14px"><button class="btn" data-r="mclose">閉じる</button><button class="btn pri pink" data-r="esave">保存する</button></div>
+    <button class="link edrop" data-r="edrop">この記録を消す</button>`);
+}
+// 品物を直したら、品物の合計と（合わせているときは）金額を直す。書きなおさない（キーボードが閉じないように）
+function edRefresh() {
+  const s = document.getElementById("esum"); if (s) s.textContent = yen(edSum());
+  if (ED.sync) { ED.amt = String(edSum() + ED.off); const a = document.querySelector('[data-ed="amt"]'); if (a && a !== document.activeElement) a.value = ED.amt; }
+}
+function edSave() {
+  const r = D.records.find(x => x.ID === ED.id); if (!r) { closeModal(); return; }
+  const amt = int(ED.amt);
+  if (!ED.date) { toast("日付を入れてください"); return; }
+  const isE = ED.kind === EXP;
+  const keep = ED.items.filter(it => it.cat === ED.cat && String(it.n).trim()), moves = ED.items.filter(it => it.cat !== ED.cat && String(it.n).trim());
+  const clean = it => { const o = { n: String(it.n).trim(), p: int(it.p), q: Math.max(1, int(it.q) || 1), t: +it.t || 0, k: it.k || "" }; if (it.rec) o.rec = 1; return o; };
+  const base = ED.det || { r: "", s: "", c: "", sid: "", i: [] };
+  const hasDet = isE && (ED.det || ED.items.length);
+  const rows = [], add = [], del = [], memo = [];
+  let moveSum = 0;
+  // 品物を ほかのカテゴリへ（同じレシートの そのカテゴリの記録があれば足す。なければ作る）
+  const byCat = {};
+  moves.forEach(it => (byCat[it.cat] = byCat[it.cat] || []).push(it));
+  for (const [c, its] of Object.entries(byCat)) {
+    const sum = its.reduce((a, it) => a + int(it.p), 0); moveSum += sum;
+    const sib = base.r ? D.records.find(x => x.ID !== r.ID && x["カテゴリ"] === c && x["種類"] === r["種類"] && (detailOf(x) || {}).r === base.r) : null;
+    if (sib) {
+      const sd = detailOf(sib), nd = { ...sd, i: [...sd.i, ...its.map(clean)] };
+      rows.push({ ...sib, 金額: int(sib["金額"]) + sum, 明細: JSON.stringify(nd), メモ: memoOf(nd.s, nd.i.map(x => x.n)) });
+    } else {
+      const nd = { ...base, i: its.map(clean) };
+      add.push({ ID: uid(), 日付: ED.date, 種類: r["種類"], 金額: sum, カテゴリ: c, メモ: memoOf(nd.s, nd.i.map(x => x.n)), 支払方法: ED.pay, 登録日時: r["登録日時"] || nowStamp(), 明細: JSON.stringify(nd) });
+    }
+    its.forEach(it => { if (it.k) memo.push({ キー: it.k, 品名: String(it.n).trim(), カテゴリ: c, 更新: today() }); });
+  }
+  const final = ED.sync ? keep.reduce((a, it) => a + int(it.p), 0) + (keep.length ? ED.off : 0) : amt - moveSum;
+  if (hasDet && !keep.length && moves.length) del.push(r.ID);                                   // 品物が全部ほかへ移った：この記録は消す
+  else {
+    if (final <= 0) { toast(moveSum ? "移す品物の金額が、この記録の金額より多いです" : "金額を入れてください"); return; }
+    const nr = { ...r, 日付: ED.date, カテゴリ: ED.cat, 金額: final, メモ: ED.memo.trim() };
+    if (isE) nr["支払方法"] = ED.pay;
+    if (hasDet) { const nd = { ...base, i: keep.map(clean) }; nr["明細"] = JSON.stringify(nd); if (ED.items.length && !ED.memo.trim()) nr["メモ"] = memoOf(nd.s, nd.i.map(x => x.n)); }
+    rows.push(nr);
+  }
+  // 同じレシートの、ほかの記録の支払方法
+  if (isE && ED.pay !== ED.oldPay && ED.sibs) edSiblings().forEach(x => { const o = rows.find(y => y.ID === x.ID); if (o) o["支払方法"] = ED.pay; else rows.push({ ...x, 支払方法: ED.pay }); });
+  // 品名を直した品物は、次のレシートから その直し方にする
+  ED.items.forEach(it => { const o = (ED.det && ED.det.i || []).find(x => x.k && x.k === it.k); if (it.k && o && o.n !== String(it.n).trim() && it.cat === ED.cat) memo.push({ キー: it.k, 品名: String(it.n).trim(), カテゴリ: ED.cat, 更新: today() }); });
+  act({ type: "update_records", rows, add, del });
+  if (memo.length) act({ type: "save_receipt_memo", rows: memo });
+  ED = null; closeModal(); render(true); toast("保存しました");
 }
 // 同じレシートで、そのカテゴリの記録（なければ作る）
 function siblingOf(r, d, cat) {
@@ -400,11 +488,11 @@ function recFromDetail(j) {
 
 // ---------------------------------------------------------------- カテゴリを選ぶ
 let catPick = null;
-function pickCat(title, cur, fn) {
+function pickCat(title, cur, fn, kind) {
   catPick = fn;
   modal(`<div class="title" style="margin-top:0">${title}</div>
-    <div class="cats">${cats(EXP).map(c => `<button class="cat ${c["名前"] === cur ? "on" : ""}" data-r="catok" data-v="${esc(c["名前"])}">${svgIcon(iconKey(c), "ic")}<span>${esc(c["名前"])}</span></button>`).join("")}</div>
-    <button class="btn" style="margin-top:14px" data-r="mclose">閉じる</button>`);
+    <div class="cats">${cats(kind || EXP).map(c => `<button class="cat ${c["名前"] === cur ? "on" : ""}" data-r="catok" data-v="${esc(c["名前"])}">${svgIcon(iconKey(c), "ic")}<span>${esc(c["名前"])}</span></button>`).join("")}</div>
+    <button class="btn" style="margin-top:14px" data-r="catcancel">もどる</button>`);
 }
 
 // ---------------------------------------------------------------- 保存
@@ -768,6 +856,7 @@ document.addEventListener("click", e => {
       });
       break;
     }
+    case "catcancel": catPick = null; if (ED) drawEdit(); else closeModal(); break;
     case "catok": { closeModal(); const fn = catPick; catPick = null; if (fn) fn(b.dataset.v); rkeep(); render(true); break; }
     case "greset": if (rc.amt) delete rc.amt[b.dataset.c]; rkeep(); render(true); break;
     case "rec": openRec(i, j); break;
@@ -781,6 +870,16 @@ document.addEventListener("click", e => {
     case "regsave": regSave(); break;
     case "rdetail": if (!e.target.closest("[data-a]")) openDetail(b.dataset.id); break;
     case "dmove": { const r = D.records.find(x => x.ID === detailId); pickCat("この品物のカテゴリ", r ? r["カテゴリ"] : "", c => moveItem(j, c)); break; }
+    case "ecat": if (ED) pickCat("この記録のカテゴリ", ED.cat, c => { ED.items.forEach(it => { if (it.cat === ED.cat) it.cat = c; }); ED.cat = c; drawEdit(); }, ED.kind); break;
+    case "epay": if (ED) { ED.pay = PAY_METHODS[(PAY_METHODS.indexOf(ED.pay) + 1) % PAY_METHODS.length]; drawEdit(); } break;
+    case "etax": if (ED && ED.items[j]) { const it = ED.items[j]; it.t = TAXES[(TAXES.indexOf(+it.t || 0) + 1) % TAXES.length]; drawEdit(); } break;
+    case "emove": if (ED && ED.items[j]) pickCat("この品物のカテゴリ", ED.items[j].cat, c => { ED.items[j].cat = c; drawEdit(); }); break;
+    case "edel": if (ED && ED.items[j]) { ED.items.splice(j, 1); edRefresh(); drawEdit(); } break;
+    case "eadd": if (ED) { ED.items.push({ n: "", p: "", q: "1", t: 8, k: "", cat: ED.cat }); if (!ED.det && !ED.items.slice(0, -1).length) { ED.sync = int(ED.amt) === 0; ED.off = 0; } drawEdit(); } break;
+    case "erec": if (ED && ED.items[j]) { const it = ED.items[j], d = ED.det || {}, id = ED.id, keepEd = ED;
+      openRecWith({ name: it.n, price: int(it.p), qty: int(it.q) || 1, sid: d.sid, date: ED.date, shop: d.c || d.s, done: sid => { it.rec = 1; if (sid && keepEd.det && !keepEd.det.sid) keepEd.det.sid = sid; ED = keepEd; setTimeout(drawEdit, 50); } }); } break;
+    case "esave": if (ED) edSave(); break;
+    case "edrop": if (ED) { const id = ED.id; confirmBox("この記録を消しますか？（もとにもどせません）", "消す", () => { act({ type: "update_records", rows: [], del: [id] }); ED = null; closeModal(); render(true); toast("消しました"); }); } break;
     case "dcat": { const r = D.records.find(x => x.ID === detailId); pickCat("まとめてカテゴリを変える", r ? r["カテゴリ"] : "", c => recatAll(c)); break; }
     case "drec": recFromDetail(j); break;
     case "recsave": saveRec(); break;
@@ -799,7 +898,7 @@ document.addEventListener("input", e => {
     const [i, j, f] = t.dataset.ri.split("|"), it = RL()[+i] && RL()[+i].items[+j]; if (!it) return;
     if (f !== "name") t.value = t.value.replace(f === "price" ? /[^0-9\-]/g : /[^0-9]/g, "");
     it[f] = t.value; if (f === "name") it.unsure = false;
-    const ty = document.getElementById(`ty${i}_${j}`), rc = RL()[+i]; if (ty && rc) ty.textContent = "税込 " + yen(lineYen(rc, it));     // 書きなおさずに税込の表示だけ直す
+    const ty = document.getElementById(`ty${i}_${j}`), rc = RL()[+i]; if (ty && rc) ty.textContent = taxNote(rc, it);     // 書きなおさずに税込の表示だけ直す
     rkeep(); refreshTotals();
   } else if (t.dataset.rg !== undefined) {
     const rc = RL()[+t.dataset.rg]; if (!rc) return;
@@ -809,6 +908,15 @@ document.addEventListener("input", e => {
     const [i, f] = t.dataset.rh.split("|"), rc = RL()[+i];
     if (rc) { rc[f] = t.value; if (f === "store") rc.sid = matchStore(t.value) || rc.sid; }       // お店の名前から、買い物リストのお店を選んでおく
     rkeep();
+  } else if (t.dataset.ed && ED) {
+    const f = t.dataset.ed;
+    if (f === "sibs") return;
+    if (f === "amt") { t.value = t.value.replace(/[^0-9]/g, ""); ED.sync = false; }
+    ED[f] = t.value;
+  } else if (t.dataset.ei && ED) {
+    const [j, f] = t.dataset.ei.split("|"), it = ED.items[+j]; if (!it) return;
+    if (f !== "n") t.value = t.value.replace(/[^0-9]/g, "");
+    it[f] = t.value; if (f === "p") edRefresh();
   } else if (t.dataset.rq && regDraft) {
     regDraft[t.dataset.rq] = t.value;
   } else if (t.dataset.rd && recDraft && t.tagName !== "SELECT") {
@@ -820,6 +928,7 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target;
+  if (t.dataset.ed === "sibs" && ED) { ED.sibs = t.checked; return; }
   if (t.dataset.r === "file" && t.files && t.files.length) {
     const files = [...t.files].slice(0, MAX_SHOTS - R.shots.length);
     Promise.all(files.map(f => fileToShot(f).catch(() => null))).then(list => {

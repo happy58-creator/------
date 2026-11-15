@@ -22,19 +22,19 @@ import learn_log
 import pdfgen
 import web_games
 
-common.setup_page("AI国語アドベンチャー", "🧙‍♂️")
+common.setup_page("AI国語アドベンチャー", ":material/auto_stories:")
 ss = st.session_state
 client = common.get_gemini_client()
 SUBJECT = "国語"
 QUIZ_COURSE = {"中1": "chu1", "中2": "chu_koten", "中3": "chu_koten", "高1": "gengo_bunka", "高2": "koten_tankyu", "高3": "koten_tankyu"}
 
 KIND_LABELS = {
-    "read": "📖 漢字の読み（漢字 → ひらがな）",
-    "write": "✍️ 漢字の書き取り（ひらがな → 漢字）",
-    "text": "💭 読解",
-    "essay": "📝 自分で書こう",
-    "kana": "📜 古典のかなづかい",
-    "classic": "📜 古典の読解",
+    "read": "漢字の読み（漢字 → ひらがな）",
+    "write": "漢字の書き取り（ひらがな → 漢字）",
+    "text": "読解",
+    "essay": "自分で書こう",
+    "kana": "古典のかなづかい",
+    "classic": "古典の読解",
 }
 KIND_HOWTO = {
     "read": "【　】の漢字の 読み方を、ひらがなで書こう。",
@@ -240,9 +240,9 @@ def handle(v):
             theme = str(v.get("theme") or "").strip()
             problem = K.theme_problem(theme)
             if problem and problem[0] == "empty":
-                return {"error": "⚠️ 言葉を入力してね！"}
+                return {"error": "言葉を入力してね！"}
             if problem and problem[0] == "long":
-                return {"error": f"📏 テーマを もう少し短く入力してね（{K.THEME_MAX}文字まで。いまは {len(theme)}文字）"}
+                return {"error": f"テーマを もう少し短く入力してね（{K.THEME_MAX}文字まで。いまは {len(theme)}文字）"}
             if problem:
                 history.log_result("入力チェック", ページ="国語", 入力=theme, 理由=problem[1], 学年=grade)
                 return {"silly": True}
@@ -256,7 +256,7 @@ def handle(v):
         q, answer = v.get("q") or {}, str(v.get("answer") or "").strip()
         res = grade_essay(q, answer, grade if grade in K.GRADES else K.DEFAULT_GRADE)
         if res is None:
-            return {"error": "⚠️ 採点が うまくいかなかったよ。もう一度「提出」を押してね。"}
+            return {"error": "採点が うまくいかなかったよ。もう一度「提出」を押してね。"}
         score, good, advice = res
         return {"score": score, "good": good, "advice": advice}
     if t == "done":                                     # 10問おわった：記録して、表彰状をつくる

@@ -14,14 +14,14 @@ class RoboView {
       for (let x = 0; x < world.cols; x++) {
         const key = x + "," + y;
         const color = world.cells[key];
-        const star = world.stars.has(key) ? '<span class="star">⭐</span>' : "";
+        const star = world.stars.has(key) ? '<span class="star">' + Icon.svg("star") + '</span>' : "";
         cells.push(`<div class="cell" data-xy="${key}"${color ? ` style="background:${color}"` : ""}>${star}</div>`);
       }
     }
     this.el.innerHTML = `
       <div class="world" style="--cell:${this.cell}px; grid-template-columns:repeat(${world.cols}, var(--cell))">
         ${cells.join("")}
-        <div class="robot"><div class="arrow"></div><div class="bot">🤖</div><div class="bubble" hidden></div></div>
+        <div class="robot"><div class="arrow"></div><div class="bot">${Icon.svg("robot")}</div><div class="bubble" hidden></div></div>
       </div>`;
     this.robot = this.el.querySelector(".robot");
     this.arrow = this.el.querySelector(".arrow");
@@ -215,10 +215,10 @@ class CodeGame {
     root.innerHTML = `
       <div class="game code-game">
         <div class="hud">
-          <span class="pill">🗺️ ステージ <b data-r="stageNo">1</b> / ${STAGES.length}</span>
-          <span class="pill">⏱ <b data-r="time">0:00</b></span>
-          <span class="pill">❌ ミス <b data-r="miss">0</b></span>
-          <span class="pill">⭐ <b data-r="stars">0 / 0</b></span>
+          <span class="pill">${Icon.svg("map")}ステージ <b data-r="stageNo">1</b> / ${STAGES.length}</span>
+          <span class="pill">${Icon.svg("timer")}<b data-r="time">0:00</b></span>
+          <span class="pill">${Icon.svg("x")}ミス <b data-r="miss">0</b></span>
+          <span class="pill">${Icon.svg("star")}<b data-r="stars">0 / 0</b></span>
           <button class="icon" data-r="sound"></button>
         </div>
         <div class="learn"><h3 data-r="title"></h3><p data-r="learn"></p></div>
@@ -226,27 +226,27 @@ class CodeGame {
           <div class="codebox"><div class="code" data-r="code"></div></div>
           <div class="side">
             <div data-r="world"></div>
-            <div class="vars">📦 へんすう：<span data-r="vars"></span></div>
+            <div class="vars">${Icon.svg("pkg")}へんすう：<span data-r="vars"></span></div>
             <div class="console" data-r="console"></div>
           </div>
         </div>
         <div class="keyhint" data-r="keyhint"></div>
         <div data-r="kb"></div>
-        <div class="ime" data-r="ime" hidden>⚠️ 日本語入力が オンに なっているよ！「英数」キーを おしてね</div>
+        <div class="ime" data-r="ime" hidden>${Icon.svg("warn")}日本語入力が オンに なっているよ！「英数」キーを おしてね</div>
         <div class="overlay" data-r="overlay"></div>
       </div>`;
     this.$ = (name) => root.querySelector(`[data-r="${name}"]`);
     this.kb = new UI.Keyboard(this.$("kb"));
     this.view = new RoboView(this.$("world"));
-    this.$("sound").textContent = UI.sound.on ? "🔊" : "🔇";
-    this.$("sound").onclick = (e) => { e.currentTarget.textContent = UI.toggleSound() ? "🔊" : "🔇"; };
+    this.$("sound").innerHTML = UI.sound.on ? Icon.svg("speaker") : Icon.svg("mute");
+    this.$("sound").onclick = (e) => { e.currentTarget.innerHTML = UI.toggleSound() ? Icon.svg("speaker") : Icon.svg("mute"); };
     this.$("overlay").onclick = () => this.overlayClick();
     window.addEventListener("keydown", (e) => this.onKey(e));
     UI.watchFocus(() => this.pause(), () => {});
     this.timer = setInterval(() => { this.$("time").textContent = UI.fmtTime(this.seconds()); }, 250);
     this.loadStage();
     this.showOverlay(`
-      <div class="big">🤖</div>
+      <div class="big">${Icon.svg("robot")}</div>
       <h2>プログラミング・ミッション！</h2>
       <p>本物の Python（パイソン）の書き方で、ロボットに 命令しよう。<br>
       1行 打って <b>Enter</b> を押すと、ロボットが その命令どおりに 動くよ！</p>
@@ -282,7 +282,7 @@ class CodeGame {
     if (this.state !== "play") return;
     this.elapsed += performance.now() - this.runningSince;
     this.state = "pause";
-    this.showOverlay(`<div class="big">⏸</div><h2>ひとやすみ中</h2>
+    this.showOverlay(`<div class="big">${Icon.svg("pause")}</div><h2>ひとやすみ中</h2>
       <p>ゲームの画面から はなれたので 止めたよ。</p><button class="primary">クリックして つづける</button>`);
   }
 
@@ -359,9 +359,9 @@ class CodeGame {
     if (a.line) this.runLine = a.line;
     if (a.kind === "var") this.vars[a.name] = a.value;
     if (a.kind === "move" && a.star) this.got++;
-    if (a.kind === "say") this.output.push(`🤖「${UI.esc(a.text)}」`);
+    if (a.kind === "say") this.output.push(`${Icon.svg("robot")}「${UI.esc(a.text)}」`);
     if (a.kind === "print") this.output.push(UI.esc(a.text));
-    if (a.kind === "error") this.output.push(`<span class="err">⚠️ ${UI.esc(a.msg)}</span>`);
+    if (a.kind === "error") this.output.push(`<span class="err">${Icon.svg("warn")}${UI.esc(a.msg)}</span>`);
     this.draw();
   }
 
@@ -432,10 +432,10 @@ class CodeGame {
     const last = this.stage + 1 >= STAGES.length;
     const got = this.runner.w.got;
     setTimeout(() => this.showOverlay(`
-      <div class="big">${"⭐".repeat(Math.min(got, 6)) || "🎉"}</div>
+      <div class="big">${Icon.svg("star").repeat(Math.min(got, 6)) || Icon.svg("party")}</div>
       <h2>ステージ${this.stage + 1} クリア！</h2>
-      <p>ほし ${got} / ${this.totalStars} こ ゲット！ ${this.stageMiss ? `ミス ${this.stageMiss}回` : "ノーミス！✨"}</p>
-      <button class="primary">${last ? "けっかを 見る 🏆" : "つぎの ステージへ ➡️"}</button>
+      <p>ほし ${got} / ${this.totalStars} こ ゲット！ ${this.stageMiss ? `ミス ${this.stageMiss}回` : "ノーミス！" + Icon.svg("spark")}</p>
+      <button class="primary">${last ? "けっかを 見る " + Icon.svg("trophy") : "つぎの ステージへ " + Icon.svg("next")}</button>
       <p class="tip">Enter キーでも すすめるよ</p>`), 500);
   }
 
@@ -449,7 +449,7 @@ class CodeGame {
   finish() {
     this.state = "done";
     clearInterval(this.timer);
-    this.showOverlay(`<div class="big">👑</div><h2>ぜんぶ クリア！</h2><p>けっかを 計算中…</p>`);
+    this.showOverlay(`<div class="big">${Icon.svg("crown")}</div><h2>ぜんぶ クリア！</h2><p>けっかを 計算中…</p>`);
     const time = Math.round(this.elapsed / 100) / 10;
     setTimeout(() => this.onDone({
       type: "code_done", round: this.round, time, keys: this.keys, misses: this.misses,
@@ -480,9 +480,9 @@ class Sandbox {
     root.innerHTML = `
       <div class="game sandbox">
         <div class="hud">
-          <label>📚 お手本：<select data-r="sample"><option value="">えらんでね</option>
+          <label>${Icon.svg("books")}お手本：<select data-r="sample"><option value="">えらんでね</option>
             ${SAMPLES.map((s, i) => `<option value="${i}">${s.name}</option>`).join("")}</select></label>
-          <label>🐢 はやさ：<select data-r="speed">
+          <label>${Icon.svg("slow")}はやさ：<select data-r="speed">
             <option value="600">ゆっくり</option><option value="300" selected>ふつう</option>
             <option value="100">はやい</option><option value="0">いっしゅん</option></select></label>
           <button class="icon" data-r="sound"></button>
@@ -494,15 +494,15 @@ class Sandbox {
           </div>
           <div class="side">
             <div data-r="world"></div>
-            <div class="vars">⭐ <b data-r="stars"></b>　📦 <span data-r="vars"></span></div>
+            <div class="vars">${Icon.svg("star")}<b data-r="stars"></b>　${Icon.svg("pkg")}<span data-r="vars"></span></div>
             <div class="console" data-r="console"></div>
           </div>
         </div>
         <div class="buttons">
           <button class="primary" data-r="run">▶ じっこう（Ctrl+Enter）</button>
-          <button data-r="stop">⏹ とめる</button>
-          <button data-r="reset">🔄 ロボットを もどす</button>
-          <button data-r="shuffle">✨ ほしを ならべなおす</button>
+          <button data-r="stop">${Icon.svg("stop")}とめる</button>
+          <button data-r="reset">${Icon.svg("refresh")}ロボットを もどす</button>
+          <button data-r="shuffle">${Icon.svg("spark")}ほしを ならべなおす</button>
         </div>
         <div class="snippets" data-r="snippets">
           ${SNIPPETS.map(([code, label]) => `<button data-code="${UI.esc(code)}"><code>${UI.esc(code)}</code><small>${label}</small></button>`).join("")}
@@ -518,8 +518,8 @@ class Sandbox {
     this.runLine = 0;
     this.player = null;
 
-    this.$("sound").textContent = UI.sound.on ? "🔊" : "🔇";
-    this.$("sound").onclick = (e) => { e.currentTarget.textContent = UI.toggleSound() ? "🔊" : "🔇"; };
+    this.$("sound").innerHTML = UI.sound.on ? Icon.svg("speaker") : Icon.svg("mute");
+    this.$("sound").onclick = (e) => { e.currentTarget.innerHTML = UI.toggleSound() ? Icon.svg("speaker") : Icon.svg("mute"); };
     this.$("sample").onchange = (e) => {
       if (e.target.value === "") return;
       this.src.value = SAMPLES[Number(e.target.value)].code;
@@ -639,7 +639,7 @@ class Sandbox {
       stmts = Robo.parse(this.src.value);
     } catch (err) {
       if (!(err instanceof Robo.CodeError)) throw err;
-      this.output.push(`<span class="err">⚠️ ${err.line}行目：${UI.esc(err.message)}</span>`);
+      this.output.push(`<span class="err">${Icon.svg("warn")}${err.line}行目：${UI.esc(err.message)}</span>`);
       this.errorLine = err.line;
       UI.sfx.error();
       this.drawGutter();
@@ -656,10 +656,10 @@ class Sandbox {
         this.runLine = a.line || 0;
         if (a.kind === "var") this.vars[a.name] = a.value;
         if (a.kind === "move" && a.star) got.n++;
-        if (a.kind === "say") this.output.push(`🤖「${UI.esc(a.text)}」`);
+        if (a.kind === "say") this.output.push(`${Icon.svg("robot")}「${UI.esc(a.text)}」`);
         if (a.kind === "print") this.output.push(UI.esc(a.text));
         if (a.kind === "error") {
-          this.output.push(`<span class="err">⚠️ ${a.line}行目：${UI.esc(a.msg)}</span>`);
+          this.output.push(`<span class="err">${Icon.svg("warn")}${a.line}行目：${UI.esc(a.msg)}</span>`);
           this.errorLine = a.line;
         }
         this.$("stars").textContent = `${got.n} / ${this.base.stars.length}`;
@@ -670,10 +670,10 @@ class Sandbox {
         this.runLine = 0;
         this.drawGutter();
         if (got.n === this.base.stars.length && got.n > 0) {
-          this.output.push("🎉 ほしを ぜんぶ あつめたよ！ すごい！");
+          this.output.push(Icon.svg("party") + "ほしを ぜんぶ あつめたよ！ すごい！");
           UI.sfx.finish();
         } else if (!runner.failed) {
-          this.output.push(`<span class="muted">✅ さいごまで 動いたよ</span>`);
+          this.output.push(`<span class="muted">${Icon.svg("checkc")}さいごまで 動いたよ</span>`);
         }
         this.drawSide2(got);
       },

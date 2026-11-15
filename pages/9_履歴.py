@@ -12,7 +12,7 @@ import js_page
 import pdfgen
 import web_games
 
-common.setup_page("せいせきの履歴", "📒")
+common.setup_page("せいせきの履歴", ":material/assignment:")
 ss = st.session_state
 ADMIN_ONLY = {"ログイン", "入力チェック"}   # ログインの記録・ふざけた入力の記録は管理者だけ
 HIDDEN = {"詳細", "正誤"}                    # 長いので表には出さない（詳細は PDF で見る）

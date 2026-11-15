@@ -15,7 +15,7 @@ import js_page
 import pdfgen
 import web_games
 
-common.setup_page("AI英語スピーキング", "🎤")
+common.setup_page("AI英語スピーキング", ":material/record_voice_over:")
 ss = st.session_state
 client = common.get_gemini_client()
 

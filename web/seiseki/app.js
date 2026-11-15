@@ -2,12 +2,14 @@
    Python へ：load（えらんだシートの記録）・pdf（その回の結果をPDFに）。どちらも nonce つき（kit.js） */
 "use strict";
 const { createApp, reactive, computed } = Vue;
-const ICON = { 計算: "🧮", 国語: "📖", 英語: "🔤", スピーキング: "🎤", タイピング: "⌨️", プログラミング: "💻", 漢字: "✍️", 連打: "👆", チェス: "♟️", ストーリー: "🗡️",
-  ITパスポート: "🖥️", 基本情報: "🧑‍💻", 学習: "✅", ログイン: "🔑", 入力チェック: "🚨" };
+const ICON = { 計算: "calc", 国語: "book", 英語: "lang", スピーキング: "mic", タイピング: "keyboard", プログラミング: "code", 漢字: "pen", 連打: "zap", チェス: "crown", ストーリー: "swords",
+  ITパスポート: "monitor", 基本情報: "terminal", 学習: "checkc", ログイン: "lock", 入力チェック: "alarm" };
 const SCORE_COLS = ["点数", "回数", "ノーミス正解"];
 const PAGE = 30;
 
 createApp({
+  components: { ic: Ic },
+  methods: { I(n, c) { return Icon.svg(n, c); }, iO: e => Icon.of(e), iL: s => Icon.lead(s), iX: s => Icon.strip(s) },
   setup() {
     const L = Kit.load("hist_v1", {});
     const S = reactive({ ready: false, args: {}, sheet: L.sheet || "", who: "みんな", data: {}, busy: "", pdfBusy: -1, toast: "", more: PAGE, open: -1 });
@@ -71,14 +73,14 @@ createApp({
   },
   template: `
 <div class="wrap" v-if="S.ready">
-  <div v-if="S.toast" class="toast">{{ S.toast }}</div>
-  <div class="hero"><div class="hero-t"><div class="logo">📒</div><div><b>せいせきの履歴</b><small>これまでの記録を 見よう！</small></div></div></div>
-  <div class="tabs"><button v-for="s in S.args.sheets" :key="s" :class="{ on: S.sheet === s }" @click="load(s)"><span>{{ ICON[s] || '📄' }}</span>{{ s }}</button></div>
+  <div v-if="S.toast" class="toast"><ic v-if="iL(S.toast)[0]" :n="iL(S.toast)[0]"></ic>{{ iX(iL(S.toast)[1]) }}</div>
+  <div class="hero"><div class="hero-t"><div class="logo"><ic n="clip"></ic></div><div><b>せいせきの履歴</b><small>これまでの記録を 見よう！</small></div></div></div>
+  <div class="tabs"><button v-for="s in S.args.sheets" :key="s" :class="{ on: S.sheet === s }" @click="load(s)"><span><ic :n="ICON[s] || 'file'"></ic></span>{{ s }}</button></div>
 
   <div v-if="S.busy === S.sheet && !cur" class="card center wait"><div class="spin"></div>読みこみ中…</div>
   <template v-else-if="cur">
     <div v-if="S.args.admin && names.length" class="card who">
-      <div class="h3">👤 だれの記録？</div>
+      <div class="h3"><ic n="user"></ic>だれの記録？</div>
       <div class="chips"><button class="chip" :class="{ on: S.who === 'みんな' }" @click="S.who = 'みんな'; S.more = 30">みんな</button>
         <button v-for="n in names" :key="n" class="chip" :class="{ on: S.who === n }" @click="S.who = n; S.more = 30">{{ n }}</button></div>
     </div>
@@ -100,7 +102,7 @@ createApp({
         <div class="axis"><span>{{ chart.min }}</span><span>さいご {{ chart.last }}</span><span>{{ chart.max }}</span></div>
       </div>
 
-      <div class="h3" style="margin:12px 4px 6px">🗂️ 記録（新しい順）<button class="link" style="margin-left:auto;padding:0" @click="load(S.sheet, true)">↻ 読みなおす</button></div>
+      <div class="h3" style="margin:12px 4px 6px"><ic n="folder"></ic>記録（新しい順）<button class="link" style="margin-left:auto;padding:0" @click="load(S.sheet, true)">↻ 読みなおす</button></div>
       <div class="list">
         <div v-for="r in newest.slice(0, S.more)" :key="r._i" class="rec" :class="{ open: S.open === r._i }">
           <button class="rhead" @click="S.open = S.open === r._i ? -1 : r._i">
@@ -109,12 +111,12 @@ createApp({
           </button>
           <div v-if="S.open === r._i" class="rbody">
             <div v-for="c in sideCols" :key="c" class="kv"><span>{{ c }}</span><b>{{ r[c] === '' ? '—' : r[c] }}</b></div>
-            <button v-if="r._pdf" class="btn pdf" :disabled="S.pdfBusy === r._i" @click="openPdf(r)">{{ S.pdfBusy === r._i ? 'PDFを 作っています…' : '📄 そのときの結果を PDFで 見る' }}</button>
+            <button v-if="r._pdf" class="btn pdf" :disabled="S.pdfBusy === r._i" @click="openPdf(r)"><ic v-if="iL(S.pdfBusy === r._i ? 'PDFを 作っています…' : '📄 そのときの結果を PDFで 見る')[0]" :n="iL(S.pdfBusy === r._i ? 'PDFを 作っています…' : '📄 そのときの結果を PDFで 見る')[0]"></ic>{{ iX(iL(S.pdfBusy === r._i ? 'PDFを 作っています…' : '📄 そのときの結果を PDFで 見る')[1]) }}</button>
           </div>
         </div>
       </div>
       <button v-if="newest.length > S.more" class="btn" @click="S.more += 30">もっと見る（あと {{ newest.length - S.more }}件）</button>
-      <button class="btn" style="margin-top:10px" @click="csv">📥 CSVで ダウンロード</button>
+      <button class="btn" style="margin-top:10px" @click="csv"><ic n="save"></ic>CSVで ダウンロード</button>
       <div class="small muted center" style="margin-top:10px">保存先：{{ S.args.storage }}</div>
     </template>
   </template>

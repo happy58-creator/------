@@ -1,0 +1,21 @@
+/* 漢字のかきとりの色（あとは base.css。書き取りの本体の見た目は game.css） */
+:root{--h1:#c2410c;--h2:#f97362;--b1:#ff8a6b;--b2:#e8573f;--shadowc:rgba(232,87,63,.28);--pri:#e8573f;--priD:#c2410c;--priL:#fff0ea}
+html,body{-webkit-user-select:auto;user-select:auto}
+.logo.kanji{font-family:"Zen Maru Gothic",serif;font-size:26px}
+.radio{width:20px;height:20px;border-radius:50%;border:2px solid #c9ced8;flex:none;position:relative}
+.pk.on .radio{border-color:var(--pri)}.pk.on .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--pri)}
+.pick.two{grid-template-columns:1fr 1fr}.pick.two .pk{padding:9px 10px;gap:8px}.lv{font-size:13px!important;line-height:1.35}
+.gbtns{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.gbtns button{height:42px;border-radius:12px;border:1.5px solid var(--line);background:#fff;font-weight:800;font-size:14px}
+.gbtns button.on{border-color:var(--pri);background:var(--pri);color:#fff}
+/* 書き取りの本体（kanji.js）の中の .big は、ボタンではなく大きな字 */
+.kj .big{display:block;width:auto;margin:0;padding:0;border-radius:0;background:none;box-shadow:none;color:inherit}
+.kj{padding-top:0}
+.kgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.kcell{background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px 10px;display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;column-gap:8px;align-items:center}
+.kcell.good{border-color:#bfe3c8;background:#f6fcf8}.kcell.skip{opacity:.75}
+.km{grid-row:1/3;font-size:20px}
+.kc{font-family:"Zen Maru Gothic",serif;font-size:30px;line-height:1.1}
+.kr{font-size:12px;color:var(--sub);grid-column:2;grid-row:2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kp{grid-column:3;grid-row:1;font-weight:900;color:var(--priD)}
+.kcell small{grid-column:3;grid-row:2;font-size:10px;color:var(--sub);white-space:nowrap}

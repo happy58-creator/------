@@ -10,7 +10,7 @@ import common
 import history
 import web_games
 
-common.setup_page("ITパスポート", "🖥️")
+common.setup_page("ITパスポート", ":material/computer:")
 ss = st.session_state
 SHEET = "ITパスポート"
 me = ss.get("player_name") or ""

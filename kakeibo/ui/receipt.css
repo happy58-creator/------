@@ -140,3 +140,14 @@ body.kbd .rbar{display:none}
 .rsize b{width:34px;height:34px;border-radius:50%;background:var(--pinkL);color:#b24d72;display:grid;place-items:center;font-size:15px;flex:none}
 .rsize span{font-size:13px;font-weight:700;flex:1}
 .rsize i{font-style:normal;font-size:10px;color:var(--sub)}
+/* 記録の編集 */
+.ebic{width:44px;height:44px;border-radius:12px;background:#fdeef3;color:#c2416f;display:grid;place-items:center;flex:none}
+.ebic svg{width:26px;height:26px}
+.dhead .rename{margin-left:8px;font-size:12px;font-weight:700;color:#c2416f;background:none;border:0;padding:0}
+.eform{padding:4px 16px}
+.esibs{display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:600;padding:10px 0;color:#5b6170}
+.esibs input{margin-top:2px;width:18px;height:18px;flex:none}
+.elist{background:#fff;border-radius:var(--r);box-shadow:var(--shadow);max-height:46vh;overflow:auto}
+.eline{padding:10px 12px;border-bottom:1px solid var(--line)}.eline:last-child{border-bottom:0}
+.eline.moved{background:#fff8ec}
+.edrop{display:block;margin:12px auto 4px;color:var(--red,#d6453d);font-weight:700}

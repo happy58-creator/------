@@ -14,7 +14,7 @@ import js_page
 import pdfgen
 import web_games
 
-common.setup_page("漢字のかきとり", "✍️")
+common.setup_page("漢字のかきとり", ":material/edit:")
 ss = st.session_state
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "kanji.json"
 QUESTIONS = 10

@@ -54,6 +54,8 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 const app = createApp({
+  components: { ic: Ic },
+  methods: { I(n, c) { return Icon.svg(n, c); }, iO: e => Icon.of(e), iL: s => Icon.lead(s), iX: s => Icon.strip(s) },
   setup() {
     const S = reactive({
       view: "home", user: "", ai: {}, aiWait: "", server: {}, serverSessions: [],
@@ -315,7 +317,7 @@ const app = createApp({
   },
   template: `
 <div class="wrap">
-  <div v-if="S.toast" class="toast">{{ S.toast }}</div>
+  <div v-if="S.toast" class="toast"><ic v-if="iL(S.toast)[0]" :n="iL(S.toast)[0]"></ic>{{ iX(iL(S.toast)[1]) }}</div>
 
   <!-- ===== ホーム ===== -->
   <template v-if="S.view === 'home'">
@@ -336,16 +338,16 @@ const app = createApp({
       <small class="muted">バー＝解いた割合　右＝正答率</small>
     </div>
     <div class="menu">
-      <button class="mi big ex" @click="startExam('A')"><span class="ic">🎯</span><b>科目A 模試</b><small>60問・90分・合否判定（600点）</small></button>
-      <button class="mi big exb" @click="startExam('B')"><span class="ic">🧩</span><b>科目B 模試</b><small>20問・100分（アルゴリズム16問・セキュリティ4問）</small></button>
-      <button class="mi" @click="startExam('miniA')"><span class="ic">⏱️</span><b>科目A ミニ</b><small>20問・30分</small></button>
-      <button class="mi" @click="startExam('miniB')"><span class="ic">⏱️</span><b>科目B ミニ</b><small>5問・25分</small></button>
-      <button class="mi" @click="goView('learn')"><span class="ic">📖</span><b>学ぶ</b><small>分野ごとの解説</small></button>
-      <button class="mi" @click="goView('setup')"><span class="ic">✏️</span><b>問題演習</b><small>1問ずつ解説つき</small></button>
-      <button class="mi" @click="S.setup.scope = 'weak'; S.setup.n = 20; startFromSetup()" :disabled="!weakIds.length"><span class="ic">🔁</span><b>苦手を解く</b><small>{{ weakIds.length }}問</small></button>
-      <button class="mi" @click="goView('cardsHome')"><span class="ic">🃏</span><b>用語カード</b><small>{{ knownCount }} / {{ TERMS.length }}語 覚えた</small></button>
-      <button class="mi" @click="S.setup.scope = 'flag'; S.setup.n = 'all'; startFromSetup()" :disabled="!flagIds.length"><span class="ic">⭐</span><b>見直し</b><small>★をつけた {{ flagIds.length }}問</small></button>
-      <button class="mi" @click="goView('stats')"><span class="ic">📊</span><b>成績</b><small>模試の記録・苦手分野</small></button>
+      <button class="mi big ex" @click="startExam('A')"><span class="ico"><ic n="target"></ic></span><b>科目A 模試</b><small>60問・90分・合否判定（600点）</small></button>
+      <button class="mi big exb" @click="startExam('B')"><span class="ico"><ic n="puzzle"></ic></span><b>科目B 模試</b><small>20問・100分（アルゴリズム16問・セキュリティ4問）</small></button>
+      <button class="mi" @click="startExam('miniA')"><span class="ico"><ic n="timer"></ic></span><b>科目A ミニ</b><small>20問・30分</small></button>
+      <button class="mi" @click="startExam('miniB')"><span class="ico"><ic n="timer"></ic></span><b>科目B ミニ</b><small>5問・25分</small></button>
+      <button class="mi" @click="goView('learn')"><span class="ico"><ic n="book"></ic></span><b>学ぶ</b><small>分野ごとの解説</small></button>
+      <button class="mi" @click="goView('setup')"><span class="ico"><ic n="pen"></ic></span><b>問題演習</b><small>1問ずつ解説つき</small></button>
+      <button class="mi" @click="S.setup.scope = 'weak'; S.setup.n = 20; startFromSetup()" :disabled="!weakIds.length"><span class="ico"><ic n="again"></ic></span><b>苦手を解く</b><small>{{ weakIds.length }}問</small></button>
+      <button class="mi" @click="goView('cardsHome')"><span class="ico"><ic n="layers"></ic></span><b>用語カード</b><small>{{ knownCount }} / {{ TERMS.length }}語 覚えた</small></button>
+      <button class="mi" @click="S.setup.scope = 'flag'; S.setup.n = 'all'; startFromSetup()" :disabled="!flagIds.length"><span class="ico"><ic n="star"></ic></span><b>見直し</b><small>★をつけた {{ flagIds.length }}問</small></button>
+      <button class="mi" @click="goView('stats')"><span class="ico"><ic n="chart"></ic></span><b>成績</b><small>模試の記録・苦手分野</small></button>
     </div>
     <div class="card" v-if="weakCats.length">
       <div class="h3">苦手な分野</div>
@@ -421,7 +423,7 @@ const app = createApp({
     <div class="bar-top run-top">
       <button class="back" @click="S.view === 'review' ? (S.view = 'result') : quitRun()">{{ S.view === 'review' ? '‹ 結果' : (isExam ? '中断' : '‹ やめる') }}</button>
       <b>{{ S.run.i + 1 }}<i>/{{ S.run.ids.length }}</i></b>
-      <span v-if="isExam && S.view === 'run'" class="timer" :class="{ low: remain < 600 }">⏱ {{ fmtTime(remain) }}</span>
+      <span v-if="isExam && S.view === 'run'" class="timer" :class="{ low: remain < 600 }"><ic n="timer"></ic>{{ fmtTime(remain) }}</span>
       <button v-else class="star" :class="{ on: L.flags[cur.id] }" @click="toggleFlag(cur.id)">{{ L.flags[cur.id] ? '★' : '☆' }}</button>
     </div>
     <div class="pbar"><i :style="{ width: ((S.run.i + 1) / S.run.ids.length * 100) + '%' }"></i></div>
@@ -443,8 +445,8 @@ const app = createApp({
       <div class="why"><div v-for="(w, k) in cur.why || []" :key="k" class="w" :class="{ right: k === cur.answer }"><span class="kana">{{ KANA[k] }}</span><span class="rich" v-html="w"></span></div></div>
       <div class="tlist" v-if="(cur.terms || []).length"><span v-for="t in cur.terms" :key="t" class="tchip">{{ t }}</span></div>
       <div class="ai">
-        <button v-if="!aiFor(cur.id)" class="btn ghost" :disabled="S.aiWait === cur.id" @click="askAI(cur)">{{ S.aiWait === cur.id ? 'AIが考えています…' : '🤖 AIにもっとくわしく聞く' }}</button>
-        <div v-else class="aians"><div class="ai-h">🤖 AIの解説</div><div v-html="aiHtml(aiFor(cur.id).text)"></div>
+        <button v-if="!aiFor(cur.id)" class="btn ghost" :disabled="S.aiWait === cur.id" @click="askAI(cur)"><ic v-if="iL(S.aiWait === cur.id ? 'AIが考えています…' : '🤖 AIにもっとくわしく聞く')[0]" :n="iL(S.aiWait === cur.id ? 'AIが考えています…' : '🤖 AIにもっとくわしく聞く')[0]"></ic>{{ iX(iL(S.aiWait === cur.id ? 'AIが考えています…' : '🤖 AIにもっとくわしく聞く')[1]) }}</button>
+        <div v-else class="aians"><div class="ai-h"><ic n="spark"></ic>AIの解説</div><div v-html="aiHtml(aiFor(cur.id).text)"></div>
           <button class="btn ghost small" :disabled="S.aiWait === cur.id" @click="askAI(cur, '別の例えや覚え方でもう一度')">{{ S.aiWait === cur.id ? '考えています…' : '別の説明を聞く' }}</button></div>
       </div>
       <div class="btns"><button class="btn" @click="go(S.run.i - 1)" :disabled="S.run.i === 0">‹ 前</button>
@@ -455,7 +457,7 @@ const app = createApp({
     <!-- 模試の操作 -->
     <template v-if="isExam && S.view === 'run'">
       <div class="btns"><button class="btn" @click="go(S.run.i - 1)" :disabled="S.run.i === 0">‹ 前</button>
-        <button class="btn mark" :class="{ on: S.run.flags[cur.id] }" @click="toggleMark(cur.id)">{{ S.run.flags[cur.id] ? '🚩 見直しマーク' : '🏳 見直す' }}</button>
+        <button class="btn mark" :class="{ on: S.run.flags[cur.id] }" @click="toggleMark(cur.id)"><ic v-if="iL(S.run.flags[cur.id] ? '🚩 見直しマーク' : '🏳 見直す')[0]" :n="iL(S.run.flags[cur.id] ? '🚩 見直しマーク' : '🏳 見直す')[0]"></ic>{{ iX(iL(S.run.flags[cur.id] ? '🚩 見直しマーク' : '🏳 見直す')[1]) }}</button>
         <button class="btn pri" @click="S.run.i < S.run.ids.length - 1 ? go(S.run.i + 1) : finishAsk()">{{ S.run.i < S.run.ids.length - 1 ? '次 ›' : '採点へ' }}</button></div>
       <div class="card navgrid">
         <div class="h3">問題一覧<small class="muted">（押すとその問題へ）</small></div>

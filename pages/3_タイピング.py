@@ -13,7 +13,7 @@ import js_page
 import pdfgen
 import web_games
 
-common.setup_page("AIタイピングマスター", "⌨️")
+common.setup_page("AIタイピングマスター", ":material/keyboard:")
 ss = st.session_state
 NORMAL_Q = 10
 SECRET_TIME_LIMIT = 300.0  # 5分以内にクリアで裏メニュー解放

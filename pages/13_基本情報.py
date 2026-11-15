@@ -10,7 +10,7 @@ import common
 import history
 import web_games
 
-common.setup_page("基本情報技術者", "🧑‍💻")
+common.setup_page("基本情報技術者", ":material/terminal:")
 ss = st.session_state
 SHEET = "基本情報"
 me = ss.get("player_name") or ""

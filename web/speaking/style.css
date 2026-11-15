@@ -1,6 +1,6 @@
 /* AI英語スピーキングの色と、この画面だけの形（あとは base.css） */
 :root{--h1:#0e7c86;--h2:#33b3a6;--b1:#22a397;--b2:#0e7c86;--shadowc:rgba(14,124,134,.28);--pri:#119488;--priD:#0b6f68;--priL:#e6f6f4}
-.ic{display:inline-block;vertical-align:-3px;flex:none}
+.ic{display:inline-block;vertical-align:-3px;flex:none;width:1.15em;height:1.15em}
 .h3{display:flex;align-items:center;gap:6px}.h3 .ic{color:var(--priD)}.h3.c{justify-content:center;color:var(--sub);font-size:14px}
 .logo{color:var(--h1)}
 .radio{width:20px;height:20px;border-radius:50%;border:2px solid #c9ced8;flex:none;position:relative}

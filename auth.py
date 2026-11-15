@@ -23,6 +23,8 @@ from datetime import date
 from pathlib import Path
 
 import streamlit as st
+
+import icons
 import streamlit.components.v1 as components
 
 import history
@@ -339,7 +341,7 @@ def _try_restore():
 def login_screen():
     import common
 
-    common.hero("🏠 きょうざい・ゲームひろば", "はじめに、なまえを おしえてね！")
+    common.hero(icons.svg("home") + "きょうざい・ゲームひろば", "はじめに、なまえを おしえてね！")
     notice = st.session_state.pop("auth_notice", None)
     if notice:
         st.warning(notice)
@@ -373,7 +375,7 @@ def login_screen():
 
 def _guest_profile_form():
     """ゲスト用アカウントでログインしたあと、その人の なまえと年齢を入れてもらう。"""
-    st.success("🙋 ゲストで ログインしたよ！ あなたの なまえと ねんれいを おしえてね。")
+    st.success("ゲストで ログインしたよ！ あなたの なまえと ねんれいを おしえてね。", icon=":material/waving_hand:")
     with st.form("auth_guest_form"):
         name = st.text_input("なまえ", key="auth_guest_name")
         age = st.number_input("ねんれい", min_value=3, max_value=120, value=8, step=1)
@@ -424,16 +426,16 @@ def gate(is_home):
     else:
         import common
 
-        common.hero("🔒 ログインしてね", "はじめに トップ画面で なまえを入れてね。")
+        common.hero(icons.svg("lock") + "ログインしてね", "はじめに トップ画面で なまえを入れてね。")
         if "home" in common.PAGES:
-            st.page_link(common.PAGES["home"], label="トップ画面へ", icon="🏠", use_container_width=True)
+            st.page_link(common.PAGES["home"], label="トップ画面へ", icon=":material/home:", use_container_width=True)
     st.stop()
 
 
 def sidebar_user():
     name = st.session_state.get("auth_name", "")
-    st.markdown(f"👤 **{name}**" + ("（ゲスト）" if st.session_state.get("auth_guest") else "") + " さん"
-                + ("　🛡️管理者" if is_admin() else ""))
+    st.markdown(f":material/person: **{name}**" + ("（ゲスト）" if st.session_state.get("auth_guest") else "") + " さん"
+                + ("　:material/shield: 管理者" if is_admin() else ""))
     if st.button("ログアウト", key="auth_logout", use_container_width=True):
         logout()
         st.rerun()

@@ -5,28 +5,30 @@ import unicodedata
 
 import streamlit as st
 
+import icons
+
 GEMINI_MODEL = "gemini-3.6-flash"
 HOME_PAGE = "home.py"
 
 # (名前, ファイル, サイドバーの表示名, アイコン, URLの末尾)。URLは半角英数字にして、
 # ファイル名の文字の形（Mac の濁点の分かれ方）に左右されないようにする。
 PAGE_DEFS = [
-    ("home", "home.py", "トップ", "🏠", ""),
-    ("calc", "pages/0_計算マスター.py", "算数・数学", "🧮", "calc"),
-    ("kokugo", "pages/1_国語.py", "AI国語", "🧙‍♂️", "kokugo"),
-    ("english", "pages/2_英語.py", "AI英語", "🔤", "english"),
-    ("speaking", "pages/14_英語スピーキング.py", "AI英語スピーキング", "🎤", "speaking"),
-    ("kanji", "pages/10_漢字.py", "漢字", "✍️", "kanji"),
-    ("typing", "pages/3_タイピング.py", "AIタイピング", "⌨️", "typing"),
-    ("programming", "pages/4_プログラミング.py", "AIプログラミング", "💻", "programming"),
-    ("lottery", "pages/5_くじ引き・じゅんばん決めゲーム.py", "くじ引き", "🎉", "lottery"),
-    ("janken", "pages/6_じゃんけんゲーム.py", "じゃんけん", "✊", "janken"),
-    ("chess", "pages/7_チェスVS.py", "チェス", "♟️", "chess"),
-    ("rapid", "pages/8_限界突破ゲーム.py", "連打ゲーム", "⚡", "rapid"),
-    ("story", "pages/11_ストーリーモード.py", "ストーリーモード", "⚔️", "story"),
-    ("itpass", "pages/12_ITパスポート.py", "ITパスポート", "🖥️", "itpass"),
-    ("fe", "pages/13_基本情報.py", "基本情報技術者", "🧑‍💻", "fe"),
-    ("history", "pages/9_履歴.py", "せいせきの履歴", "📒", "history"),
+    ("home", "home.py", "トップ", ":material/home:", ""),
+    ("calc", "pages/0_計算マスター.py", "算数・数学", ":material/calculate:", "calc"),
+    ("kokugo", "pages/1_国語.py", "AI国語", ":material/auto_stories:", "kokugo"),
+    ("english", "pages/2_英語.py", "AI英語", ":material/translate:", "english"),
+    ("speaking", "pages/14_英語スピーキング.py", "AI英語スピーキング", ":material/record_voice_over:", "speaking"),
+    ("kanji", "pages/10_漢字.py", "漢字", ":material/edit:", "kanji"),
+    ("typing", "pages/3_タイピング.py", "AIタイピング", ":material/keyboard:", "typing"),
+    ("programming", "pages/4_プログラミング.py", "AIプログラミング", ":material/code:", "programming"),
+    ("lottery", "pages/5_くじ引き・じゅんばん決めゲーム.py", "くじ引き", ":material/redeem:", "lottery"),
+    ("janken", "pages/6_じゃんけんゲーム.py", "じゃんけん", ":material/back_hand:", "janken"),
+    ("chess", "pages/7_チェスVS.py", "チェス", ":material/sports_esports:", "chess"),
+    ("rapid", "pages/8_限界突破ゲーム.py", "連打ゲーム", ":material/bolt:", "rapid"),
+    ("story", "pages/11_ストーリーモード.py", "ストーリーモード", ":material/shield:", "story"),
+    ("itpass", "pages/12_ITパスポート.py", "ITパスポート", ":material/computer:", "itpass"),
+    ("fe", "pages/13_基本情報.py", "基本情報技術者", ":material/terminal:", "fe"),
+    ("history", "pages/9_履歴.py", "せいせきの履歴", ":material/assignment:", "history"),
 ]
 SECTIONS = {
     "": ["home"],
@@ -140,17 +142,17 @@ _PDF_OPEN_JS = """
     const el = (tag, cls, text) => {
       const e = document.createElement(tag);
       if (cls) e.className = cls;
-      if (text) e.textContent = text;
+      if (text) e.innerHTML = text;   // 文字はこのファイルの中のものだけ（アイコンの <svg> を入れる）
       return e;
     };
     const ov = el("div", "kz-pdf-overlay");
     const bar = el("div", "kz-pdf-bar");
-    const saveBtn = el("button", "", "💾 ほぞん・いんさつ");
-    const closeBtn = el("button", "kz-close", "✕ とじる");
+    const saveBtn = el("button", "", "__IC_SAVE__ほぞん・いんさつ");
+    const closeBtn = el("button", "kz-close", "__IC_X__とじる");
     saveBtn.type = closeBtn.type = "button";
     const buttons = el("span");
     buttons.append(saveBtn, closeBtn);
-    bar.append(el("b", "", "📄 表彰状"), buttons);
+    bar.append(el("b", "", "__IC_FILE__表彰状"), buttons);
     const body = el("div", "kz-pdf-body");
     body.append(el("div", "kz-pdf-msg", "よみこみ中…"));
     ov.append(bar, body);
@@ -199,9 +201,17 @@ _PDF_OPEN_JS = """
 })();
 </script>
 """
+_PDF_OPEN_JS = (_PDF_OPEN_JS.replace("__IC_SAVE__", icons.svg("save").replace('"', "'")).replace("__IC_X__", icons.svg("x").replace('"', "'"))
+                .replace("__IC_FILE__", icons.svg("file").replace('"', "'")))   # JS の "..." の中に入れるので ' にする
+
 
 _CSS = """
 <style>
+/* 線のアイコン（icons.py）。文字の大きさに合わせる */
+.kz-ic { width: 1.1em; height: 1.1em; vertical-align: -.18em; margin-right: .3em; display: inline-block; flex: none; }
+.topic-card .emoji .kz-ic { width: 1.7rem; height: 1.7rem; margin: 0; vertical-align: 0; }
+.topic-card .emoji { width: 3rem; height: 3rem; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(135deg,#f3e9ff,#ffe9f1); color: #7b3fa1; }
+.hero h1 .kz-ic { color: #7b3fa1; }
 @import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;700;900&display=swap');
 /* アイコン（stIconMaterial）はアイコン用フォントのままにする。上書きすると「arrow_right」などの文字が出てしまう */
 html, body, [class*="st-"]:not([data-testid="stIconMaterial"]), .stApp { font-family: 'Zen Maru Gothic', sans-serif; }
@@ -296,7 +306,7 @@ def setup_page(title, icon, layout="centered", home_link=True):
     auth.gate(is_home=not home_link)
     if home_link and "home" in PAGES:
         with st.container(key="kz-back"):
-            st.page_link(PAGES["home"], label="トップにもどる", icon="🏠")
+            st.page_link(PAGES["home"], label="トップにもどる", icon=":material/home:")
     st.html(_PDF_OPEN_JS, unsafe_allow_javascript=True)     # 「PDFを見る」ボタンを動かす（見えない）
 
 
@@ -366,11 +376,12 @@ def jump_to(name, nonce):
 </script>""", unsafe_allow_javascript=True)
 
 
-def pdf_preview_button(pdf_bytes, label="📄 表彰状を 見る"):
+def pdf_preview_button(pdf_bytes, label=None):
     """PDFを、保存せずに、画面の上のビューアで見せるボタン。保存・印刷は、ビューアの中のボタンから。"""
     import base64
 
     data = base64.b64encode(pdf_bytes).decode("ascii")
+    label = label or icons.svg("file") + "表彰状を 見る"
     st.html(
         f'<button type="button" class="pdf-open" data-pdf="{data}">{label}</button>'
         '<div class="pdf-note">画面の上に ひらくよ。保存や印刷は、ひらいた画面の ボタンから できるよ。</div>',
@@ -392,9 +403,9 @@ def build_navigation():
     adult_only = {"itpass", "fe"} if band == "小" else set()      # ITパスポート・基本情報は大人向け（小学生のメニューには出さない）
     nav = {names.get(section, section): [PAGES[k] for k in keys if k not in adult_only] for section, keys in SECTIONS.items()}
     # 家計簿（大人用）：メニューには出さないページ。URL の最後に /kakeibo を付けて開く（パスワードは kakeibo/app.py）
-    nav[names.get("きろく", "きろく")].append(st.Page(page_file("kakeibo/app.py"), title="家計簿", icon="💴", url_path="kakeibo"))
+    nav[names.get("きろく", "きろく")].append(st.Page(page_file("kakeibo/app.py"), title="家計簿", icon=":material/payments:", url_path="kakeibo"))
     # 買い物リスト（大人用）：家計簿と同じく、メニューには出さないページ。URL の最後に /kaimono（ログインは家計簿と共通）
-    nav[names.get("きろく", "きろく")].append(st.Page(page_file("shopping/app.py"), title="買い物リスト", icon="🛒", url_path="kaimono"))
+    nav[names.get("きろく", "きろく")].append(st.Page(page_file("shopping/app.py"), title="買い物リスト", icon=":material/shopping_cart:", url_path="kaimono"))
     return st.navigation(nav, position=position)
 
 

@@ -13,7 +13,7 @@ import js_page
 import pdfgen
 import web_games
 
-common.setup_page("AI英語チャレンジ", "🔤")
+common.setup_page("AI英語チャレンジ", ":material/translate:")
 ss = st.session_state
 client = common.get_gemini_client()
 
@@ -30,13 +30,13 @@ LEVELS = {
 
 # コース → 向き（英→和・和→英）。向きのないコースは "" だけ
 COURSES = {
-    "単語": {"icon": "🔤", "dirs": {
+    "単語": {"icon": "word", "dirs": {
         "英→和": ("英単語を見て、日本語の意味を選ぼう（絵文字つき）", "この単語の意味は？"),
         "和→英": ("日本語を見て、正しい英単語を選ぼう", "これを 英語にすると？")}},
-    "文": {"icon": "📝", "dirs": {
+    "文": {"icon": "lines", "dirs": {
         "英→和": ("英語の文を読んで、正しい日本語訳を選ぼう", "この文の意味は？"),
         "和→英": ("日本語の文を見て、正しい英語の文を選ぼう", "これを 英語にすると？")}},
-    "穴うめ": {"icon": "✏️", "dirs": {
+    "穴うめ": {"icon": "pen", "dirs": {
         "": ("短い英語の文の ＿＿ に入ることばを選ぼう", "＿＿ に入ることばは？")}},
 }
 

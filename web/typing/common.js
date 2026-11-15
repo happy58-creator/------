@@ -152,7 +152,7 @@ const UI = (() => {
         const side = f[0] === "l" ? "shiftR" : "shiftL";
         this.el.querySelector(`.key[data-k="${side}"]`).classList.add("next");
       }
-      label.textContent = `👆 ${FINGER_NAME[f]}` + (shift ? " ＋ 反対の手でShift" : "");
+      label.innerHTML = `${Icon.svg("up")}${FINGER_NAME[f]}` + (shift ? " ＋ 反対の手でShift" : "");
     }
 
     flash(ch, ok) {

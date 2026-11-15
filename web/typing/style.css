@@ -4,7 +4,7 @@
 .radio{width:20px;height:20px;border-radius:50%;border:2px solid #c9ced8;flex:none;position:relative}
 .pk.on .radio{border-color:var(--pri)}.pk.on .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--pri)}
 .pick.two{grid-template-columns:1fr 1fr}.pick.two .pk{padding:9px 10px;gap:8px}.lv{font-size:13px!important;line-height:1.35}
-.pk .ic{font-size:22px;width:26px}
+.pk .ico{width:34px;height:34px;font-size:18px}
 .ura{border-color:#f0d28a;background:#fffbea}
 .score.one{grid-template-columns:1fr}.score.one b{font-size:40px}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
@@ -15,3 +15,4 @@
 /* ゲームの本体（typing.js・code.js）の中の .big・.card は、そのゲームの見た目のまま */
 #game .big{display:block;width:auto;margin:0;padding:0;border-radius:0;background:none;box-shadow:none;color:inherit}
 #game button{padding:revert;border:revert;background:revert}
+.logo .ic{margin:0;width:26px;height:26px}

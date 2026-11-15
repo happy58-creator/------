@@ -569,7 +569,7 @@ function monthNav() {
 }
 function recItem(r, del) {
   const inc = r["種類"] === INC, n = typeof detailCount === "function" ? detailCount(r) : 0;
-  return `<div class="item ${n ? "tap" : ""}" ${n ? `data-r="rdetail" data-id="${esc(r.ID)}"` : ""}><div class="ic">${iconOf(r["種類"], r["カテゴリ"])}</div>
+  return `<div class="item tap" data-r="rdetail" data-id="${esc(r.ID)}"><div class="ic">${iconOf(r["種類"], r["カテゴリ"])}</div>
     <div class="t"><b>${esc(r["カテゴリ"])}${!inc && payOf(r) !== CASH ? `<i class="ptag ${payOf(r) === FURI ? "furi" : ""}">${payOf(r)}</i>` : ""}</b><span>${n ? `<i class="rtag">🧾${n}品</i>` : ""}${esc(r["メモ"]) || "&nbsp;"}</span></div>
     <div class="v ${inc ? "inc" : "exp"}">${yen(int(r["金額"]) * (inc ? 1 : -1), true)}</div>
     ${del ? `<button class="del" data-a="delrec" data-id="${esc(r.ID)}" aria-label="消す">✕</button>` : "<span></span>"}</div>`;

@@ -19,3 +19,5 @@
 .tarea:focus{border-color:var(--pri);background:#fff}
 .pre{white-space:pre-wrap}
 .score.one{grid-template-columns:1fr}.score.one b{font-size:40px}
+.marks{display:flex;justify-content:center;gap:2px;flex-wrap:wrap}.marks .ic{width:22px;height:22px;stroke-width:2.6;margin:0}.mok{color:var(--ok)}.mng{color:var(--ng)}
+.h3 .ic,.sub .ic{color:var(--pri)}

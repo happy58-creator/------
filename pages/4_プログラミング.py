@@ -13,7 +13,7 @@ import js_page
 import pdfgen
 import web_games
 
-common.setup_page("AIプログラミング教室", "💻")
+common.setup_page("AIプログラミング教室", ":material/code:")
 ss = st.session_state
 client = common.get_gemini_client()
 

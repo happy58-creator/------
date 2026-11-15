@@ -18,3 +18,6 @@
 .live .over{color:#fff;background:#d6453d;border-radius:3px;padding:0 2px}
 .qtext{font-size:17px;font-weight:700;white-space:pre-wrap}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;word-break:break-all}
+.km .ic{width:22px;height:22px;margin:0}.km.award{color:#d99a00}.km.star{color:#e0a400}.km.thumb{color:var(--ok)}.km.minus{color:var(--sub)}
+.marks{display:flex;justify-content:center;gap:2px;flex-wrap:wrap}.marks .ic{width:22px;height:22px;stroke-width:2.6;margin:0}.mok{color:var(--ok)}.mng{color:var(--ng)}
+.h3 .ic,.sub .ic{color:var(--pri)}

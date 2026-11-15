@@ -23,7 +23,7 @@ import math_units as U
 import pdfgen
 import web_games
 
-common.setup_page("算数・数学マスター", "🧮")
+common.setup_page("算数・数学マスター", ":material/calculate:")
 ss = st.session_state
 TOTAL_Q = 10
 POINT = 100 // TOTAL_Q

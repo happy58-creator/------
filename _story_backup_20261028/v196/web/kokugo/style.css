@@ -1,0 +1,21 @@
+/* AI国語アドベンチャーの色（あとは base.css） */
+:root{--h1:#8e3b7a;--h2:#d26aa8;--b1:#c2559a;--b2:#8e3b7a;--shadowc:rgba(142,59,122,.28);--pri:#a8468e;--priD:#8e3b7a;--priL:#fbeef7}
+.logo{font-size:26px;font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
+.radio{width:20px;height:20px;border-radius:50%;border:2px solid #c9ced8;flex:none;position:relative}
+.pk.on .radio{border-color:var(--pri)}.pk.on .radio::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--pri)}
+.note.bad{background:var(--ngL);color:#b3322b}
+.ex{margin:8px 0}
+.ex blockquote{margin:0;border-left:4px solid #e7c6dc;background:#fdf6fa;border-radius:0 10px 10px 0;padding:8px 12px;white-space:pre-wrap}
+.lq{border-top:1px solid var(--line);padding:10px 0}.lq:first-of-type{border-top:0}
+.opts.sm .opt{padding:9px 12px;font-size:15px}
+.classic{font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:17px;line-height:1.95;background:#fffdf7;border:1px solid #efe4cf;border-radius:12px;padding:12px 14px}
+.yaku{background:#f6f8fb;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.8;margin-top:6px}
+.story .stxt{white-space:pre-wrap;line-height:1.95;font-size:16px}
+.story{border-left:4px solid #e7c6dc}
+.qhead{font-weight:900;margin:14px 4px 4px;color:var(--priD)}
+.qtext{font-size:17px;font-weight:700;white-space:pre-wrap}
+.big-in{height:52px;font-size:20px}
+.tarea{width:100%;min-height:200px;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;font-size:16px;line-height:1.7;background:#fbfcfe;outline:0}
+.tarea:focus{border-color:var(--pri);background:#fff}
+.pre{white-space:pre-wrap}
+.score.one{grid-template-columns:1fr}.score.one b{font-size:40px}

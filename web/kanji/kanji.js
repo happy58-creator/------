@@ -148,16 +148,16 @@ class KanjiGame {
         <div class="kj-stage"><canvas data-r="cv"></canvas></div>
         <div class="kj-msg info" data-r="msg"></div>
         <div class="kj-btns">
-          <button data-r="hint">💡 ヒント</button>
+          <button data-r="hint">${Icon.svg("bulb")}ヒント</button>
           <button data-r="clear">↩ この画を かきなおす</button>
-          <button data-r="skip">🙈 わからない</button>
-          <button class="primary" data-r="next" hidden>つぎへ ➡️</button>
+          <button data-r="skip">${Icon.svg("eye")}わからない</button>
+          <button class="primary" data-r="next" hidden>つぎへ ${Icon.svg("next")}</button>
         </div>
       </div>`;
     this.$ = (n) => this.root.querySelector(`[data-r="${n}"]`);
     this.cv = this.$("cv");
     this.ctx = this.cv.getContext("2d");
-    this.$("mode").textContent = { trace: "✏️ なぞり書き", recall: "🧠 見て書く", reading: "📖 読みから書く" }[this.mode];
+    this.$("mode").innerHTML = { trace: Icon.svg("pen") + "なぞり書き", recall: Icon.svg("bulb") + "見て書く", reading: Icon.svg("book") + "読みから書く" }[this.mode];
     this.$("hint").onclick = () => this.hint();
     this.$("clear").onclick = () => this.clearCurrent();
     this.$("skip").onclick = () => this.skip();
@@ -218,7 +218,7 @@ class KanjiGame {
   say(kind, text) {
     const m = this.$("msg");
     m.className = "kj-msg " + kind;
-    m.textContent = text;
+    m.innerHTML = Icon.html(text);   // 絵文字はアイコンに
   }
 
   // ----- 描画 -----
@@ -438,7 +438,7 @@ class KanjiGame {
     ["hint", "clear", "skip"].forEach((n) => { this.$(n).hidden = true; });
     const next = this.$("next");
     next.hidden = false;
-    next.textContent = this.q + 1 >= this.list.length ? "けっかを 見る 🏆" : "つぎへ ➡️";
+    next.innerHTML = this.q + 1 >= this.list.length ? "けっかを 見る " + Icon.svg("trophy") : "つぎへ " + Icon.svg("next");
     this.renderInfo();
     // 書き終わったら お手本を うすく かさねて、見くらべられるようにする
     this.overlay = !this.stat.skipped;
@@ -454,7 +454,7 @@ class KanjiGame {
 
   finish() {
     const time = Math.round((performance.now() - (this.startedAt || performance.now())) / 100) / 10;
-    this.root.innerHTML = `<div class="kj kj-final"><div class="big">🏁</div><h2>おつかれさま！</h2><p>けっかを 計算中…</p></div>`;
+    this.root.innerHTML = `<div class="kj kj-final"><div class="big">${Icon.svg("flag")}</div><h2>おつかれさま！</h2><p>けっかを 計算中…</p></div>`;
     Streamlit.setHeight();
     setTimeout(() => this.onDone({ type: "kanji_done", round: this.round, time, results: this.results }), 900);
   }

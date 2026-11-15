@@ -20,3 +20,5 @@
 .rbody{background:#fbfcfe;border-radius:12px;padding:8px 12px;margin-bottom:10px}
 .kv{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px}
 .kv:last-of-type{border-bottom:0}.kv span{color:var(--sub);flex:none}.kv b{text-align:right;word-break:break-all}
+.tabs .ic{margin:0}.h3 .ic{color:var(--pri)}
+.logo .ic{margin:0;width:26px;height:26px}
