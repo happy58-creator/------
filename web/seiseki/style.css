@@ -22,3 +22,15 @@
 .kv:last-of-type{border-bottom:0}.kv span{color:var(--sub);flex:none}.kv b{text-align:right;word-break:break-all}
 .tabs .ic{margin:0}.h3 .ic{color:var(--pri)}
 .logo .ic{margin:0;width:26px;height:26px}
+
+/* 録音（スピーキング） */
+.rhead b .ic{width:15px;height:15px;margin:0 0 0 6px;vertical-align:-2px}.rhead .lk{color:#d99a00}.rhead .hp{color:var(--sub,#7a808c)}
+.voice{margin:8px 0;padding:10px;border-radius:14px;background:#f6f8fb}
+.vrow{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:6px}
+.vrow .btn{margin:0;display:flex;align-items:center;justify-content:center;gap:4px}
+.lockb.on{border-color:#e9c46a;background:#fff6dc;color:#9a6a00}
+.vlist{margin-top:8px;display:grid;gap:6px}
+.vitem{display:flex;align-items:center;gap:10px;background:#fff;border-radius:12px;padding:8px 10px;font-weight:700;font-size:14px}
+.vplay{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--priL,#eef2ff);color:var(--priD,#3346a8);flex:none}
+.vplay .ic{margin:0}.vplay:disabled{opacity:.4}
+.vplay.live{background:var(--pri,#4f6bed);color:#fff}

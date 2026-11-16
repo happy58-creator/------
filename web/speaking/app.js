@@ -23,6 +23,7 @@ createApp({
       rec: "idle", live: "", takes: [], built: [], playing: "", heard: 0, play: null,
       sending: false, result: null, pdf: "",
     });
+    window.SP = S;                                   // 画面のようす（たしかめ用）
     const keep = () => Kit.save("sp_v1", { level: S.level, mode: S.mode, courses: S.courses, slow: S.slow, assist: S.assist, show: S.show });
     function onArgs(a) {
       S.args = a; S.ready = true; Kit.takeReply(a);
@@ -103,7 +104,7 @@ createApp({
             const canJudge = Rec.hasSR && (!res.srErr || res.srErr === "no-speech" || res.alts.length > 0);   // 聞きとりが動かなかったときは、さいごのAI採点だけ
             const m = canJudge ? Match.check(q.value.en, res.alts) : null;
             const old = S.takes[S.i]; if (old && old.url) URL.revokeObjectURL(old.url);
-            S.takes[S.i] = { said: m ? m.said : res.said, pct: m ? m.pct : null, words: m ? m.words : null, wav: res.wav, url: res.url, sec: res.sec };
+            S.takes[S.i] = { said: m ? m.said : res.said, pct: m ? m.pct : null, words: m ? m.words : null, wav: res.wav, url: res.url, sec: res.sec, keep: res.keep };
             S.rec = "done";
             if (m && m.pct === 100) Kit.party();
           },
@@ -130,7 +131,7 @@ createApp({
       if (isListen.value && score.value === S.qs.length) Kit.party();
       const base = { type: "done", run: S.run, mode: S.play.mode, course: S.play.course, level: S.play.level, topic: S.play.topic };
       const extra = isListen.value ? { rows: S.rows }
-        : { items: S.qs.map((x, k) => { const t = S.takes[k] || {}; return { en: x.en, said: t.said || "", audio: t.wav || "", local: t.pct || 0 }; }) };
+        : { items: S.qs.map((x, k) => { const t = S.takes[k] || {}; return { en: x.en, said: t.said || "", audio: t.wav || "", local: t.pct || 0, keep: t.keep || null }; }) };
       tick(0);
       Kit.ask({ ...base, ...extra }, r => {
         clearInterval(waitT); S.sending = false;
@@ -303,6 +304,7 @@ createApp({
         </div>
         <div v-if="S.result.aiError" class="errbox"><ic n="warn" :s="17"></ic> {{ S.result.aiError }}（ブラウザの判定で 記録したよ）</div>
         <div v-if="S.result.advice" class="aibox"><b><ic n="spark" :s="16"></ic>AI先生から</b>{{ S.result.advice }}</div>
+        <div v-if="S.result.saved" class="small muted center" style="margin:8px 0 4px"><ic n="headphones" :s="14"></ic> 録音は「せいせきの履歴」で 聞けるよ（新しい10回と、鍵をかけた回が残ります）</div>
       </template>
     </template>
 

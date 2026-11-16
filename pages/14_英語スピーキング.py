@@ -13,6 +13,7 @@ import common
 import history
 import js_page
 import pdfgen
+import voice_store
 import web_games
 
 common.setup_page("AI英語スピーキング", ":material/record_voice_over:")
@@ -234,8 +235,19 @@ def handle(v):
             right = sum(1 for r in rows if r[3])
             score = round(sum(s["score"] for s in scores) / max(1, len(scores)))
             comment = advice or None
+        detail = pdfgen.make_record(SUBJECT, info, rows)
+        if mode == "話す" and not ss.get(f"sp_saved_{v.get('run')}"):     # 録音を残す（履歴の画面で聞ける）
+            ss[f"sp_saved_{v.get('run')}"] = True
+            clips = [x.get("keep") if isinstance(x.get("keep"), dict) else None for x in (v.get("items") or [])][:TOTAL_Q]
+            try:
+                key = f"sp-{v.get('run')}"
+                if voice_store.save(key, ss.get("player_name") or "ななしさん", [it["en"] for it in items], clips):
+                    d = json.loads(detail); d["a"] = key; detail = json.dumps(d, ensure_ascii=False, separators=(",", ":"))
+                    out["saved"] = True
+            except Exception as e:
+                print(f"[スピーキング] 録音を残せなかった：{type(e).__name__}: {e}", flush=True)
         history.log_once("スピーキング", f"sp-{v.get('run')}", モード=MODES[mode], コース=course, 年齢層=level, テーマ=topic or "おまかせ",
-                         点数=score, 正解数=right, 詳細=pdfgen.make_record(SUBJECT, info, rows))
+                         点数=score, 正解数=right, 詳細=detail)
         pdf = pdfgen.build_pdf(SUBJECT, info, ss.get("player_name", ""), time.strftime("%Y-%m-%d %H:%M:%S"), score, rows, comment=comment)
         return {**out, "score": score, "pdf": js_page.pdf_b64(pdf)}
     return {}

@@ -31,6 +31,36 @@ const Rec = (() => {
   const canRec = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && (window.AudioContext || window.webkitAudioContext));
   let stream = null, ctx = null, src = null, node = null, chunks = [], r = null, on = false, timer = 0;
   let said = "", alts = [], srErr = "", cb = {};
+  // のこす用の録音（圧縮。履歴で聞く）：iPhone は AAC（audio/mp4）、Chrome は Opus（audio/webm）
+  let mr = null, mrChunks = [], mrMime = "";
+  const pickMime = () => ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"]
+    .find(m => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || "";
+  function mrStart() {
+    mr = null; mrChunks = [];
+    try {
+      if (!window.MediaRecorder) return;
+      mrMime = pickMime();
+      mr = new MediaRecorder(stream, mrMime ? { mimeType: mrMime, audioBitsPerSecond: 16000 } : { audioBitsPerSecond: 16000 });
+      mr.ondataavailable = e => { if (e.data && e.data.size) mrChunks.push(e.data); };
+      mr.start();
+    } catch (e) { mr = null; }
+  }
+  function mrStop() {                                     // → Promise<{b64, mime} | null>
+    return new Promise(res => {
+      if (!mr || mr.state === "inactive") { res(null); return; }
+      const done = () => {
+        const blob = new Blob(mrChunks, { type: (mr && mr.mimeType) || mrMime || "audio/mp4" });
+        if (!blob.size) { res(null); return; }
+        const fr = new FileReader();
+        fr.onload = () => { const u = String(fr.result || ""); res({ b64: u.slice(u.indexOf(",") + 1), mime: blob.type.split(";")[0] || "audio/mp4" }); };
+        fr.onerror = () => res(null);
+        fr.readAsDataURL(blob);
+      };
+      mr.onstop = done;
+      try { mr.stop(); } catch (e) { res(null); }
+      setTimeout(() => res(null), 3000);
+    });
+  }
   async function mic() {
     if (stream && stream.getAudioTracks().some(t => t.readyState === "live")) return stream;
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
@@ -46,6 +76,7 @@ const Rec = (() => {
     node = ctx.createScriptProcessor(4096, 1, 1);
     node.onaudioprocess = e => { if (on) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
     src.connect(node); node.connect(ctx.destination);
+    mrStart();
     on = true;
     if (SR) {
       try {
@@ -73,9 +104,10 @@ const Rec = (() => {
     try { r && r.stop(); } catch (e) {}
     try { src && src.disconnect(); node && node.disconnect(); } catch (e) {}
     const rate = ctx ? ctx.sampleRate : 48000;
+    const keepP = mrStop();
     setTimeout(() => {                                    // 最後の聞きとり結果を すこし待つ
       const wav = toWav(chunks, rate);
-      cb.end && cb.end({ said, alts: alts.length ? alts : (said ? [said] : []), srErr, wav: wav.b64, url: wav.url, sec: wav.sec });
+      keepP.then(keep => cb.end && cb.end({ said, alts: alts.length ? alts : (said ? [said] : []), srErr, wav: wav.b64, url: wav.url, sec: wav.sec, keep: wav.b64 ? keep : null }));
     }, r ? 500 : 50);
   }
   function release() {                                    // おわったら マイクをはなす（音がもとの大きさにもどる）

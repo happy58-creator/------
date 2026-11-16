@@ -12,7 +12,7 @@ createApp({
   methods: { I(n, c) { return Icon.svg(n, c); }, iO: e => Icon.of(e), iL: s => Icon.lead(s), iX: s => Icon.strip(s) },
   setup() {
     const L = Kit.load("hist_v1", {});
-    const S = reactive({ ready: false, args: {}, sheet: L.sheet || "", who: "みんな", data: {}, busy: "", pdfBusy: -1, toast: "", more: PAGE, open: -1 });
+    const S = reactive({ ready: false, args: {}, sheet: L.sheet || "", who: "みんな", data: {}, busy: "", pdfBusy: -1, toast: "", more: PAGE, open: -1, voice: {}, vbusy: "", playing: "" });
     function onArgs(a) {
       const first = !S.ready;
       S.args = a; S.ready = true; Kit.takeReply(a);
@@ -28,7 +28,7 @@ createApp({
       Kit.ask({ type: "load", sheet, fresh: !!fresh }, r => {
         if (S.busy === sheet) S.busy = "";
         if (r.error) { toast(r.error); return; }
-        S.data[r.sheet] = { cols: r.cols, rows: r.rows };
+        S.data[r.sheet] = { cols: r.cols, rows: r.rows, locks: r.locks, lockMax: r.lockMax, keep: r.keep };
       });
     }
     const cur = computed(() => S.data[S.sheet] || null);
@@ -69,7 +69,35 @@ createApp({
     }
     const when = d => String(d || "").slice(0, 16);
     Streamlit.ready(onArgs);
-    return { S, ICON, load, cur, names, rows, newest, scoreCol, best, avg, chart, sideCols, openPdf, csv, when };
+    // ---- 録音（AI英語スピーキング「話す」）：聞く・鍵をかける
+    function openVoice(r) {
+      if (S.voice[r._rec]) { S.voice[r._rec].show = !S.voice[r._rec].show; return; }
+      S.vbusy = r._rec;
+      Kit.ask({ type: "voice", sheet: S.sheet, key: r._rec }, x => {
+        S.vbusy = "";
+        if (x.error) { toast(x.error); return; }
+        S.voice[x.key] = { ...x, show: true };
+      });
+    }
+    let audio = null;
+    function play(key, k) {
+      const v = S.voice[key], b64 = v && v.clips[k]; if (!b64) return;
+      try { audio && audio.pause(); } catch (e) {}
+      audio = new Audio(`data:${v.mime};base64,${b64}`); S.playing = key + k;
+      audio.onended = audio.onerror = () => { if (S.playing === key + k) S.playing = ""; };
+      audio.play().catch(() => { S.playing = ""; toast("このブラウザでは 再生できないみたい"); });
+    }
+    function lock(r) {
+      const on = !r._lock;
+      S.vbusy = "L" + r._rec;
+      Kit.ask({ type: "lock", sheet: S.sheet, key: r._rec, on }, x => {
+        S.vbusy = "";
+        if (x.error) { toast(x.error); return; }
+        toast(x.msg);
+        if (x.ok) { r._lock = x.lock; const d = S.data[S.sheet]; if (d && d.locks != null) d.locks = x.locks; }
+      });
+    }
+    return { S, ICON, openVoice, play, lock, load, cur, names, rows, newest, scoreCol, best, avg, chart, sideCols, openPdf, csv, when };
   },
   template: `
 <div class="wrap" v-if="S.ready">
@@ -106,11 +134,25 @@ createApp({
       <div class="list">
         <div v-for="r in newest.slice(0, S.more)" :key="r._i" class="rec" :class="{ open: S.open === r._i }">
           <button class="rhead" @click="S.open = S.open === r._i ? -1 : r._i">
-            <span class="grow"><b>{{ when(r['日時']) }}</b><small v-if="S.args.admin">{{ r['名前'] }}</small><small class="side">{{ sideCols.slice(0, 2).map(c => r[c]).filter(Boolean).join('・') }}</small></span>
+            <span class="grow"><b>{{ when(r['日時']) }}<ic v-if="r._lock" n="lock" class="lk"></ic><ic v-else-if="r._rec" n="headphones" class="hp"></ic></b><small v-if="S.args.admin">{{ r['名前'] }}</small><small class="side">{{ sideCols.slice(0, 2).map(c => r[c]).filter(Boolean).join('・') }}</small></span>
             <em v-if="scoreCol && r[scoreCol] !== ''" class="sc">{{ r[scoreCol] }}<i v-if="scoreCol === '点数'">点</i></em><span class="achev">{{ S.open === r._i ? '▲' : '▼' }}</span>
           </button>
           <div v-if="S.open === r._i" class="rbody">
             <div v-for="c in sideCols" :key="c" class="kv"><span>{{ c }}</span><b>{{ r[c] === '' ? '—' : r[c] }}</b></div>
+            <div v-if="r._rec" class="voice">
+              <div class="vrow">
+                <button class="btn" :disabled="S.vbusy === r._rec" @click="openVoice(r)"><ic n="headphones"></ic>{{ S.vbusy === r._rec ? '読みこみ中…' : (S.voice[r._rec] && S.voice[r._rec].show ? '録音を とじる' : '録音を 聞く') }}</button>
+                <button class="btn lockb" :class="{ on: r._lock }" :disabled="S.vbusy === 'L' + r._rec" @click="lock(r)"><ic n="lock"></ic>{{ r._lock ? '鍵をはずす' : '鍵をかける' }}</button>
+              </div>
+              <div class="small muted">鍵をかけた録音は 消えません{{ cur.locks != null ? '（' + cur.locks + ' / ' + cur.lockMax + '）' : '（1人' + cur.lockMax + '回まで）' }}。鍵のない録音は 新しい{{ cur.keep }}回だけ残ります</div>
+              <div v-if="S.voice[r._rec] && S.voice[r._rec].show" class="vlist">
+                <div v-for="(t, k) in S.voice[r._rec].texts" :key="k" v-show="t" class="vitem">
+                  <button class="vplay" :class="{ live: S.playing === r._rec + k }" :disabled="!S.voice[r._rec].clips[k]" @click="play(r._rec, k)"><ic :n="S.voice[r._rec].clips[k] ? 'play' : 'x'"></ic></button>
+                  <span class="grow">{{ t }}<small v-if="!S.voice[r._rec].clips[k]" class="muted">（録音なし）</small></span>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="r._gone" class="small muted" style="margin:6px 0">録音は もう残っていません（新しい{{ cur.keep }}回と、鍵をかけた回だけ残ります）</div>
             <button v-if="r._pdf" class="btn pdf" :disabled="S.pdfBusy === r._i" @click="openPdf(r)"><ic v-if="iL(S.pdfBusy === r._i ? 'PDFを 作っています…' : '📄 そのときの結果を PDFで 見る')[0]" :n="iL(S.pdfBusy === r._i ? 'PDFを 作っています…' : '📄 そのときの結果を PDFで 見る')[0]"></ic>{{ iX(iL(S.pdfBusy === r._i ? 'PDFを 作っています…' : '📄 そのときの結果を PDFで 見る')[1]) }}</button>
           </div>
         </div>
