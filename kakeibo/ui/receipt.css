@@ -151,3 +151,4 @@ body.kbd .rbar{display:none}
 .eline{padding:10px 12px;border-bottom:1px solid var(--line)}.eline:last-child{border-bottom:0}
 .eline.moved{background:#fff8ec}
 .edrop{display:block;margin:12px auto 4px;color:var(--red,#d6453d);font-weight:700}
+.rdisc{font-style:normal;font-weight:800;color:#c2416f;background:#fdeef3;border-radius:6px;padding:1px 6px}

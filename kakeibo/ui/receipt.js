@@ -84,7 +84,7 @@ function fromResult(list) {
       const key = normKey(it.raw || it.name), m = memo[key];
       let name = it.name || it.raw, cat = exp.includes(it.category) ? it.category : fallback, mem = false;
       if (m) { if (m["品名"]) name = m["品名"]; if (exp.includes(m["カテゴリ"])) cat = m["カテゴリ"]; mem = true; }
-      return { k: uid(), key, raw: it.raw || "", name, price: String(it.price), qty: String(it.qty || 1), tax: TAXES.includes(+it.tax) ? +it.tax : 8, cat, unsure: !!it.unsure && !mem, mem, oname: name, ocat: cat, rec: false };
+      return { k: uid(), key, raw: it.raw || "", name, price: String(it.price), disc: int(it.disc) || 0, qty: String(it.qty || 1), tax: TAXES.includes(+it.tax) ? +it.tax : 8, cat, unsure: !!it.unsure && !mem, mem, oname: name, ocat: cat, rec: false };
     });
     const pay = r.payment === "クレカ" ? CARD : r.payment === "現金" ? CASH : S.pay || CASH;
     return { id: uid(), store: [r.store, r.branch].filter(Boolean).join(" "), date: r.date || today(), tax_mode: r.tax_mode === "外税" ? "外税" : "内税",
@@ -136,7 +136,7 @@ function editView(manual) {
           <label class="rqty">×<input data-ri="${i}|${j}|qty" inputmode="numeric" value="${esc(it.qty)}" placeholder="1"></label>
           <button class="rmove" data-r="move" data-i="${i}" data-j="${j}" aria-label="カテゴリを変える">${icon(it.cat)}</button>
           <button class="rdel" data-r="dline" data-i="${i}" data-j="${j}" aria-label="消す">✕</button></div>
-        ${it.raw && normKey(it.raw) !== normKey(it.name) || it.unsure || it.mem ? `<div class="rraw">${it.raw ? `レシート：${esc(it.raw)}` : ""}${it.unsure ? `<i class="runsure">要確認</i>` : ""}${it.mem ? `<i class="rmem">覚えた直し方</i>` : ""}<span id="ty${i}_${j}">${taxNote(rc, it)}</span></div>`
+        ${it.raw && normKey(it.raw) !== normKey(it.name) || it.unsure || it.mem || it.disc ? `<div class="rraw">${it.raw ? `レシート：${esc(it.raw)}` : ""}${it.disc ? `<i class="rdisc">値引 −${yen(it.disc)}</i>` : ""}${it.unsure ? `<i class="runsure">要確認</i>` : ""}${it.mem ? `<i class="rmem">覚えた直し方</i>` : ""}<span id="ty${i}_${j}">${taxNote(rc, it)}</span></div>`
           : `<div class="rraw"><span id="ty${i}_${j}">${taxNote(rc, it)}</span></div>`}
       </div>`).join("");
       return `<div class="rgroup"><div class="ghead"><button class="gcat" data-r="gcat" data-i="${i}" data-c="${esc(c)}"><span class="bic">${icon(c)}</span><b>${esc(c)}</b><i class="chev">▾</i></button>
@@ -208,11 +208,39 @@ function openRec(i, j) {
   openRecWith({ name: it.name, price: lineYen(rc, it), qty: it.qty, sid: rc.sid, date: rc.date, shop: rc.chain || rc.store, done: sid => { it.rec = true; if (!rc.sid && sid) rc.sid = sid; rkeep(); } });
 }
 // 値段の記録の下書き（o：name, price, qty, sid, date, done(sid)：記録したあとにすること）
+// 品名から量・数を読む：「トリス 500ml」→ 品名「トリス」・500ml、「鶏むね肉 2枚」→ 2枚、「ビール 350ml×6缶」→ 350ml・入数6
+const SIZE_UNIT = { kg: "kg", g: "g", ml: "ml", cc: "ml", l: "L", "ℓ": "L", "リットル": "L", "グラム": "g", "キロ": "kg" };
+const COUNT_UNIT = { 枚: "枚", 本: "本", 個: "個", コ: "個", こ: "個", 缶: "缶", 袋: "袋", パック: "パック", p: "パック", 玉: "玉", 束: "束", 切れ: "切れ", 切: "切れ", 尾: "尾", ロール: "ロール", r: "ロール", 入: "個" };
+function parseSize(name) {
+  let t = String(name || "").normalize("NFKC"), m, out = {};
+  const cut = re => { t = t.replace(re, " "); };
+  if ((m = t.match(/(\d+(?:\.\d+)?)\s*(kg|ml|cc|g|l|ℓ|リットル|グラム|キロ)(?![a-z])/i))) { out.amt = +m[1]; out.unit = SIZE_UNIT[m[2].toLowerCase()] || SIZE_UNIT[m[2]]; cut(m[0]); }
+  if ((m = t.match(/[x×*]\s*(\d+)\s*(本|缶|個|コ|袋|パック|p|入)?/i)) || (m = t.match(/(\d+)\s*(本|缶|個|コ|袋|p|パック)\s*入り?/i))) { out.pack = +m[1]; cut(m[0]); }
+  if ((m = t.match(/(\d+)\s*(枚|本|個|コ|こ|缶|袋|パック|玉|束|切れ|切|尾|ロール|p|r)(?![a-zぁ-ん])/i))) {
+    const n = +m[1], u = COUNT_UNIT[m[2].toLowerCase()] || COUNT_UNIT[m[2]];
+    if (out.unit) out.pack = out.pack || n;             // 「500ml 2本」：2本は入数
+    else { out.amt = n; out.unit = u; }
+    cut(m[0]);
+  }
+  const rest = t.replace(/[()（）\[\]【】・,、/]+/g, " ").replace(/\s+/g, " ").trim();
+  if (out.unit && rest) out.name = rest;
+  return out;
+}
 function openRecWith(o) {
-  const last = (D.units || {})[o.name] || [];
-  const unit = RUNITS[last[0]] ? last[0] : "個", qty = Math.max(1, int(o.qty) || 1);
-  recDraft = { name: o.name, price: String(o.price), qty, unit, amt: rIsCount(unit) ? String(qty) : String(last[1] || ""),
-    pack: rIsCount(unit) ? "1" : String(qty > 1 ? qty : (last[2] || 1)), sid: o.sid || "", memo: "レシートから", date: o.date || today(), shop: o.shop || "", done: o.done };
+  const ps = parseSize(o.name), name = ps.name || o.name;
+  const last = (D.units || {})[name] || (D.units || {})[o.name] || [];
+  const qty = Math.max(1, int(o.qty) || 1);
+  let unit, amt, pack;
+  if (ps.unit && RUNITS[ps.unit]) {               // 品名から わかった量・数（レシートの個数もかける）
+    unit = ps.unit;
+    if (rIsCount(unit)) { amt = String((ps.amt || 1) * qty); pack = "1"; }
+    else { amt = String(ps.amt); pack = String((ps.pack || 1) * qty); }
+  } else {                                         // わからなければ、前に記録したときの単位
+    unit = RUNITS[last[0]] ? last[0] : "個";
+    amt = rIsCount(unit) ? String(qty) : String(last[1] || "");
+    pack = rIsCount(unit) ? "1" : String(qty > 1 ? qty : (last[2] || 1));
+  }
+  recDraft = { name, price: String(o.price), qty, unit, amt, pack, sid: o.sid || "", memo: "レシートから", date: o.date || today(), shop: o.shop || "", done: o.done };
   drawRec();
 }
 function recInfo() {

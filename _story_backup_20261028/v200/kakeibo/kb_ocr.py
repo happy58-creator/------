@@ -1,0 +1,199 @@
+"""レシートの読み取り（Gemini）。
+画面で撮った写真（何枚でも）を、1回の問い合わせでまとめて送り、
+お店・日付・品名・金額・税・個数・カテゴリを JSON で受けとる。
+1枚のレシートを分けて撮った写真も、ちがうレシートの写真も、まとめて送ってよい（Gemini が見分ける）。"""
+import base64
+import json
+import os
+import re
+
+import streamlit as st
+
+MODEL_FALLBACK = "gemini-3.6-flash"
+FALLBACK_MODEL = "gemini-3.5-flash-lite"   # 予備：混雑・回数の上限のとき（回数の上限はモデルごとに別）
+
+
+def _key():
+    try:
+        k = st.secrets.get("GEMINI_API_KEY")
+        if k:
+            return k
+    except Exception:
+        pass
+    return os.environ.get("GEMINI_API_KEY")
+
+
+def available():
+    return bool(_key())
+
+
+def _model():
+    try:
+        import common          # 教材アプリと同じモデル
+        return getattr(common, "GEMINI_MODEL", MODEL_FALLBACK)
+    except Exception:
+        return MODEL_FALLBACK
+
+
+def _image(url):
+    """data:image/jpeg;base64,... → (bytes, mime)"""
+    m = re.match(r"data:(image/[\w.+-]+);base64,(.*)$", str(url), re.S)
+    if not m:
+        raise ValueError("写真の形がちがいます")
+    return base64.b64decode(m.group(2)), m.group(1)
+
+
+def _prompt(cats, names, stores=()):
+    hint = "、".join(names[:300]) if names else "（なし）"
+    shops = "、".join(stores[:200]) if stores else "（なし）"
+    return f"""あなたは日本のレシートを読みとる係です。写真は1枚以上あります。
+- 1枚のレシートを上下に分けて撮った写真があります。同じレシートの写真はつなげて1つのレシートとして読み、重なって写っている行は1回だけ数えてください。
+- ちがうレシートの写真は、別のレシートとして分けてください。
+
+各レシートについて：
+- store：お店の名前（チェーン名。例「無印良品」「トライアル」）。下の「登録してあるお店」に同じお店があれば、英語表記・略し方がちがっても（例「COSTCO」→「コストコ」、「TRIAL」→「トライアル」）その名前で書く。branch：支店名（例「イオンモール福岡店」。なければ空）
+- date：日付 YYYY-MM-DD（わからなければ空）。time：時刻 HH:MM（なければ空）
+- tax_mode：品物の金額が税込なら "内税"、税抜で最後に消費税を足す形なら "外税"
+- total：レシートに書いてある支払いの合計（税込）。整数
+- items：品物の一覧（レシートの順）
+  - raw：レシートに書いてあるとおりの品名（半角カナもそのまま）
+  - name：ふつうの書き方に直した品名（例「ﾌﾞﾀｺﾏｷﾞﾚ」→「豚こま切れ」、「ｷﾞｭｳﾆｭｳ」→「牛乳」）。下の「よく使う品名」に同じものがあれば、その書き方にそろえる
+  - price：その行に印字された金額（値引きを引く前。2コ×158 なら 316）。外税のレシートなら税抜の金額のまま。整数
+  - discount：その品物の値引き額（正の整数。なければ 0）。品物のすぐ下の「値引」「割引」「半額」「20%引」「-50」などの行を読んで入れる。％だけで金額が書いていなければ price × ％ で計算する
+  - qty：個数（書いてなければ 1）
+  - tax：税率 8・10・0（0 は非課税）。決め方は次の順：
+    1. レシートに印字された記号の説明（例「※は軽減税率対象」「E 8%」「A 10%」「★印は軽減税率」）を見て、各行の記号から決める
+    2. 説明がなくても、よくある記号：「※」「軽」「*」「E」は 8%、「A」は 10%（コストコは金額の右の E が 8%、A が 10%）
+    3. 記号がない行は、下の「8%対象」「10%対象」の金額と、税率ごとの品物の合計がぴったり合うように割り振る
+    4. それでも決まらないときだけ、品物から推測する（食品は多くが 8%、日用品・外食・酒は 10%）
+  - category：次のカテゴリから1つ：{"・".join(cats)}
+- 品物ごとの値引きの行は items に行を作らず、その品物の discount に入れる（price からは引かない）
+- お会計全体の値引き・クーポンは、name を「値引き」、price をマイナスにした行にする
+- 小計・合計・消費税・お預り・お釣り・ポイント・支払方法の行は items に入れない
+- base8・base10：レシートに印字された「8%対象」「10%対象」の金額（税抜か税込かは印字のまま）。書いてなければ 0
+- base_taxed：base8・base10 が消費税を含む金額なら true、税抜なら false
+- payment：支払方法がわかれば "現金"・"クレカ"・"その他"、わからなければ空
+- 読めない文字があっても、できるだけ推測して埋める。自信がない行は "unsure": true をつける
+
+よく使う品名：{hint}
+登録してあるお店：{shops}
+
+次の JSON だけを出力：
+{{"receipts":[{{"store":"","branch":"","date":"","time":"","tax_mode":"内税","total":0,"base8":0,"base10":0,"base_taxed":false,"payment":"","items":[{{"raw":"","name":"","price":0,"discount":0,"qty":1,"tax":8,"category":"","unsure":false}}]}}]}}"""
+
+
+def _int(v):
+    try:
+        return int(round(float(str(v).replace(",", "").replace("¥", "").replace("円", "").strip() or 0)))
+    except Exception:
+        return 0
+
+
+def _sum(items, mode, key):
+    """品物の合計（外税なら、税率ごとに消費税を足す。1円未満は切り捨て）"""
+    if mode != "外税":
+        return sum(it[key] for it in items)
+    by = {}
+    for it in items:
+        by[it["tax"]] = by.get(it["tax"], 0) + it[key]
+    return sum(v + (v * t // 100) for t, v in by.items())
+
+
+def _clean(data, cats):
+    out = []
+    for r in (data or {}).get("receipts") or []:
+        items = []
+        for it in r.get("items") or []:
+            name = str(it.get("name") or it.get("raw") or "").strip()
+            price = _int(it.get("price"))
+            if not name or not price:        # 0円の行（読みまちがい・メモの行）は入れない
+                continue
+            disc = abs(_int(it.get("discount")))
+            if price < 0 or disc >= price:   # 値引きの行そのもの・おかしな値引きは そのまま
+                disc = 0
+            tax = _int(it.get("tax"))
+            items.append({
+                "raw": str(it.get("raw") or "").strip(), "name": name, "orig": price, "disc": disc, "price": price - disc,
+                "qty": max(1, _int(it.get("qty")) or 1), "tax": tax if tax in (0, 8, 10) else 8,
+                "category": it.get("category") if it.get("category") in cats else "", "unsure": bool(it.get("unsure")),
+            })
+        mode = "外税" if r.get("tax_mode") == "外税" else "内税"
+        total = _int(r.get("total"))
+        # AIが値引きを price から先に引いていた（二重に引くことになる）ときは、合計に合う方にする
+        if total and any(it["disc"] for it in items):
+            net, raw = _sum(items, mode, "price"), _sum(items, mode, "orig")
+            if abs(raw - total) <= 1 < abs(net - total):
+                for it in items:
+                    it["price"], it["disc"] = it["orig"], 0
+        for it in items:
+            it.pop("orig")
+        date = str(r.get("date") or "")
+        out.append({
+            "store": str(r.get("store") or "").strip(), "branch": str(r.get("branch") or "").strip(),
+            "date": date if re.match(r"^\d{4}-\d{2}-\d{2}$", date) else "", "time": str(r.get("time") or ""),
+            "tax_mode": mode, "total": total,
+            "base8": _int(r.get("base8")), "base10": _int(r.get("base10")), "base_taxed": bool(r.get("base_taxed")),
+            "payment": str(r.get("payment") or ""), "items": items,
+        })
+    return [r for r in out if r["items"]]
+
+
+def _reset_jst():
+    """1日の回数が戻る時刻（日本時間）。アメリカ太平洋時間の0時（冬は17時、夏は16時）"""
+    try:
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        la = datetime.now(ZoneInfo("America/Los_Angeles"))
+        nxt = (la + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return f"{nxt.astimezone(ZoneInfo('Asia/Tokyo')).hour}時"
+    except Exception:
+        return "17時ごろ"
+
+
+def _code(e):
+    """エラーの番号（429：回数の上限、5xx：Google側の混雑・不具合、404：モデルがない）"""
+    for k in ("code", "status_code"):
+        v = getattr(e, k, None)
+        if isinstance(v, int):
+            return v
+    m = re.search(r"\b(4\d\d|5\d\d)\b", str(e))
+    return int(m.group(1)) if m else 0
+
+
+def read_receipts(images, cats, names, stores=()):
+    """images：data URL の一覧。返り値 {"receipts": [...], "model": ...} か {"error": "..."}
+    失敗したら、予備のモデル（回数の上限は別）で1回だけ読みなおす。1日の回数が少ない（無料は20回）ので、それ以上は送らない。"""
+    if not images:
+        return {"error": "写真がありません"}
+    if not available():
+        return {"error": "AIのカギ（GEMINI_API_KEY）が設定されていないので、読み取りが使えません"}
+    try:
+        from google import genai
+        from google.genai import types
+        parts = []
+        for u in images[:10]:
+            b, mime = _image(u)
+            parts.append(types.Part.from_bytes(data=b, mime_type=mime))
+        parts.append(_prompt(cats, names, list(stores)))
+        client = genai.Client(api_key=_key())
+    except Exception as e:
+        return {"error": f"写真を送る準備ができませんでした（{type(e).__name__}）"}
+    main = _model()
+    codes = []
+    for model in (main, FALLBACK_MODEL):          # 失敗したら、そのまま予備のモデルで1回だけ送り直す（回数がもったいないので、それ以上は送らない）
+        try:
+            res = client.models.generate_content(           # 写真が何枚でも、問い合わせは1回
+                model=model, contents=parts,
+                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1),
+            )
+            receipts = _clean(json.loads(res.text), cats)
+            if not receipts:
+                return {"error": "レシートの品物を読みとれませんでした。明るいところで、もう一度撮ってみてください"}
+            return {"receipts": receipts, "model": model}
+        except Exception as e:
+            codes.append(_code(e))
+    if codes and all(c == 429 for c in codes if c != 404):
+        return {"error": f"AIの読み取り回数の上限に達しました。1分ほど待ってもう一度押してください。1日の回数を使い切った場合は、{_reset_jst()}（日本時間）に戻ります（写真は残っています）"}
+    if any(500 <= c < 600 for c in codes) or not any(codes):
+        return {"error": "Geminiが混み合っていて読みとれませんでした。少し時間をおいて、もう一度「読みとる」を押してください（写真は残っています）"}
+    return {"error": f"読み取りに失敗しました（エラー {'・'.join(str(c) for c in codes if c)}）。写真を撮り直してみてください"}

@@ -57,8 +57,9 @@ def _prompt(cats, names, stores=()):
 - total：レシートに書いてある支払いの合計（税込）。整数
 - items：品物の一覧（レシートの順）
   - raw：レシートに書いてあるとおりの品名（半角カナもそのまま）
-  - name：ふつうの書き方に直した品名（例「ﾌﾞﾀｺﾏｷﾞﾚ」→「豚こま切れ」、「ｷﾞｭｳﾆｭｳ」→「牛乳」）。下の「よく使う品名」に同じものがあれば、その書き方にそろえる
-  - price：その行の金額（値引き後。2コ×158 なら 316）。外税のレシートなら税抜の金額のまま。整数
+  - name：ふつうの書き方に直した品名（例「ﾌﾞﾀｺﾏｷﾞﾚ」→「豚こま切れ」、「ｷﾞｭｳﾆｭｳ」→「牛乳」）。下の「よく使う品名」に同じものがあれば、その書き方にそろえる。略された商品名は、わかる範囲で正式な名前にする（例「ﾄﾘｽHB」→「トリスハイボール」）。容量・数（500ml、2枚、10個入 など）が書いてあれば、品名のうしろに残す
+  - price：その行に印字された金額（値引きを引く前。2コ×158 なら 316）。外税のレシートなら税抜の金額のまま。整数
+  - discount：その品物の値引き額（正の整数。なければ 0）。品物のすぐ下の「値引」「割引」「半額」「20%引」「-50」などの行を読んで入れる。％だけで金額が書いていなければ price × ％ で計算する
   - qty：個数（書いてなければ 1）
   - tax：税率 8・10・0（0 は非課税）。決め方は次の順：
     1. レシートに印字された記号の説明（例「※は軽減税率対象」「E 8%」「A 10%」「★印は軽減税率」）を見て、各行の記号から決める
@@ -66,7 +67,7 @@ def _prompt(cats, names, stores=()):
     3. 記号がない行は、下の「8%対象」「10%対象」の金額と、税率ごとの品物の合計がぴったり合うように割り振る
     4. それでも決まらないときだけ、品物から推測する（食品は多くが 8%、日用品・外食・酒は 10%）
   - category：次のカテゴリから1つ：{"・".join(cats)}
-- 品物ごとの値引き（「値引」「割引」「-30」など）は、その品物の price から引いて、行を作らない
+- 品物ごとの値引きの行は items に行を作らず、その品物の discount に入れる（price からは引かない）
 - お会計全体の値引き・クーポンは、name を「値引き」、price をマイナスにした行にする
 - 小計・合計・消費税・お預り・お釣り・ポイント・支払方法の行は items に入れない
 - base8・base10：レシートに印字された「8%対象」「10%対象」の金額（税抜か税込かは印字のまま）。書いてなければ 0
@@ -78,7 +79,7 @@ def _prompt(cats, names, stores=()):
 登録してあるお店：{shops}
 
 次の JSON だけを出力：
-{{"receipts":[{{"store":"","branch":"","date":"","time":"","tax_mode":"内税","total":0,"base8":0,"base10":0,"base_taxed":false,"payment":"","items":[{{"raw":"","name":"","price":0,"qty":1,"tax":8,"category":"","unsure":false}}]}}]}}"""
+{{"receipts":[{{"store":"","branch":"","date":"","time":"","tax_mode":"内税","total":0,"base8":0,"base10":0,"base_taxed":false,"payment":"","items":[{{"raw":"","name":"","price":0,"discount":0,"qty":1,"tax":8,"category":"","unsure":false}}]}}]}}"""
 
 
 def _int(v):
@@ -88,25 +89,49 @@ def _int(v):
         return 0
 
 
+def _sum(items, mode, key):
+    """品物の合計（外税なら、税率ごとに消費税を足す。1円未満は切り捨て）"""
+    if mode != "外税":
+        return sum(it[key] for it in items)
+    by = {}
+    for it in items:
+        by[it["tax"]] = by.get(it["tax"], 0) + it[key]
+    return sum(v + (v * t // 100) for t, v in by.items())
+
+
 def _clean(data, cats):
     out = []
     for r in (data or {}).get("receipts") or []:
         items = []
         for it in r.get("items") or []:
             name = str(it.get("name") or it.get("raw") or "").strip()
-            if not name or not _int(it.get("price")):        # 0円の行（読みまちがい・メモの行）は入れない
+            price = _int(it.get("price"))
+            if not name or not price:        # 0円の行（読みまちがい・メモの行）は入れない
                 continue
+            disc = abs(_int(it.get("discount")))
+            if price < 0 or disc >= price:   # 値引きの行そのもの・おかしな値引きは そのまま
+                disc = 0
             tax = _int(it.get("tax"))
             items.append({
-                "raw": str(it.get("raw") or "").strip(), "name": name, "price": _int(it.get("price")),
+                "raw": str(it.get("raw") or "").strip(), "name": name, "orig": price, "disc": disc, "price": price - disc,
                 "qty": max(1, _int(it.get("qty")) or 1), "tax": tax if tax in (0, 8, 10) else 8,
                 "category": it.get("category") if it.get("category") in cats else "", "unsure": bool(it.get("unsure")),
             })
+        mode = "外税" if r.get("tax_mode") == "外税" else "内税"
+        total = _int(r.get("total"))
+        # AIが値引きを price から先に引いていた（二重に引くことになる）ときは、合計に合う方にする
+        if total and any(it["disc"] for it in items):
+            net, raw = _sum(items, mode, "price"), _sum(items, mode, "orig")
+            if abs(raw - total) <= 1 < abs(net - total):
+                for it in items:
+                    it["price"], it["disc"] = it["orig"], 0
+        for it in items:
+            it.pop("orig")
         date = str(r.get("date") or "")
         out.append({
             "store": str(r.get("store") or "").strip(), "branch": str(r.get("branch") or "").strip(),
             "date": date if re.match(r"^\d{4}-\d{2}-\d{2}$", date) else "", "time": str(r.get("time") or ""),
-            "tax_mode": "外税" if r.get("tax_mode") == "外税" else "内税", "total": _int(r.get("total")),
+            "tax_mode": mode, "total": total,
             "base8": _int(r.get("base8")), "base10": _int(r.get("base10")), "base_taxed": bool(r.get("base_taxed")),
             "payment": str(r.get("payment") or ""), "items": items,
         })
