@@ -485,13 +485,23 @@ _GEMINI_SKIP = {}
 
 
 def _next_reset():
-    """1日の回数が もどる時刻（日本時間の17時 ＝ 世界時の8時）"""
+    """1日の回数が もどる時刻（アメリカ太平洋時間の0時。日本時間だと 冬は17時・夏は16時）"""
     import datetime as dt
-    now = dt.datetime.now(dt.timezone.utc)
-    r = now.replace(hour=8, minute=0, second=0, microsecond=0)
-    if r <= now:
-        r += dt.timedelta(days=1)
-    return r.timestamp()
+    try:
+        from zoneinfo import ZoneInfo
+        la = dt.datetime.now(ZoneInfo("America/Los_Angeles"))
+        return (la + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    except Exception:                       # 時刻の表がないとき：冬時間で
+        now = dt.datetime.now(dt.timezone.utc)
+        r = now.replace(hour=8, minute=0, second=0, microsecond=0)
+        return (r + dt.timedelta(days=1) if r <= now else r).timestamp()
+
+
+def reset_jst_text():
+    """「夕方5時」「夕方4時」（回数が もどる 日本時間）"""
+    import datetime as dt
+    h = dt.datetime.fromtimestamp(_next_reset(), dt.timezone(dt.timedelta(hours=9))).hour
+    return f"夕方{h - 12}時" if 12 < h < 19 else f"{h}時"
 
 
 def _gemini_code(e):
@@ -565,7 +575,7 @@ def ai_error_text(e):
     code = getattr(e, "code", None) or getattr(e, "status_code", None)
     name, msg = type(e).__name__, str(e)
     if code == 429 or "RESOURCE_EXHAUSTED" in msg:
-        return "今日のAIの回数を（どのモデルも）使いきったみたい。夕方5時（日本時間）に もどるよ"
+        return f"今日のAIの回数を（どのモデルも）使いきったみたい。{reset_jst_text()}（日本時間）に もどるよ"
     if isinstance(code, int) and code >= 500:
         return "AIが 混み合っているみたい。少し待ってから もう一度ためしてね"
     if "timeout" in name.lower() or "timed out" in msg.lower() or "Timeout" in msg:
