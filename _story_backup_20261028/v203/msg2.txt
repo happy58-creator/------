@@ -1,0 +1,5 @@
+AIの回数がもどる時刻を夏時間にも合わせる
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015g7qXKGeiTC5MD2dSmuzBf
+

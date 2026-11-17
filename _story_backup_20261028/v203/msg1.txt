@@ -1,0 +1,5 @@
+AIのモデルを順に切り替える（3.6→3.8→3.5 Lite→2.5）
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015g7qXKGeiTC5MD2dSmuzBf
+
