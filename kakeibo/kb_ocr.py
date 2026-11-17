@@ -175,14 +175,24 @@ def read_receipts(images, cats, names, stores=()):
             b, mime = _image(u)
             parts.append(types.Part.from_bytes(data=b, mime_type=mime))
         parts.append(_prompt(cats, names, list(stores)))
-        client = genai.Client(api_key=_key())
+        client = genai.Client(api_key=_key(), http_options=types.HttpOptions(timeout=90_000))
     except Exception as e:
         return {"error": f"写真を送る準備ができませんでした（{type(e).__name__}）"}
     main = _model()
+    try:                       # 教材アプリと同じ：回数の上限・混雑のときは 次のモデルで送り直す（3.6 → 3.8 → 3.5 Lite → 2.5）
+        import common
+        api = common.wrap_client(client).models
+        order = (main, None)                  # 2回目（読めなかったとき）は、次のモデルから
+    except Exception:
+        api, order = client.models, (main, FALLBACK_MODEL)
     codes = []
-    for model in (main, FALLBACK_MODEL):          # 失敗したら、そのまま予備のモデルで1回だけ送り直す（回数がもったいないので、それ以上は送らない）
+    for model in order:
         try:
-            res = client.models.generate_content(           # 写真が何枚でも、問い合わせは1回
+            if model is None:
+                import common
+                rest = [m for m in common.GEMINI_MODELS if m != main]
+                model = rest[0] if rest else FALLBACK_MODEL
+            res = api.generate_content(           # 写真が何枚でも、問い合わせは1回
                 model=model, contents=parts,
                 config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.1),
             )

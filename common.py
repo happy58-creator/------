@@ -8,6 +8,8 @@ import streamlit as st
 import icons
 
 GEMINI_MODEL = "gemini-3.6-flash"
+# AIのモデルの順番：上のモデルが回数の上限・混雑・使えないときは、次のモデルで送り直す（回数の上限はモデルごとに別なので、1日に たくさん使える）
+GEMINI_MODELS = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
 HOME_PAGE = "home.py"
 
 # (名前, ファイル, サイドバーの表示名, アイコン, URLの末尾)。URLは半角英数字にして、
@@ -472,9 +474,87 @@ def get_gemini_client():
         st.stop()
     try:          # 返事が来ないまま待ちつづけないように（1回の問い合わせは60秒まで）
         from google.genai import types
-        return genai.Client(api_key=key, http_options=types.HttpOptions(timeout=60_000))
+        return wrap_client(genai.Client(api_key=key, http_options=types.HttpOptions(timeout=60_000)))
     except Exception:
-        return genai.Client(api_key=key)
+        return wrap_client(genai.Client(api_key=key))
+
+
+# ---------------------------------------------------------------- モデルの切りかえ
+# 回数を使いきったモデルは、しばらく とばす（むだな問い合わせをしない）。{モデル: この時刻（秒）まで とばす}
+_GEMINI_SKIP = {}
+
+
+def _next_reset():
+    """1日の回数が もどる時刻（日本時間の17時 ＝ 世界時の8時）"""
+    import datetime as dt
+    now = dt.datetime.now(dt.timezone.utc)
+    r = now.replace(hour=8, minute=0, second=0, microsecond=0)
+    if r <= now:
+        r += dt.timedelta(days=1)
+    return r.timestamp()
+
+
+def _gemini_code(e):
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+    return code if isinstance(code, int) else None
+
+
+def _retry_next(e):
+    """このエラーなら 次のモデルで送り直す（回数の上限・混雑・モデルが使えない・時間切れ）"""
+    code, msg = _gemini_code(e), str(e)
+    if code in (429, 403, 404) or (code and code >= 500) or "RESOURCE_EXHAUSTED" in msg:
+        return True
+    return "timeout" in type(e).__name__.lower() or "timed out" in msg.lower()
+
+
+def gemini_generate(models_api, model=None, **kw):
+    """model から はじめて、だめなら GEMINI_MODELS の順に 次のモデルで送る"""
+    import time as _t
+    order = [model] if model else []
+    order += [m for m in GEMINI_MODELS if m not in order]
+    now, last = _t.time(), None
+    tried = [m for m in order if _GEMINI_SKIP.get(m, 0) <= now] or order[:1]
+    for m in tried:
+        try:
+            res = models_api.generate_content(model=m, **kw)
+            if m != order[0]:
+                print(f"[AI] {order[0]} のかわりに {m} を使いました", flush=True)
+            return res
+        except Exception as e:
+            last = e
+            print(f"[AI] {m}: {type(e).__name__}: {str(e)[:200]}", flush=True)
+            if not _retry_next(e):
+                raise
+            if _gemini_code(e) == 429 or "RESOURCE_EXHAUSTED" in str(e):
+                _GEMINI_SKIP[m] = _next_reset() if "PerDay" in str(e) else now + 60   # 1日の上限なら17時まで、1分の上限なら1分
+            elif _gemini_code(e) in (403, 404):
+                _GEMINI_SKIP[m] = now + 6 * 3600                                     # このカギでは使えないモデル
+    raise last
+
+
+class _ModelsAPI:
+    def __init__(self, real):
+        self._real = real
+
+    def generate_content(self, model=None, **kw):
+        return gemini_generate(self._real, model, **kw)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+class _Client:
+    """genai.Client と同じように使える。generate_content だけ、モデルを切りかえながら送る"""
+    def __init__(self, real):
+        self._real = real
+        self.models = _ModelsAPI(real.models)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+def wrap_client(client):
+    return client if isinstance(client, _Client) else _Client(client)
 
 
 GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite"   # 予備：混雑・回数の上限のとき（回数の上限はモデルごとに別）
@@ -485,7 +565,7 @@ def ai_error_text(e):
     code = getattr(e, "code", None) or getattr(e, "status_code", None)
     name, msg = type(e).__name__, str(e)
     if code == 429 or "RESOURCE_EXHAUSTED" in msg:
-        return "今日のAIの回数を 使いきったみたい。夕方5時（日本時間）に もどるよ"
+        return "今日のAIの回数を（どのモデルも）使いきったみたい。夕方5時（日本時間）に もどるよ"
     if isinstance(code, int) and code >= 500:
         return "AIが 混み合っているみたい。少し待ってから もう一度ためしてね"
     if "timeout" in name.lower() or "timed out" in msg.lower() or "Timeout" in msg:
