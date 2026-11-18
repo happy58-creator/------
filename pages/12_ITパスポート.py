@@ -82,7 +82,7 @@ def ask_ai(v):
     try:
         from google.genai import types
         client = common.get_gemini_client()
-        res = client.models.generate_content(model=common.GEMINI_MODEL, contents=prompt,
+        res = client.models.generate_content(model=getattr(common, "GEMINI_CHEAP", common.GEMINI_MODEL), contents=prompt,   # 2.5 → 3.5 Lite（回数を節約）
                                              config=types.GenerateContentConfig(temperature=0.4))
         return (res.text or "").strip() or "うまく作れませんでした。もう一度ためしてください。"
     except Exception as e:

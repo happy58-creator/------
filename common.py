@@ -10,6 +10,8 @@ import icons
 GEMINI_MODEL = "gemini-3.6-flash"
 # AIのモデルの順番：上のモデルが回数の上限・混雑・使えないときは、次のモデルで送り直す（回数の上限はモデルごとに別なので、1日に たくさん使える）
 GEMINI_MODELS = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+# 回数を節約したい所（ITパス・基本情報の「AIに聞く」、漢字のコメント）：2.5 → 3.5 Lite だけを使う（3.6・3.8 の回数は使わない）
+GEMINI_CHEAP = ["gemini-2.5-flash", "gemini-3.5-flash-lite"]
 HOME_PAGE = "home.py"
 
 # (名前, ファイル, サイドバーの表示名, アイコン, URLの末尾)。URLは半角英数字にして、
@@ -518,10 +520,13 @@ def _retry_next(e):
 
 
 def gemini_generate(models_api, model=None, **kw):
-    """model から はじめて、だめなら GEMINI_MODELS の順に 次のモデルで送る"""
+    """model から はじめて、だめなら GEMINI_MODELS の順に 次のモデルで送る。model をリストでわたすと、その順番・そのモデルだけ"""
     import time as _t
-    order = [model] if model else []
-    order += [m for m in GEMINI_MODELS if m not in order]
+    if isinstance(model, (list, tuple)):
+        order = list(model)
+    else:
+        order = [model] if model else []
+        order += [m for m in GEMINI_MODELS if m not in order]
     now, last = _t.time(), None
     tried = [m for m in order if _GEMINI_SKIP.get(m, 0) <= now] or order[:1]
     for m in tried:

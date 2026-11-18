@@ -9,6 +9,7 @@ createApp({
   setup() {
     const L = Kit.load("kj_v1", {});
     const S = reactive({
+      cmt: null,
       ready: false, args: {}, view: "menu",
       grade: L.grade || 1, mode: L.mode || "trace", level: L.level || "",
       play: {}, busy: false, result: null, toast: "", run: "",
@@ -30,7 +31,7 @@ createApp({
       Kit.ask({ type: "start", grade: S.play.grade }, r => {
         S.busy = false;
         if (r.error || !r.kanjis) { toast(r.error || "うまくいかなかったよ"); return; }
-        S.run = Kit.uid(); S.result = null; S.view = "play"; Kit.top();
+        S.run = Kit.uid(); S.result = null; S.cmt = null; S.view = "play"; Kit.top();
         nextTick(() => {        // 書き取りの本体（kanji.js）を、この画面の中に出す
           const box = document.getElementById("game"); box.innerHTML = "";
           game = new KanjiGame(box, { kanjis: r.kanjis, mode: S.play.mode, tol: tolOf(S.play.level), round: S.run }, done);
@@ -39,10 +40,25 @@ createApp({
     }
     function done(v) {
       S.view = "end"; S.result = null; Kit.top();
-      Kit.ask({ type: "done", run: S.run, grade: S.play.grade, mode: S.play.mode, level: S.play.level, results: v.results }, r => {
+      const results = v.results.map(({ img, ...x }) => x);       // 記録には 画像を入れない
+      Kit.ask({ type: "done", run: S.run, grade: S.play.grade, mode: S.play.mode, level: S.play.level, results }, r => {
         if (r.error) { toast(r.error); return; }
         S.result = { ...r, time: v.time, items: v.results };
         if (r.score >= 90) Kit.party();
+        askComment(v.results);
+      });
+    }
+    // AI先生のひとこと：書いた字の画像を まとめて1回で送る（とめ・はね・はらい・バランス）
+    function askComment(items) {
+      const list = items.map((it, i) => ({ ...it, i })).filter(it => it.img);
+      if (!list.length) return;
+      S.cmt = { busy: true, sec: 0, items: {}, overall: "", error: "" };
+      const run = S.run, t = setInterval(() => { if (S.cmt && S.cmt.busy) S.cmt.sec++; else clearInterval(t); }, 1000);
+      Kit.ask({ type: "comment", run, level: S.play.level, mode: S.play.mode,
+        items: list.map(it => ({ i: it.i, ch: it.ch, img: it.img, points: it.points, misses: it.misses })) }, r => {
+        clearInterval(t);
+        if (S.run !== run) return;
+        S.cmt = { busy: false, sec: 0, items: r.items || {}, overall: r.overall || "", error: r.error || "" };
       });
     }
     let quitAt = 0;
@@ -102,6 +118,21 @@ createApp({
           <span class="kp">{{ it.points }}点</span><small>{{ it.skipped ? 'わからなかった' : 'ミス' + it.misses + '・ヒント' + it.hints }}</small>
         </div>
       </div>
+      <template v-if="S.cmt">
+        <div class="h3" style="margin:14px 4px 6px"><ic n="spark"></ic>AI先生の ひとこと</div>
+        <div v-if="S.cmt.busy" class="card center wait"><div class="spin"></div>書いた字を 見ているよ…（{{ S.cmt.sec }}秒）</div>
+        <div v-else-if="S.cmt.error" class="small muted" style="margin:0 4px">{{ S.cmt.error }}</div>
+        <template v-else>
+          <div v-if="S.cmt.overall" class="card aibox">{{ S.cmt.overall }}</div>
+          <div class="cmts">
+            <template v-for="(it, k) in S.result.items" :key="k">
+              <div v-if="it.img && S.cmt.items[k + ':' + it.ch]" class="cmt">
+                <img :src="it.img" alt=""><div><b class="kc">{{ it.ch }}</b><p>{{ S.cmt.items[k + ':' + it.ch] }}</p></div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </template>
       <div class="row2" style="margin-top:12px"><button class="btn pri" :disabled="S.busy" @click="start(true)"><ic n="again"></ic>おなじ学年で もう一度</button><button class="btn" @click="S.view = 'menu'; Kit.top()"><ic n="refresh"></ic>学年や書きかたを かえる</button></div>
     </template>
   </template>

@@ -434,6 +434,7 @@ class KanjiGame {
     this.results.push({
       ch: this.k.c, strokes: this.refs.length, misses: this.stat.misses, hints: this.stat.hints,
       wrongOrder: this.stat.wrongOrder, skipped: this.stat.skipped, points,
+      img: this.stat.skipped ? "" : this.inkImage(),       // 書いた字（AI先生のコメント用）
     });
     ["hint", "clear", "skip"].forEach((n) => { this.$(n).hidden = true; });
     const next = this.$("next");
@@ -443,6 +444,26 @@ class KanjiGame {
     // 書き終わったら お手本を うすく かさねて、見くらべられるようにする
     this.overlay = !this.stat.skipped;
     this.draw();
+  }
+
+  // 書いた線だけの 小さい画像（白地・黒線・うすい十字線）。JPEG で数KB
+  inkImage() {
+    try {
+      const N = 192, c = document.createElement("canvas"); c.width = c.height = N;
+      const g = c.getContext("2d"), k = N / BOX;
+      g.fillStyle = "#fff"; g.fillRect(0, 0, N, N);
+      g.strokeStyle = "#e3e3e3"; g.lineWidth = 1; g.setLineDash([4, 4]);
+      g.beginPath(); g.moveTo(N / 2, 0); g.lineTo(N / 2, N); g.moveTo(0, N / 2); g.lineTo(N, N / 2); g.stroke(); g.setLineDash([]);
+      g.strokeStyle = g.fillStyle = "#111"; g.lineWidth = N / 30; g.lineCap = g.lineJoin = "round";
+      this.done.forEach(pts => {
+        if (!pts || !pts.length) return;
+        g.beginPath();
+        if (pts.length === 1) { g.arc(pts[0][0] * k, pts[0][1] * k, g.lineWidth / 2, 0, Math.PI * 2); g.fill(); return; }
+        pts.forEach((p, i) => i ? g.lineTo(p[0] * k, p[1] * k) : g.moveTo(p[0] * k, p[1] * k));
+        g.stroke();
+      });
+      return c.toDataURL("image/jpeg", .8);
+    } catch (e) { return ""; }
   }
 
   next() {

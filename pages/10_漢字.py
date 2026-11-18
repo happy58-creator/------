@@ -1,8 +1,10 @@
 """漢字のかきとり：学年・書きかた・年れいをえらんで、10字を指やペンで書く。
 画面はぜんぶ JavaScript（web/kanji。書き取りの本体は kanji.js）。
 Python は「10字えらぶ（data/kanji.json）」「おわったら点数を出して記録し、表彰状をつくる」だけ。"""
+import base64
 import json
 import random
+import re
 import time
 from pathlib import Path
 
@@ -49,6 +51,55 @@ def pdf_info(grade, mode, level):
     return f"{grade}年生の漢字 ／ {MODES[mode][0]} ／ {level}"
 
 
+KANA_LEVELS = set(list(LEVEL_TOL)[:2])        # 小1〜4年：コメントは ひらがな中心
+
+
+def ai_comment(items, level, mode):
+    """書いた字の画像をまとめて AI に見せて、1字ずつの ひとことと、全体の ひとことを もらう（2.5 → 3.5 Lite、1回だけ）"""
+    from google.genai import types
+    parts, lines = [], []
+    for k, it in enumerate(items[:QUESTIONS]):
+        m = re.match(r"data:image/(jpeg|png);base64,(.+)$", str(it.get("img") or ""), re.S)
+        if not m:
+            continue
+        lines.append(f"{len(lines) + 1}. お手本の字「{it.get('ch')}」（アプリの判定 {it.get('points')}点 / 10点、書き順などのミス {it.get('misses', 0)}回）")
+        parts.append(f"{len(lines)}番の画像：")
+        parts.append(types.Part.from_bytes(data=base64.b64decode(m.group(2)), mime_type=f"image/{m.group(1)}"))
+    if not lines:
+        return {}, ""
+    kana = level in KANA_LEVELS
+    prompt = f"""あなたは やさしい書写（習字）の先生です。{level}の生徒が、スマホやタブレットに 指で漢字を書きました（{MODES.get(mode, ('', ''))[0]}）。
+画像は 白地に黒い線で、書いた線だけが写っています（うすい十字線は ます目の中心）。線の太さは 一定なので、筆の強弱は 見なくてよいです。
+
+{chr(10).join(lines)}
+
+1字ずつ、お手本の字と くらべて、次のところを 見てください。
+- とめ・はね・はらい（線の終わりの形）
+- 字のバランス（大きさ、ます目の中での位置、部分どうしの大きさや間）
+- 線の長さ・向き・つき出し・すき間
+
+そして、それぞれ 1〜2文の ひとことを 書いてください。
+- まず よかった所を 1つ。そのあと 直すと もっとよくなる所を 1つ、具体的に（例：「３画目の はらいを もう少し 長く のばそう」）。
+- うまく 見えない所は、むりに 言わない。
+{"- ひらがな中心で、小学校低学年でも 読める ことばで。" if kana else "- 年齢に合った、やさしい ことばで。"}
+さいごに overall に、全体を通した ひとこと（1〜2文、ほめて はげます）。
+
+次の JSON だけで 答えてください（items は {len(lines)}個、番号の順）。
+{{"items": ["...", "..."], "overall": "..."}}"""
+    client = common.get_gemini_client()
+    res = client.models.generate_content(model=getattr(common, "GEMINI_CHEAP", common.GEMINI_MODEL), contents=[prompt] + parts,
+                                         config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.3))
+    data = json.loads(res.text)
+    got = [str(x).strip() for x in (data.get("items") or [])]
+    out, n = {}, 0
+    for k, it in enumerate(items[:QUESTIONS]):
+        if re.match(r"data:image/(jpeg|png);base64,", str(it.get("img") or "")):
+            if n < len(got) and got[n]:
+                out[f"{int(it.get('i', k))}:{it.get('ch')}"] = got[n]
+            n += 1
+    return out, str(data.get("overall") or "").strip()
+
+
 def handle(v):
     data = load_kanji()
     t = v.get("type")
@@ -76,6 +127,18 @@ def handle(v):
                          詳細=pdfgen.make_record("漢字のかきとり", info, pdf_rows))
         pdf = pdfgen.build_pdf("漢字のかきとり", info, ss.get("player_name", ""), time.strftime("%Y-%m-%d %H:%M:%S"), score, pdf_rows)
         return {"score": score, "good": good, "rows": rows, "info": info, "pdf": js_page.pdf_b64(pdf)}
+    if t == "comment":                            # AI先生の ひとこと（書いた字の画像を まとめて1回）
+        if ss.get(f"kj_cmt_{v.get('run')}"):          # 同じ回は1回だけ（回数の節約）
+            return ss[f"kj_cmt_{v.get('run')}"]
+        try:
+            items, overall = ai_comment(v.get("items") or [], v.get("level"), v.get("mode"))
+            out = {"items": items, "overall": overall} if items or overall else {"error": "AI先生の コメントを もらえなかったよ"}
+        except Exception as e:
+            print(f"[漢字] コメント：{type(e).__name__}: {e}", flush=True)
+            out = {"error": (common.ai_error_text(e) if hasattr(common, "ai_error_text") else "AI先生の コメントを もらえなかったよ")}
+        if not out.get("error"):
+            ss[f"kj_cmt_{v.get('run')}"] = out
+        return out
     return {}
 
 

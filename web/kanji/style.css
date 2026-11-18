@@ -22,3 +22,10 @@ html,body{-webkit-user-select:auto;user-select:auto}
 .km .ic{width:22px;height:22px;margin:0}.km.award{color:#d99a00}.km.star{color:#e0a400}.km.thumb{color:var(--ok)}.km.minus{color:var(--sub)}
 .marks{display:flex;justify-content:center;gap:2px;flex-wrap:wrap}.marks .ic{width:22px;height:22px;stroke-width:2.6;margin:0}.mok{color:var(--ok)}.mng{color:var(--ng)}
 .h3 .ic,.sub .ic{color:var(--pri)}
+
+/* AI先生の ひとこと */
+.aibox{background:#fff8ec;border-color:#f3dcb0;line-height:1.7;font-size:14px}
+.cmts{display:grid;gap:8px}
+.cmt{display:grid;grid-template-columns:76px 1fr;gap:10px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px}
+.cmt img{width:76px;height:76px;border-radius:10px;border:1px solid var(--line);background:#fff}
+.cmt .kc{font-size:24px}.cmt p{margin:2px 0 0;font-size:13.5px;line-height:1.6}
