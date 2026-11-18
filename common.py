@@ -146,17 +146,17 @@ _PDF_OPEN_JS = """
     const el = (tag, cls, text) => {
       const e = document.createElement(tag);
       if (cls) e.className = cls;
-      if (text) e.innerHTML = text;   // 文字はこのファイルの中のものだけ（アイコンの <svg> を入れる）
+      if (text) e.textContent = text;
       return e;
     };
     const ov = el("div", "kz-pdf-overlay");
     const bar = el("div", "kz-pdf-bar");
-    const saveBtn = el("button", "", "__IC_SAVE__ほぞん・いんさつ");
-    const closeBtn = el("button", "kz-close", "__IC_X__とじる");
+    const saveBtn = el("button", "", "ほぞん・いんさつ");
+    const closeBtn = el("button", "kz-close", "✕ とじる");
     saveBtn.type = closeBtn.type = "button";
     const buttons = el("span");
     buttons.append(saveBtn, closeBtn);
-    bar.append(el("b", "", "__IC_FILE__表彰状"), buttons);
+    bar.append(el("b", "", "表彰状"), buttons);
     const body = el("div", "kz-pdf-body");
     body.append(el("div", "kz-pdf-msg", "よみこみ中…"));
     ov.append(bar, body);
@@ -205,8 +205,7 @@ _PDF_OPEN_JS = """
 })();
 </script>
 """
-_PDF_OPEN_JS = (_PDF_OPEN_JS.replace("__IC_SAVE__", icons.svg("save").replace('"', "'")).replace("__IC_X__", icons.svg("x").replace('"', "'"))
-                .replace("__IC_FILE__", icons.svg("file").replace('"', "'")))   # JS の "..." の中に入れるので ' にする
+# 注意：このスクリプトの中に <svg> などの HTML の文字列を入れると、st.html がスクリプトごと捨てて PDF が開かなくなる（アイコンは入れない）
 
 
 _CSS = """
