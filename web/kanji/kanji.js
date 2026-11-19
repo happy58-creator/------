@@ -140,6 +140,60 @@ const END_TIP = {
   tome: "さいごは しっかり 止めてから はなそう",
 };
 
+// ---------- 筆っぽく 描く（とめ・はね判定 オンのとき） ----------
+/** 書いた線の 終わりの見た目："tome"（止めた）/ "hane"（はねた）/ "harai"（速く抜いた）/ "" */
+function userStyle(u) {
+  if (!u || u.L < 6) return "";
+  if (u.hook) return "hane";
+  if (u.dwell >= 100 || u.ratio < 0.6) return "tome";
+  if (u.dwell < 60 && u.ratio >= 0.85) return "harai";
+  return "";
+}
+
+/** 点ごとの太さ（1 が ふつう）。ts があれば 速さで 太さを かえる（ゆっくり＝太い、速い＝細い）。
+ *  style で 終わりの形：tome＝さいごを ふくらませる、harai＝先を 細く、hane＝はねの部分を 細く */
+function brushWidths(pts, ts, style, hook) {
+  const n = pts.length, cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + dist(pts[i - 1], pts[i]));
+  const L = cum[n - 1] || 1;
+  let f = pts.map(() => 1);
+  if (ts && ts.length === n && n > 2) {
+    f = pts.map((_, i) => {
+      const a = Math.max(0, i - 2), b = Math.min(n - 1, i + 2), dt = Math.max(4, ts[b] - ts[a]);
+      return Math.max(0.6, Math.min(1.3, 1.35 - ((cum[b] - cum[a]) / dt) * 2.6));
+    });
+    f = f.map((_, i) => { let s = 0, c = 0; for (let j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) { s += f[j]; c++; } return s / c; });
+  }
+  return f.map((w, i) => {
+    if (cum[i] < 4) w = Math.max(w, 1.3 - cum[i] * 0.05);                 // 入り：「とん」と 置いて 太め
+    const rest = L - cum[i];
+    if (style === "harai") { const T = Math.min(Math.max(8, L * 0.4), 32); if (rest < T) w *= 0.12 + 0.88 * Math.pow(rest / T, 0.9); }
+    else if (style === "hane") { const T = (hook || 5) + 3; if (rest < T) w *= 0.1 + 0.9 * Math.pow(rest / T, 1.2); }
+    else if (style === "tome" && rest < 3.5) w = Math.max(w, 1.55);           // とめ：さいごに ぐっと 止めた ふくらみ
+    return w;
+  });
+}
+
+/** 点 P（描く座標）と 太さ W（描く単位）で、短い線を つないで 描く */
+function brushDraw(g, P, W) {
+  if (!P.length) return;
+  g.lineCap = "round"; g.lineJoin = "round";
+  if (P.length === 1) { g.beginPath(); g.arc(P[0][0], P[0][1], W[0] / 2, 0, Math.PI * 2); g.fill(); return; }
+  for (let i = 1; i < P.length; i++) {
+    g.lineWidth = (W[i - 1] + W[i]) / 2;
+    g.beginPath(); g.moveTo(P[i - 1][0], P[i - 1][1]); g.lineTo(P[i][0], P[i][1]); g.stroke();
+  }
+  const e = P[P.length - 1];                    // とめの ふくらみを まるく
+  g.beginPath(); g.arc(e[0], e[1], W[W.length - 1] / 2, 0, Math.PI * 2); g.fill();
+}
+
+/** 書いた線の 太さを決める：はねは どこから はねたか（長さ）も いる */
+function hookOf(pts) {
+  const L = polyLength(pts);
+  if (L < 6) return 0;
+  return hookLen(resample(pts, Math.max(8, Math.round(L) + 1)), Math.min(20, L * 0.4), 2.5, 60);
+}
+
 // ---------- 判定 ----------
 /** 書いた線 user(n点) とお手本の1画 ref を比べる。 */
 function compare(user, userLen, ref) {
@@ -189,7 +243,9 @@ function buildRefs(paths, baseTol) {
   return paths.map((d) => {
     const { pts, len } = samplePath(d);
     const dense = densePath(d);
-    return { pts, len, dot: len < 10, tol: baseTol, end: endKind(dense.pts, dense.len) };
+    const end = endKind(dense.pts, dense.len);
+    return { pts, len, dot: len < 10, tol: baseTol, end, dense: dense.pts,
+             hook: end === "hane" ? hookLen(dense.pts, Math.min(22, dense.len * 0.3), 3, 65) : 0 };
   });
 }
 
@@ -260,6 +316,8 @@ class KanjiGame {
     this.refs = buildRefs(k.s, this.baseTol);
     this.idx = 0; // 次に書く画
     this.done = []; // 書けた線（点列）
+    this.doneInk = []; // 書けた線の 筆の太さ（とめ・はね オンのとき）
+    this.ghost = null; // とめ・はねが ちがった線（赤く 少しのあいだ 見せる）
     this.cur = null; // 書いている線
     this.stat = { misses: 0, hints: 0, firstTry: 0, tries: 0, shape: 0, accepted: 0, skipped: false, wrongOrder: 0, endMiss: 0 };
     this.info = [];     // 書けた画ごとの記録（AI先生に わたす「測ったデータ」用）
@@ -328,10 +386,14 @@ class KanjiGame {
     const showGuide = this.mode === "trace" && !this.finished;
     if (showGuide) {
       this.k.s.forEach((d, i) => {
-        ctx.strokeStyle = i < this.idx ? "#efe6d6" : "#cfd4dc";
+        ctx.strokeStyle = ctx.fillStyle = i < this.idx ? "#efe6d6" : "#cfd4dc";
         ctx.lineWidth = 5;
-        ctx.stroke(new Path2D(d));
+        if (this.th) this.refBrush(ctx, i, 5);
+        else ctx.stroke(new Path2D(d));
       });
+      // 次に書く画の 終わりの形を 小さな札で
+      const nx = this.refs[this.idx];
+      if (this.th && nx && nx.end) this.endTag(ctx, nx.dense, END_NAME[nx.end]);
       // 次に書く画の はじまり（●）
       if (this.idx < this.refs.length) {
         const s = this.refs[this.idx].pts[0];
@@ -348,9 +410,10 @@ class KanjiGame {
     }
     // ヒント（次に書く画をオレンジで）
     if (this.hintIdx >= 0 && this.hintIdx < this.k.s.length) {
-      ctx.strokeStyle = "rgba(255,140,0,.9)";
+      ctx.strokeStyle = ctx.fillStyle = "rgba(255,140,0,.9)";
       ctx.lineWidth = 6;
-      ctx.stroke(new Path2D(this.k.s[this.hintIdx]));
+      if (this.th) this.refBrush(ctx, this.hintIdx, 6);
+      else ctx.stroke(new Path2D(this.k.s[this.hintIdx]));
       const s = this.refs[this.hintIdx].pts[0];
       ctx.fillStyle = "#2ecc71";
       ctx.beginPath(); ctx.arc(s[0], s[1], 4, 0, Math.PI * 2); ctx.fill();
@@ -370,8 +433,45 @@ class KanjiGame {
       if (pts.length === 1) { const [x, y] = this.toPx(pts[0]); ctx.arc(x, y, ctx.lineWidth / 2, 0, Math.PI * 2); ctx.fill(); }
       else ctx.stroke();
     };
-    this.done.forEach((pts) => ink(pts, "#2c3e70"));
-    ink(this.cur, "#e67e22");
+    if (!this.th) {
+      this.done.forEach((pts) => ink(pts, "#2c3e70"));
+      ink(this.cur, "#e67e22");
+      return;
+    }
+    // とめ・はね オン：筆っぽく（太さが 変わる）
+    const W = Math.max(6, size / 30);
+    const brush = (pts, ws, color) => {
+      ctx.strokeStyle = ctx.fillStyle = color;
+      brushDraw(ctx, pts.map((p) => this.toPx(p)), ws.map((w) => w * W));
+    };
+    if (this.ghost) {
+      brush(this.ghost.pts, this.ghost.ws, "rgba(231,76,60,.75)");
+      const [x, y] = this.toPx(this.ghost.pts[this.ghost.pts.length - 1]);
+      ctx.strokeStyle = "#e74c3c"; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.arc(x, y, W * 1.6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    }
+    this.done.forEach((pts, i) => brush(pts, this.doneInk[i] || pts.map(() => 1), "#1f2533"));
+    if (this.cur) brush(this.cur, brushWidths(this.cur, this.curT, ""), "#e67e22");
+  }
+
+  /** お手本の i 画目を 筆っぽく（とめは ふくらみ、はね・はらいは 先を 細く）。ctx は 109 の座標 */
+  refBrush(ctx, i, base) {
+    const r = this.refs[i];
+    brushDraw(ctx, r.dense, brushWidths(r.dense, null, r.end, r.hook).map((w) => w * base));
+  }
+
+  /** 線の 終わりの そばに 小さな札（「はね」など） */
+  endTag(ctx, pts, text) {
+    ctx.save();
+    ctx.font = "bold 5.5px sans-serif";
+    // 線の 終わりの 先（線が 進んでいた向きの その先）に 置いて、線に かさならないように
+    const e = pts[pts.length - 1], a = pts[Math.max(0, pts.length - 6)], v = unitV([e[0] - a[0], e[1] - a[1]]);
+    const w = ctx.measureText(text).width + 4, cx = e[0] + v[0] * (w / 2 + 4), cy = e[1] + v[1] * 8;
+    const x = Math.min(BOX - w - 1, Math.max(1, cx - w / 2)), y = Math.min(BOX - 8.5, Math.max(1, cy - 3.75));
+    ctx.fillStyle = "rgba(255,140,0,.92)";
+    ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, 7.5, 2) : ctx.rect(x, y, w, 7.5); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.fillText(text, x + 2, y + 5.8);
+    ctx.restore();
   }
 
   // ----- 入力 -----
@@ -389,6 +489,7 @@ class KanjiGame {
     clearTimeout(this.hintTimer);
     this.cur = [this.pos(e)];
     this.curT = [e.timeStamp];
+    this.ghost = null;
     this.draw();
   }
 
@@ -423,19 +524,32 @@ class KanjiGame {
     this.stat.tries++;
     const r = judgeAt(user, len, this.refs, this.idx);
     if (r.ok && this.th && ref.end) {
-      r.endOk = endOk(ref.end, userEnd(pts, ts || [], upT || 0));
-      if (!r.endOk && this.endTries < 2) return this.endReject(ref.end);
+      const u = userEnd(pts, ts || [], upT || 0);
+      r.endOk = endOk(ref.end, u);
+      if (!r.endOk && this.endTries < 2) return this.endReject(ref.end, pts, ts, u);
+    }
+    if (r.ok && this.th) {
+      // 筆の太さ：とめ・はねが 合っていれば お手本の形で、ちがえば 書いたとおりの形で 残す
+      const u = userEnd(pts, ts || [], upT || 0);
+      const style = ref.end && r.endOk !== false ? ref.end : userStyle(u);
+      this.doneInk[this.idx] = brushWidths(pts, ts, style, style === "hane" ? (u.hook || hookOf(pts)) : 0);
     }
     if (r.ok) return this.accept(pts, r, user, len);
     this.reject(user, len, r);
   }
 
   /** 形は合っているが、とめ・はね・はらい が ちがう：もう一回（2回まちがえたら、そのまま通す） */
-  endReject(want) {
+  endReject(want, pts, ts, u) {
+    // 書いた線を 赤で 少しのあいだ 見せる（止まった所は ふくらみ、はねた所は はね で）。終わりに 点線の 丸
+    const st = userStyle(u);
+    this.ghost = { pts, ws: brushWidths(pts, ts, st, st === "hane" ? u.hook : 0) };
+    clearTimeout(this.ghostTimer);
+    this.ghostTimer = setTimeout(() => { this.ghost = null; this.draw(); }, 1800);
     this.endTries++;
     this.stat.endMiss++;
     this.stat.failedThisStroke = true;
-    this.say("ng", `❌ 形は いいね！ でも ${this.idx + 1}画目は「${END_NAME[want]}」。${END_TIP[want]}。`);
+    const did = { tome: "止まっていたよ", hane: "はねていたよ", harai: "はらっていたよ" }[st];
+    this.say("ng", `❌ 形は いいね！ でも ${this.idx + 1}画目は「${END_NAME[want]}」。${did ? "赤い丸の所で " + did + "。" : ""}${END_TIP[want]}。`);
     this.cv.classList.remove("shake");
     void this.cv.offsetWidth;
     this.cv.classList.add("shake");
@@ -560,6 +674,10 @@ class KanjiGame {
       g.strokeStyle = "#e3e3e3"; g.lineWidth = 1; g.setLineDash([4, 4]);
       g.beginPath(); g.moveTo(N / 2, 0); g.lineTo(N / 2, N); g.moveTo(0, N / 2); g.lineTo(N, N / 2); g.stroke(); g.setLineDash([]);
       g.strokeStyle = g.fillStyle = "#111"; g.lineWidth = N / 30; g.lineCap = g.lineJoin = "round";
+      if (this.th) {         // とめ・はね オン：けっかの絵も 筆っぽく
+        this.done.forEach((pts, i) => brushDraw(g, pts.map((p) => [p[0] * k, p[1] * k]), (this.doneInk[i] || pts.map(() => 1)).map((w) => w * N / 26)));
+        return c.toDataURL("image/jpeg", .8);
+      }
       this.done.forEach(pts => {
         if (!pts || !pts.length) return;
         g.beginPath();
