@@ -1,6 +1,7 @@
 /* 漢字の書き取り。指やペンで書いた線を、お手本（KanjiVG の書き順）と比べて判定する。
  *
- * 判定するもの：書き順・画数・各画の向き・場所と形（大まかに）。「とめ・はね・はらい」の細かい判定はしない。
+ * 判定するもの：書き順・画数・各画の向き・場所と形（大まかに）。
+ * 「とめ・はね・はらい」は、オンのときだけ判定する（お手本の線の終わりの形から種類を決め、書いた線の終わりの動き＝止まったか・向きを変えたか・速く抜いたか と くらべる）。
  * 座標は KanjiVG と同じ 109 x 109 の中で比べる。
  */
 const N_PTS = 40; // 線を何点に分けて比べるか
@@ -69,6 +70,76 @@ function samplePath(d, n = N_PTS) {
   return { pts, len: total };
 }
 
+/** path をおよそ 1 ずつの点にする（線の終わりの形を見るため） */
+function densePath(d) {
+  samplePath("M0,0", 2);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", d);
+  measureSvg.appendChild(path);
+  const L = path.getTotalLength(), n = Math.max(2, Math.round(L) + 1), pts = [];
+  for (let i = 0; i < n; i++) { const p = path.getPointAtLength((L * i) / (n - 1)); pts.push([p.x, p.y]); }
+  measureSvg.removeChild(path);
+  return { pts, len: L };
+}
+const unitV = (v) => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
+const cosV = (a, b) => { const u = unitV(a), w = unitV(b); return u[0] * w[0] + u[1] * w[1]; };
+
+/** 線の終わりに「はね」（急に向きを変えた短い部分）があるか。あれば その長さ、なければ 0。pts はおよそ 1 ずつ */
+function hookLen(pts, maxS, minS, ang) {
+  const n = pts.length, e = pts[n - 1], c = Math.cos((ang * Math.PI) / 180);
+  for (let s = Math.ceil(minS); s <= maxS && s + 6 < n; s++) {
+    const a = pts[n - 1 - s], b = pts[n - 1 - s - 6];
+    if (Math.hypot(e[0] - a[0], e[1] - a[1]) < minS * 0.8) continue;
+    if (cosV([a[0] - b[0], a[1] - b[1]], [e[0] - a[0], e[1] - a[1]]) < c) return s;
+  }
+  return 0;
+}
+
+/** お手本の1画の 終わりの種類："tome" / "hane" / "harai" / ""（はっきりしない画は 判定しない） */
+function endKind(pts, L) {
+  if (L < 12) return "";
+  const n = pts.length, e = pts[n - 1], s = pts[0];
+  const h = L >= 20 ? hookLen(pts, Math.min(22, L * 0.3), 3, 65) : 0;
+  if (h) return unitV([e[0] - pts[n - 1 - h][0], e[1] - pts[n - 1 - h][1]])[1] < 0.2 ? "hane" : "";   // 下へ 折れるのは「はね」ではない（口の 2画目など）
+  const v = unitV([e[0] - pts[Math.max(0, n - 7)][0], e[1] - pts[Math.max(0, n - 7)][1]]);
+  const ov = [e[0] - s[0], e[1] - s[1]], chord = Math.hypot(ov[0], ov[1]);
+  if (v[0] < -0.35 && v[1] > 0.25) return L >= 32 ? "harai" : "";                     // 左はらい（短い点は 判定しない）
+  if (L >= 30 && v[0] > 0.6 && v[1] > -0.05 && ov[0] > 0 && ov[1] > 0.45 * ov[0]) return "harai";  // 右はらい（人・大の右の画）
+  if (Math.abs(v[1]) < 0.3 && v[0] > 0 && Math.abs(ov[1]) < 0.3 * ov[0] && L < chord * 1.12) return "tome"; // 横画
+  return "";
+}
+const END_NAME = { tome: "とめ", hane: "はね", harai: "はらい" };
+
+/** 書いた線の 終わりの動き。pts：点、ts：その時刻（ms）、upT：指をはなした時刻 */
+function userEnd(pts, ts, upT) {
+  const L = polyLength(pts);
+  if (L < 6 || pts.length < 3) return { kind: "", L };
+  const d = resample(pts, Math.max(8, Math.round(L) + 1));
+  const hook = hookLen(d, Math.min(20, L * 0.4), 2.5, 60);
+  const dwell = Math.max(0, upT - ts[ts.length - 1]);
+  // 終わりの 15%（4 以上）の速さ と 全体の 平均の速さ
+  const tail = Math.max(4, L * 0.15);
+  let acc = 0, i = pts.length - 1;
+  while (i > 0 && acc < tail) { acc += dist(pts[i - 1], pts[i]); i--; }
+  const tt = Math.max(8, ts[ts.length - 1] - ts[i]), all = Math.max(16, ts[ts.length - 1] - ts[0]);
+  const ratio = (acc / tt) / (L / all);
+  return { kind: hook ? "hane" : "", hook, dwell, ratio, L };
+}
+
+/** お手本の種類 want に、書いた線 u が 合っているか（指は ぶれるので あまめ）。true / false */
+function endOk(want, u) {
+  if (!want || !u || u.L < 6) return true;
+  if (want === "hane") return u.hook > 0;
+  if (want === "harai") return !u.hook && u.dwell < 160 && u.ratio >= 0.45;
+  if (want === "tome") return !u.hook && !(u.dwell < 40 && u.ratio >= 1.6);
+  return true;
+}
+const END_TIP = {
+  hane: "さいごは 止まらずに、ぴょんと はねよう",
+  harai: "さいごは 止まらずに、すっと はらおう",
+  tome: "さいごは しっかり 止めてから はなそう",
+};
+
 // ---------- 判定 ----------
 /** 書いた線 user(n点) とお手本の1画 ref を比べる。 */
 function compare(user, userLen, ref) {
@@ -117,7 +188,8 @@ function judgeAt(user, userLen, refs, idx) {
 function buildRefs(paths, baseTol) {
   return paths.map((d) => {
     const { pts, len } = samplePath(d);
-    return { pts, len, dot: len < 10, tol: baseTol };
+    const dense = densePath(d);
+    return { pts, len, dot: len < 10, tol: baseTol, end: endKind(dense.pts, dense.len) };
   });
 }
 
@@ -129,6 +201,7 @@ class KanjiGame {
     this.round = args.round;
     this.mode = args.mode || "trace"; // trace=なぞり書き / recall=見て書く / reading=読みから書く
     this.baseTol = args.tol || 20;
+    this.th = !!args.tomehane;           // とめ・はね・はらい も判定する
     this.list = (args.kanjis || []).filter((k) => k.s && k.s.length);
     this.q = 0;
     this.results = [];
@@ -188,7 +261,9 @@ class KanjiGame {
     this.idx = 0; // 次に書く画
     this.done = []; // 書けた線（点列）
     this.cur = null; // 書いている線
-    this.stat = { misses: 0, hints: 0, firstTry: 0, tries: 0, shape: 0, accepted: 0, skipped: false, wrongOrder: 0 };
+    this.stat = { misses: 0, hints: 0, firstTry: 0, tries: 0, shape: 0, accepted: 0, skipped: false, wrongOrder: 0, endMiss: 0 };
+    this.info = [];     // 書けた画ごとの記録（AI先生に わたす「測ったデータ」用）
+    this.endTries = 0;  // いまの画で とめ・はねを まちがえた回数
     this.finished = false;
     this.hintIdx = -1;
     this.hintUsedForStroke = false;
@@ -198,7 +273,7 @@ class KanjiGame {
     this.$("count").textContent = `${this.q + 1} / ${this.list.length} もじめ`;
     this.$("bar").style.width = (this.q / this.list.length) * 100 + "%";
     this.renderInfo();
-    this.say("info", `${k.s.length}画の かんじだよ。1画ずつ 書いてみよう！`);
+    this.say("info", `${k.s.length}画の かんじだよ。1画ずつ 書いてみよう！` + this.endHint(0));
     this.fit();
   }
 
@@ -213,6 +288,12 @@ class KanjiGame {
       (this.mode === "recall" || (this.mode === "reading" && this.finished) ? `<div class="big">${showKanji ? k.c : ""}</div>` : "") +
       `<div class="read">${parts || "（よみ なし）"}</div>` +
       `<div class="sub">${k.s.length}画　${meaning ? "／ " + meaning : ""}</div>`;
+  }
+
+  /** とめ・はね判定がオンのとき：つぎの画の 終わりの形を 教える */
+  endHint(i) {
+    const e = this.th && this.refs[i] && this.refs[i].end;
+    return e ? `（${i + 1}画目の さいごは「${END_NAME[e]}」）` : "";
   }
 
   say(kind, text) {
@@ -307,6 +388,7 @@ class KanjiGame {
     this.hintIdx = -1;
     clearTimeout(this.hintTimer);
     this.cur = [this.pos(e)];
+    this.curT = [e.timeStamp];
     this.draw();
   }
 
@@ -316,7 +398,7 @@ class KanjiGame {
     const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     for (const ev of events.length ? events : [e]) {
       const p = this.pos(ev);
-      if (dist(p, this.cur[this.cur.length - 1]) > 0.4) this.cur.push(p);
+      if (dist(p, this.cur[this.cur.length - 1]) > 0.4) { this.cur.push(p); this.curT.push(ev.timeStamp); }
     }
     this.draw();
   }
@@ -324,13 +406,13 @@ class KanjiGame {
   up(e) {
     if (!this.cur) return;
     e.preventDefault();
-    const pts = this.cur;
+    const pts = this.cur, ts = this.curT;
     this.cur = null;
-    this.judge(pts);
+    this.judge(pts, ts, e.timeStamp);
   }
 
   // ----- 判定 -----
-  judge(pts) {
+  judge(pts, ts, upT) {
     const len = polyLength(pts);
     const ref = this.refs[this.idx];
     if (len < 2.5 && !ref.dot) {
@@ -340,17 +422,38 @@ class KanjiGame {
     const user = resample(pts);
     this.stat.tries++;
     const r = judgeAt(user, len, this.refs, this.idx);
-    if (r.ok) return this.accept(pts, r);
+    if (r.ok && this.th && ref.end) {
+      r.endOk = endOk(ref.end, userEnd(pts, ts || [], upT || 0));
+      if (!r.endOk && this.endTries < 2) return this.endReject(ref.end);
+    }
+    if (r.ok) return this.accept(pts, r, user, len);
     this.reject(user, len, r);
   }
 
-  accept(pts, r) {
+  /** 形は合っているが、とめ・はね・はらい が ちがう：もう一回（2回まちがえたら、そのまま通す） */
+  endReject(want) {
+    this.endTries++;
+    this.stat.endMiss++;
+    this.stat.failedThisStroke = true;
+    this.say("ng", `❌ 形は いいね！ でも ${this.idx + 1}画目は「${END_NAME[want]}」。${END_TIP[want]}。`);
+    this.cv.classList.remove("shake");
+    void this.cv.offsetWidth;
+    this.cv.classList.add("shake");
+    this.draw();
+  }
+
+  accept(pts, r, user, len) {
     const firstTry = !this.stat.failedThisStroke && this.hintIdx !== this.idx && !this.hintUsedForStroke;
     if (firstTry) this.stat.firstTry++;
     // 形の点（0〜1）：ずれが小さいほど高い
     const shape = Math.max(0, Math.min(1, (this.refs[this.idx].tol - r.fwd) / (this.refs[this.idx].tol * 0.65)));
     this.stat.shape += shape;
     this.stat.accepted++;
+    const ref = this.refs[this.idx];
+    this.info.push({ i: this.idx, user: user || resample(pts), len: len || polyLength(pts), end: this.th ? ref.end : "",
+                     endOk: !(this.th && ref.end) || r.endOk !== false });
+    const endMsg = this.th && ref.end ? (r.endOk === false ? `（「${END_NAME[ref.end]}」は つぎ がんばろう）` : `「${END_NAME[ref.end]}」も できたね。`) : "";
+    this.endTries = 0;
     this.done.push(pts);
     this.idx++;
     this.stat.failedThisStroke = false;
@@ -360,7 +463,7 @@ class KanjiGame {
     void this.cv.offsetWidth;
     this.cv.classList.add("good");
     if (this.idx >= this.refs.length) return this.complete();
-    this.say("ok", `⭕ ${this.idx}画目 OK！ つぎは ${this.idx + 1}画目。`);
+    this.say("ok", `⭕ ${this.idx}画目 OK！${endMsg} つぎは ${this.idx + 1}画目。` + this.endHint(this.idx));
     this.draw();
   }
 
@@ -433,8 +536,10 @@ class KanjiGame {
     this.hintIdx = -1;
     this.results.push({
       ch: this.k.c, strokes: this.refs.length, misses: this.stat.misses, hints: this.stat.hints,
-      wrongOrder: this.stat.wrongOrder, skipped: this.stat.skipped, points,
-      img: this.stat.skipped ? "" : this.inkImage(),       // 書いた字（AI先生のコメント用）
+      wrongOrder: this.stat.wrongOrder, skipped: this.stat.skipped, points, endMiss: this.stat.endMiss,
+      img: this.stat.skipped ? "" : this.inkImage(),       // 書いた字（けっかの画面に出す）
+      cmp: this.stat.skipped ? "" : this.cmpImage(),       // お手本と ならべた画像（AI先生用）
+      facts: this.stat.skipped ? [] : this.facts(),        // アプリが 測った データ（AI先生用）
     });
     ["hint", "clear", "skip"].forEach((n) => { this.$(n).hidden = true; });
     const next = this.$("next");
@@ -464,6 +569,95 @@ class KanjiGame {
       });
       return c.toDataURL("image/jpeg", .8);
     } catch (e) { return ""; }
+  }
+
+  // 左に お手本、右に 書いた字（どちらも 書き順の番号つき）。AI先生が 見くらべるため
+  cmpImage() {
+    try {
+      const N = 192, G = 10, c = document.createElement("canvas"); c.width = N * 2 + G; c.height = N;
+      const g = c.getContext("2d"), k = N / BOX;
+      g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, N);
+      g.fillStyle = "#ccc"; g.fillRect(N + G / 2 - 1, 0, 2, N);
+      const panel = (x0, strokes, color, numColor) => {
+        g.save(); g.translate(x0, 0);
+        g.strokeStyle = "#e3e3e3"; g.lineWidth = 1; g.setLineDash([4, 4]);
+        g.beginPath(); g.moveTo(N / 2, 0); g.lineTo(N / 2, N); g.moveTo(0, N / 2); g.lineTo(N, N / 2); g.stroke(); g.setLineDash([]);
+        g.lineCap = g.lineJoin = "round";
+        strokes.forEach((st, n) => {
+          g.strokeStyle = g.fillStyle = color; g.lineWidth = N / 30;
+          if (typeof st === "string") { g.save(); g.scale(k, k); g.lineWidth = BOX / 30; g.stroke(new Path2D(st)); g.restore(); }
+          else if (st.length === 1) { g.beginPath(); g.arc(st[0][0] * k, st[0][1] * k, g.lineWidth / 2, 0, Math.PI * 2); g.fill(); }
+          else { g.beginPath(); st.forEach((p, i) => i ? g.lineTo(p[0] * k, p[1] * k) : g.moveTo(p[0] * k, p[1] * k)); g.stroke(); }
+        });
+        g.font = "bold 11px sans-serif"; g.fillStyle = numColor;
+        strokes.forEach((st, n) => {
+          const p = typeof st === "string" ? this.refs[n].pts[0] : st[0];
+          g.fillText(String(n + 1), Math.min(N - 10, Math.max(1, p[0] * k - 11)), Math.min(N - 2, Math.max(10, p[1] * k - 3)));
+        });
+        g.restore();
+      };
+      panel(0, this.k.s, "#555", "#d33");
+      panel(N + G, this.done, "#111", "#16c");
+      return c.toDataURL("image/jpeg", .8);
+    } catch (e) { return ""; }
+  }
+
+  // 書いた線と お手本を 数字で くらべて、わかりやすい ことばにする（大きいずれから 4つまで ＋ よかった画）
+  facts() {
+    const info = this.info, F = [];
+    if (!info.length) return F;
+    const box = (P) => {
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      P.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+      return { w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+    };
+    const U = box(info.flatMap((x) => x.user)), Rb = box(info.flatMap((x) => this.refs[x.i].pts));
+    const sw = U.w / Math.max(1, Rb.w), sh = U.h / Math.max(1, Rb.h);
+    const wari = (v) => Math.round(v * 10);
+    const dirOf = (dx, dy) => {
+      const d = Math.hypot(dx, dy) || 1;
+      return (Math.abs(dx) > 0.45 * d ? (dx > 0 ? "右" : "左") : "") + (Math.abs(dy) > 0.45 * d ? (dy > 0 ? "下" : "上") : "");
+    };
+    const big = Rb.w > 15 && Rb.h > 15;
+    if (big && (sw < 0.82 || sh < 0.82) && sw < 1.1 && sh < 1.1) F.push({ s: 2 - Math.min(sw, sh), t: `字全体が お手本より 小さい（横${wari(sw)}割・たて${wari(sh)}割）` });
+    else if (big && (sw > 1.2 || sh > 1.2) && sw > 0.9 && sh > 0.9) F.push({ s: Math.max(sw, sh), t: `字全体が お手本より 大きい（横${sw.toFixed(1)}倍・たて${sh.toFixed(1)}倍）` });
+    else if (big && sw / sh > 1.25) F.push({ s: sw / sh, t: `字が お手本より 横長（たてが みじかめ）` });
+    else if (big && sh / sw > 1.25) F.push({ s: sh / sw, t: `字が お手本より たて長（横が せまめ）` });
+    const gx = U.cx - Rb.cx, gy = U.cy - Rb.cy;
+    if (Math.hypot(gx, gy) > 8) F.push({ s: Math.hypot(gx, gy) / 8, t: `字全体が ます目の中で ${dirOf(gx, gy)}に よっている` });
+    // 字の中での 各画：書いた字を お手本の大きさ・位置に 合わせてから くらべる
+    const kx = U.w > 15 && Rb.w > 15 ? Rb.w / U.w : 1 / (((sw + sh) / 2) || 1);
+    const ky = U.h > 15 && Rb.h > 15 ? Rb.h / U.h : 1 / (((sw + sh) / 2) || 1);
+    const norm = (p) => [Rb.cx + (p[0] - U.cx) * kx, Rb.cy + (p[1] - U.cy) * ky];
+    const good = [];
+    info.forEach((x) => {
+      const ref = this.refs[x.i], n = x.i + 1, P = x.user.map(norm);
+      const off = [centroid(P)[0] - centroid(ref.pts)[0], centroid(P)[1] - centroid(ref.pts)[1]], od = Math.hypot(off[0], off[1]);
+      const ul = polyLength(P), lr = ul / Math.max(1, ref.len);
+      const e = ref.pts.length - 1, vr = [ref.pts[e][0] - ref.pts[0][0], ref.pts[e][1] - ref.pts[0][1]], vu = [P[e][0] - P[0][0], P[e][1] - P[0][1]];
+      let ang = 0;
+      if (!ref.dot && ref.len >= 15 && Math.hypot(vr[0], vr[1]) > ref.len * 0.6) ang = (Math.atan2(vu[1], vu[0]) - Math.atan2(vr[1], vr[0])) * 180 / Math.PI;
+      ang = ((ang + 540) % 360) - 180;
+      let bad = false;
+      if (!ref.dot && od > 7) { F.push({ s: od / 7, t: `${n}画目の 場所が 字の中で ${dirOf(off[0], off[1])}に ずれている` }); bad = true; }
+      if (!ref.dot && ref.len >= 12 && lr < 0.75) { F.push({ s: (1 - lr) / 0.25, t: `${n}画目が お手本より 短い（${wari(lr)}割くらい）` }); bad = true; }
+      else if (!ref.dot && ref.len >= 12 && lr > 1.3) { F.push({ s: (lr - 1) / 0.3, t: `${n}画目が お手本より 長い（${lr.toFixed(1)}倍くらい）` }); bad = true; }
+      if (Math.abs(ang) > 14) {
+        const ra = Math.atan2(vr[1], vr[0]) * 180 / Math.PI;
+        let t = `${n}画目の 向き・かたむきが お手本と ちがう（${Math.round(Math.abs(ang))}度くらい）`;
+        if (Math.abs(ra) < 30) t = ang < 0 ? `${n}画目（横の線）の 右上がりが 強すぎる` : `${n}画目（横の線）が 右下がりに なっている`;
+        else if (Math.abs(ra - 90) < 25) t = `${n}画目（たての線）が まっすぐでなく、${ang < 0 ? "右" : "左"}に かたむいている`;
+        F.push({ s: Math.abs(ang) / 14, t }); bad = true;
+      }
+      if (x.end && !x.endOk) { F.push({ s: 2.5, t: `${n}画目の「${END_NAME[x.end]}」が できていない` }); bad = true; }
+      if (!bad && od < 4.5 && lr > 0.85 && lr < 1.18 && Math.abs(ang) < 8) good.push(n);
+    });
+    const out = F.sort((a, b) => b.s - a.s).slice(0, 4).map((f) => f.t);
+    const ends = info.filter((x) => x.end && x.endOk).map((x) => `${x.i + 1}画目（${END_NAME[x.end]}）`);
+    if (good.length) out.push(`お手本に とても近い画：${good.slice(0, 5).join("・")}画目`);
+    if (ends.length) out.push(`できていた とめ・はね・はらい：${ends.slice(0, 4).join("、")}`);
+    if (!F.length) out.push("大きな ずれは 見つからなかった");
+    return out;
   }
 
   next() {

@@ -11,10 +11,10 @@ createApp({
     const S = reactive({
       cmt: null,
       ready: false, args: {}, view: "menu",
-      grade: L.grade || 1, mode: L.mode || "trace", level: L.level || "",
+      grade: L.grade || 1, mode: L.mode || "trace", level: L.level || "", th: !!L.th,
       play: {}, busy: false, result: null, toast: "", run: "",
     });
-    const keep = () => Kit.save("kj_v1", { grade: S.grade, mode: S.mode, level: S.level });
+    const keep = () => Kit.save("kj_v1", { grade: S.grade, mode: S.mode, level: S.level, th: S.th });
     function onArgs(a) {
       S.args = a; S.ready = true; Kit.takeReply(a);
       if (!S.level || !(a.levels || []).some(l => l.id === S.level)) S.level = a.level;
@@ -26,7 +26,7 @@ createApp({
 
     let game = null;
     function start(again) {
-      if (!again) S.play = { grade: S.grade, mode: S.mode, level: S.level };
+      if (!again) S.play = { grade: S.grade, mode: S.mode, level: S.level, th: S.th };
       S.busy = true; keep();
       Kit.ask({ type: "start", grade: S.play.grade }, r => {
         S.busy = false;
@@ -34,14 +34,14 @@ createApp({
         S.run = Kit.uid(); S.result = null; S.cmt = null; S.view = "play"; Kit.top();
         nextTick(() => {        // 書き取りの本体（kanji.js）を、この画面の中に出す
           const box = document.getElementById("game"); box.innerHTML = "";
-          game = new KanjiGame(box, { kanjis: r.kanjis, mode: S.play.mode, tol: tolOf(S.play.level), round: S.run }, done);
+          game = new KanjiGame(box, { kanjis: r.kanjis, mode: S.play.mode, tol: tolOf(S.play.level), tomehane: S.play.th, round: S.run }, done);
         });
       });
     }
     function done(v) {
       S.view = "end"; S.result = null; Kit.top();
-      const results = v.results.map(({ img, ...x }) => x);       // 記録には 画像を入れない
-      Kit.ask({ type: "done", run: S.run, grade: S.play.grade, mode: S.play.mode, level: S.play.level, results }, r => {
+      const results = v.results.map(({ img, cmp, facts, ...x }) => x);       // 記録には 画像を入れない
+      Kit.ask({ type: "done", run: S.run, grade: S.play.grade, mode: S.play.mode, level: S.play.level, th: S.play.th, results }, r => {
         if (r.error) { toast(r.error); return; }
         S.result = { ...r, time: v.time, items: v.results };
         if (r.score >= 90) Kit.party();
@@ -54,8 +54,8 @@ createApp({
       if (!list.length) return;
       S.cmt = { busy: true, sec: 0, items: {}, overall: "", error: "" };
       const run = S.run, t = setInterval(() => { if (S.cmt && S.cmt.busy) S.cmt.sec++; else clearInterval(t); }, 1000);
-      Kit.ask({ type: "comment", run, level: S.play.level, mode: S.play.mode,
-        items: list.map(it => ({ i: it.i, ch: it.ch, img: it.img, points: it.points, misses: it.misses })) }, r => {
+      Kit.ask({ type: "comment", run, level: S.play.level, mode: S.play.mode, th: S.play.th,
+        items: list.map(it => ({ i: it.i, ch: it.ch, img: it.cmp || it.img, cmp: !!it.cmp, points: it.points, misses: it.misses, endMiss: it.endMiss || 0, facts: it.facts || [] })) }, r => {
         clearInterval(t);
         if (S.run !== run) return;
         S.cmt = { busy: false, sec: 0, items: r.items || {}, overall: r.overall || "", error: r.error || "" };
@@ -91,12 +91,19 @@ createApp({
       <div class="h3">③ 年れい<span class="small muted">判定の ゆるさに つかうよ（低いほど ゆるい）</span></div>
       <div class="pick two"><button v-for="l in S.args.levels" :key="l.id" class="pk" :class="{ on: S.level === l.id }" @click="S.level = l.id"><span class="radio"></span><b class="lv">{{ l.id }}</b></button></div>
     </div>
+    <div class="card">
+      <div class="h3">④ とめ・はね・はらい<span class="small muted">オンにすると、線の さいごの形も 判定するよ</span></div>
+      <div class="pick two">
+        <button class="pk" :class="{ on: !S.th }" @click="S.th = false"><span class="radio"></span><b class="lv">オフ（いままでどおり）</b></button>
+        <button class="pk" :class="{ on: S.th }" @click="S.th = true"><span class="radio"></span><b class="lv"><ic n="brush"></ic>オン（とめ・はねも 見る）</b></button>
+      </div>
+    </div>
     <button class="big" :disabled="S.busy" @click="start(false)"><ic v-if="iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[0]" :n="iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[0]"></ic>{{ iX(iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[1]) }}</button>
-    <div class="small muted" style="margin:12px 4px 0;line-height:1.6">書き順データ：KanjiVG（CC BY-SA 3.0, kanjivg.tagaini.net）　学年・読み：KANJIDIC2（kanjiapi.dev 経由）。「とめ・はね・はらい」の細かい判定は しないよ（書き順・画数・形を 大まかに チェック）。</div>
+    <div class="small muted" style="margin:12px 4px 0;line-height:1.6">書き順データ：KanjiVG（CC BY-SA 3.0, kanjivg.tagaini.net）　学年・読み：KANJIDIC2（kanjiapi.dev 経由）。書き順・画数・形を 大まかに チェックするよ。④を オンにすると、線の さいごが「とめ・はね・はらい」に なっているかも 見るよ（指で 書くので、はっきりしない画は 判定しないよ）。</div>
   </template>
 
   <div v-show="S.view === 'play'">
-    <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ S.play.grade }}年生・<ic v-if="iL(modeOf(S.play.mode).name)[0]" :n="iL(modeOf(S.play.mode).name)[0]"></ic>{{ iX(iL(modeOf(S.play.mode).name)[1]) }}</b><span></span></div>
+    <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ S.play.grade }}年生・<template v-if="S.play.th">とめはね・</template><ic v-if="iL(modeOf(S.play.mode).name)[0]" :n="iL(modeOf(S.play.mode).name)[0]"></ic>{{ iX(iL(modeOf(S.play.mode).name)[1]) }}</b><span></span></div>
     <div id="game"></div>
   </div>
 
@@ -115,7 +122,7 @@ createApp({
       <div class="kgrid">
         <div v-for="(it, k) in S.result.items" :key="k" class="kcell" :class="{ good: it.points >= (S.args.okPoints || 8), skip: it.skipped }">
           <span class="km" :class="mark(it)"><ic :n="mark(it)"></ic></span><b class="kc">{{ it.ch }}</b><span class="kr">{{ readingOf(it.ch) }}</span>
-          <span class="kp">{{ it.points }}点</span><small>{{ it.skipped ? 'わからなかった' : 'ミス' + it.misses + '・ヒント' + it.hints }}</small>
+          <span class="kp">{{ it.points }}点</span><small>{{ it.skipped ? 'わからなかった' : 'ミス' + it.misses + '・ヒント' + it.hints }}<template v-if="S.play.th && !it.skipped"><br>とめはね{{ it.endMiss || 0 }}</template></small>
         </div>
       </div>
       <template v-if="S.cmt">
