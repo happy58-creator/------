@@ -99,6 +99,32 @@ def _sum(items, mode, key):
     return sum(v + (v * t // 100) for t, v in by.items())
 
 
+def _fit(items, mode, total):
+    """値引きの 二重引きを 直す。AIが 値引き後の値段を price に入れていたり、品物の値引きを
+    「値引き」の行（マイナス）にも 入れていたりすると、合計が レシートより 小さくなる。
+    品物ごとに「値引きを引く／引かない」、マイナスの行ごとに「入れる／入れない」を くみあわせて、
+    レシートの合計に ぴったり合う形のうち、いちばん 変える所が 少ないものに する。合わなければ そのまま"""
+    disc = [i for i, it in enumerate(items) if it["disc"]]
+    neg = [i for i, it in enumerate(items) if it["orig"] < 0]
+    opts = disc + neg
+    if not total or not opts or len(opts) > 14:
+        return items
+    tol = 1 if mode == "外税" else 0
+    nd = len(disc)                     # 同じ数を変えるなら、「値引き」の行を はずす方を 先に（品物の 値引き表示を 残す）
+    for mask in sorted(range(1 << len(opts)), key=lambda m: (bin(m).count("1"), bin(m & ((1 << nd) - 1)).count("1"))):
+        flip = {opts[b] for b in range(len(opts)) if mask >> b & 1}
+        trial = []
+        for i, it in enumerate(items):
+            if i in flip and it["orig"] < 0:
+                continue                                   # 品物の値引きと 同じ「値引き」の行 → 入れない
+            if i in flip:
+                it = {**it, "price": it["orig"], "disc": 0}  # price が もう 値引き後だった → 引かない
+            trial.append(it)
+        if abs(_sum(trial, mode, "price") - total) <= tol:
+            return trial
+    return items
+
+
 def _clean(data, cats):
     out = []
     for r in (data or {}).get("receipts") or []:
@@ -119,12 +145,7 @@ def _clean(data, cats):
             })
         mode = "外税" if r.get("tax_mode") == "外税" else "内税"
         total = _int(r.get("total"))
-        # AIが値引きを price から先に引いていた（二重に引くことになる）ときは、合計に合う方にする
-        if total and any(it["disc"] for it in items):
-            net, raw = _sum(items, mode, "price"), _sum(items, mode, "orig")
-            if abs(raw - total) <= 1 < abs(net - total):
-                for it in items:
-                    it["price"], it["disc"] = it["orig"], 0
+        items = _fit(items, mode, total)
         for it in items:
             it.pop("orig")
         date = str(r.get("date") or "")
