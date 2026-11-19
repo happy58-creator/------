@@ -97,9 +97,10 @@ createApp({
         <button class="pk" :class="{ on: !S.th }" @click="S.th = false"><span class="radio"></span><b class="lv">オフ（いままでどおり）</b></button>
         <button class="pk" :class="{ on: S.th }" @click="S.th = true"><span class="radio"></span><b class="lv"><ic n="brush"></ic>オン（とめ・はねも 見る）</b></button>
       </div>
+      <div class="small" style="margin-top:8px;line-height:1.6;color:#b45309"><ic n="pen"></ic><b>タッチペンが おすすめ</b>：指より 線の さいごの 動きが 正しく つたわるので、とめ・はね・はらい が 判定されやすく、字も きれいに なるよ。</div>
     </div>
     <button class="big" :disabled="S.busy" @click="start(false)"><ic v-if="iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[0]" :n="iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[0]"></ic>{{ iX(iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[1]) }}</button>
-    <div class="small muted" style="margin:12px 4px 0;line-height:1.6">書き順データ：KanjiVG（CC BY-SA 3.0, kanjivg.tagaini.net）　学年・読み：KANJIDIC2（kanjiapi.dev 経由）。書き順・画数・形を 大まかに チェックするよ。④を オンにすると、線の さいごが「とめ・はね・はらい」に なっているかも 見るよ（指で 書くので、はっきりしない画は 判定しないよ）。</div>
+    <div class="small muted" style="margin:12px 4px 0;line-height:1.6">書き順データ：KanjiVG（CC BY-SA 3.0, kanjivg.tagaini.net）　学年・読み：KANJIDIC2（kanjiapi.dev 経由）。書き順・画数・形を 大まかに チェックするよ。④を オンにすると、線の さいごが「とめ・はね・はらい」に なっているかも 見るよ（タッチペン おすすめ。はっきりしない画は 判定しないよ）。</div>
   </template>
 
   <div v-show="S.view === 'play'">
