@@ -22,8 +22,25 @@ const Voice = (() => {
     speechSynthesis.speak(u);
     return true;
   }
-  const stop = () => { try { speechSynthesis.cancel(); } catch (e) {} };
-  return { ok, say, stop };
+  // AIの声（保存した音）を ならす。ならせなかったら false → ブラウザの声に もどす
+  let audio = null;
+  function play(url, slow, onend, fallback) {
+    stop();
+    try {
+      audio = new Audio(url);
+      audio.playbackRate = slow ? 0.7 : 1;
+      audio.preservesPitch = audio.webkitPreservesPitch = true;
+      audio.onended = () => onend && onend();
+      const p = audio.play();
+      if (p && p.catch) p.catch(() => { audio = null; fallback && fallback(); });
+      return true;
+    } catch (e) { audio = null; return false; }
+  }
+  const stop = () => {
+    try { speechSynthesis.cancel(); } catch (e) {}
+    try { if (audio) { audio.pause(); audio = null; } } catch (e) {}
+  };
+  return { ok, say, play, stop };
 })();
 
 const Rec = (() => {

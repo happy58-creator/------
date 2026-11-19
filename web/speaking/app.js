@@ -18,7 +18,7 @@ createApp({
     const S = reactive({
       ready: false, args: {}, view: "menu",
       level: L.level || "", mode: L.mode || "聞く", courses: L.courses || {}, slow: !!L.slow, assist: L.assist ?? true, show: ["en", "ja", "enja"].includes(L.show) ? L.show : "enja", topic: "",
-      busy: false, sec: 0, err: "", toast: "",
+      busy: false, sec: 0, err: "", toast: "", ai: {}, aiBusy: false,
       qs: [], i: 0, pick: null, decided: null, hint: false, log: [], rows: [], run: "",
       rec: "idle", live: "", takes: [], built: [], playing: "", heard: 0, play: null,
       sending: false, result: null, pdf: "",
@@ -49,6 +49,21 @@ createApp({
         if (S.view !== "menu") return;
         if (r.error || !r.questions) { S.err = r.error || "うまく作れなかったよ。もう一度ためしてね"; return; }
         S.err = ""; begin(r.questions, want);
+        loadVoices(r.questions, want);
+      });
+    }
+    // 単語コース：AIの声を たのむ（保存してある声は すぐ、ない分は AI が 1回で 作る）。来るまでは ブラウザの声
+    function loadVoices(qs, want) {
+      S.ai = {}; S.aiBusy = false;
+      if (want.course !== "単語") return;
+      S.aiBusy = true;
+      const run = S.run;
+      Kit.ask({ type: "tts", mode: want.mode, course: want.course, level: want.level, words: qs.map(q => q.en) }, r => {
+        if (S.run !== run) return;
+        S.aiBusy = false;
+        const a = {};
+        Object.entries((r && r.audio) || {}).forEach(([w, u]) => { a[w.trim().toLowerCase()] = u; });
+        S.ai = a;
       });
     }
     function begin(qs, want) {
@@ -64,8 +79,12 @@ createApp({
     const isListen = computed(() => S.play && S.play.mode === "聞く");
 
     // ---- 読み上げ
+    const aiOf = text => (S.ai || {})[String(text || "").trim().toLowerCase()];
     function say(text, slow) {
       S.playing = text;
+      const done = () => { if (S.playing === text) S.playing = ""; };
+      const url = aiOf(text);
+      if (url && Voice.play(url, slow, done, () => Voice.say(text, slow, done))) return;
       if (!Voice.say(text, slow, () => { if (S.playing === text) S.playing = ""; })) { S.playing = ""; toast("このブラウザは 読み上げが使えないみたい"); }
     }
     function listen(slow) { S.heard++; say(q.value.en, slow ?? S.play.slow); }
@@ -152,7 +171,7 @@ createApp({
     const label = p => p ? `${p.mode === "聞く" ? "聞く" : "話す"}・${p.course}` : "";
 
     Streamlit.ready(onArgs);
-    return { S, TOPICS, SHOWS, mainOf, memoOf, COURSE_IC, MODE_IC, Voice, Rec, keep, modeOf, courseList, courseNow, infoOf, start, q, isListen, say, listen, score, decide, optClass, isBuild, tileOf, put, pull, slotOk, isRight,
+    return { aiOf, S, TOPICS, SHOWS, mainOf, memoOf, COURSE_IC, MODE_IC, Voice, Rec, keep, modeOf, courseList, courseNow, infoOf, start, q, isListen, say, listen, score, decide, optClass, isBuild, tileOf, put, pull, slotOk, isRight,
       take, mic, playMine, pctClass, next, again, quit, toMenu, wrong, scoreOf, label, Kit };
   },
   template: `
@@ -209,6 +228,9 @@ createApp({
     <div class="bar-top"><button class="back" @click="quit"><ic n="back" :s="16"></ic>やめる</button><b>{{ label(S.play) }}・{{ S.i + 1 }} / {{ S.qs.length }}</b>
       <span class="cnt" v-if="isListen"><ic n="check" :s="15"></ic>{{ score }}</span><span v-else class="cnt">{{ S.takes.filter(Boolean).length }}回</span></div>
     <div class="prog"><i :style="{ width: (S.i / S.qs.length * 100) + '%' }"></i></div>
+    <div v-if="S.play.course === '単語'" class="voicetag" :class="{ ai: aiOf(q.en) }">
+      <ic :n="aiOf(q.en) ? 'spark' : 'speaker'" :s="13"></ic>{{ aiOf(q.en) ? 'AIの声' : S.aiBusy ? 'AIの声を じゅんび中…（それまでは ふつうの声）' : 'ふつうの声（AIの声は 今は お休み）' }}
+    </div>
 
     <!-- 聞く -->
     <template v-if="isListen">

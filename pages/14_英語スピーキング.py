@@ -214,6 +214,11 @@ def handle(v):
         return {"error": "えらび方がおかしいよ"}
     if t == "gen":
         return {"questions": generate(mode, course, level, topic)}
+    if t == "tts":                              # 単語コース：AIの声（保存した声を使い回す。足りない分だけ AI で作る）
+        if course != "単語":
+            return {"audio": {}}
+        import tts_store
+        return {"audio": tts_store.voices([str(w)[:40] for w in (v.get("words") or [])][:TOTAL_Q])}
     if t == "done":                             # おわった：（話すなら AI採点）→ 記録して、表彰状をつくる
         info = info_text(mode, course, level, topic)
         out = {}

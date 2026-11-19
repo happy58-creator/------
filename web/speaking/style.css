@@ -75,3 +75,7 @@
 .tile.wrong{border-color:var(--ng);background:var(--ngL)}.tile.wrong b{color:var(--ng)}
 .link{display:inline-flex;align-items:center;gap:4px;margin-top:4px}
 .seg.three{grid-template-columns:1fr 1fr 1.3fr}.seg.three button{font-size:14px}
+
+/* 単語コース：AIの声か ふつうの声か */
+.voicetag{display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:11px;color:var(--sub,#6b7280);margin:4px 2px 0}
+.voicetag.ai{color:#7c3aed;font-weight:700}
