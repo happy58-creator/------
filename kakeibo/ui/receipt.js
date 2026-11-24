@@ -38,11 +38,22 @@ function taxNote(rc, it) {
   if (rc.tax_mode === "外税") return `税込 ${yen(lineYen(rc, it))}${t ? `（税 ${yen(Math.round(p * t / 100))}）` : ""}`;
   return t ? `税込みの値段・うち消費税 ${yen(Math.floor(p * t / (100 + t)))}` : "非課税";
 }
-function receiptCalc(rc) {          // レシートと同じ出し方の合計（外税は税率ごとに1円未満を切りすて）
-  if (rc.tax_mode !== "外税") return rc.items.reduce((a, it) => a + Math.round(rnum(it.price)), 0);
-  const by = {};
+// 外税の 消費税の 端数の出し方は お店で ちがう。よくある出し方を ぜんぶ 計算する（さいしょが ふつうの出し方）
+function taxTotals(rc) {
+  const by = {}, base = rc.items.reduce((a, it) => a + rnum(it.price), 0);
   rc.items.forEach(it => by[+it.tax || 0] = (by[+it.tax || 0] || 0) + rnum(it.price));
-  return Object.entries(by).reduce((a, [t, s]) => a + Math.round(s) + Math.floor(s * t / 100), 0);
+  const ent = Object.entries(by).map(([t, s]) => [+t, s]), out = [];
+  for (const f of [Math.floor, Math.round, Math.ceil]) {
+    out.push(Math.round(base) + ent.reduce((a, [t, s]) => a + f(s * t / 100), 0));                           // 税率ごとに まとめて
+    out.push(Math.round(base) + rc.items.reduce((a, it) => a + f(rnum(it.price) * (+it.tax || 0) / 100), 0)); // 品物 1つずつ
+    out.push(Math.round(base) + f(ent.reduce((a, [t, s]) => a + s * t / 100, 0)));                        // 8%と10%を まとめて
+  }
+  return out;
+}
+function receiptCalc(rc) {          // レシートと同じ出し方の合計（外税：レシートの合計に合う 出し方が あれば それ。なければ 税率ごとに 切りすて）
+  if (rc.tax_mode !== "外税") return rc.items.reduce((a, it) => a + Math.round(rnum(it.price)), 0);
+  const all = taxTotals(rc);
+  return rc.total && all.includes(+rc.total) ? +rc.total : all[0];
 }
 const groupCats = rc => [...new Set(rc.items.map(it => it.cat))];
 function groupAlloc(rc) {            // グループごとの金額（合計がレシートの合計とぴったり合うように、端数を配る）
