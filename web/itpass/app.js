@@ -267,7 +267,16 @@ const app = createApp({
       S.aiQ = { id: q.id, nonce };
     }
     const strip = h => String(h || "").replace(/<br\s*\/?>/g, "\n").replace(/<\/(tr|p|li|pre|div)>/g, "\n").replace(/<\/t[dh]>/g, " | ").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-    const aiFor = id => S.ai && S.ai.id === id ? S.ai : null;
+    const aiFor = id => S.ai && S.ai.id === id && !S.ai.sim && !S.ai.simErr ? S.ai : null;
+    // ---- AIに 似た問題を 作ってもらう（記録には 入れない、確かめ用） ----
+    function askSimilar(q) {
+      const r = S.run, mine = r ? r.answers[q.id] : null;
+      const nonce = uid(); S.simWait = q.id;
+      Streamlit.setValue({ type: "ask", mode: "similar", nonce, id: q.id, q: strip(q.q), choices: q.choices.map(strip), answer: q.answer, mine, exp: strip(q.exp) });
+      S.simQ = { id: q.id, nonce };
+    }
+    const simFor = id => (S.sims || {})[id] || null;
+    function simPick(id, k) { const x = simFor(id); if (x && x.pick == null) x.pick = k; }
     const aiHtml = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
 
     // ---- 用語カード ----
@@ -291,7 +300,10 @@ const app = createApp({
       S.user = args.user || "";
       if (args.stats) S.server = args.stats;
       if (args.sessions) S.serverSessions = args.sessions;
-      if (args.ai && args.ai.nonce && (!S.aiQ || args.ai.nonce === S.aiQ.nonce)) { S.ai = args.ai; S.aiWait = ""; }
+      if (args.ai && args.ai.nonce && S.simQ && args.ai.nonce === S.simQ.nonce) {
+        S.sims = { ...(S.sims || {}), [args.ai.id]: args.ai.sim ? { ...args.ai.sim, pick: null } : { err: args.ai.simErr || "うまく作れませんでした" } };
+        S.simWait = ""; S.simQ = null;
+      } else if (args.ai && args.ai.nonce && (!S.aiQ || args.ai.nonce === S.aiQ.nonce)) { S.ai = args.ai; S.aiWait = ""; }
       S.tick++;
     });
 
@@ -305,7 +317,7 @@ const app = createApp({
 
     return { S, L, FIELDS, CATS, CAT, KANA, Q, QID, EXAMS, PASS_TOTAL, PASS_FIELD, TERMS, pct, fmtTime, stat, catStat, fieldStat, allStat, weakIds, flagIds, sessions, examSessions, weakCats, daysLeft,
       startDrill, startFromSetup, drillCat, startExam, resumeExam, isExam, remain, cur, choose, go, next, toggleFlag, toggleMark, finishAsk, finishRun, quitRun, reviewIds, retryWrong, openReview,
-      askAI, aiFor, aiHtml, startCards, cardMark, knownCount, goView, fieldOf, lessonOf, termsOf, qCount, openLesson, lessonIdx };
+      askAI, aiFor, askSimilar, simFor, simPick, aiHtml, startCards, cardMark, knownCount, goView, fieldOf, lessonOf, termsOf, qCount, openLesson, lessonIdx };
   },
   template: `
 <div class="wrap">
@@ -437,6 +449,17 @@ const app = createApp({
         <button v-if="!aiFor(cur.id)" class="btn ghost" :disabled="S.aiWait === cur.id" @click="askAI(cur)"><ic v-if="iL(S.aiWait === cur.id ? 'AIが考えています…' : '🤖 AIにもっとくわしく聞く')[0]" :n="iL(S.aiWait === cur.id ? 'AIが考えています…' : '🤖 AIにもっとくわしく聞く')[0]"></ic>{{ iX(iL(S.aiWait === cur.id ? 'AIが考えています…' : '🤖 AIにもっとくわしく聞く')[1]) }}</button>
         <div v-else class="aians"><div class="ai-h"><ic n="spark"></ic>AIの解説</div><div v-html="aiHtml(aiFor(cur.id).text)"></div>
           <button class="btn ghost small" :disabled="S.aiWait === cur.id" @click="askAI(cur, '別の例えや覚え方でもう一度')">{{ S.aiWait === cur.id ? '考えています…' : '別の説明を聞く' }}</button></div>
+      </div>
+      <div class="ai sim">
+        <button v-if="!simFor(cur.id) || simFor(cur.id).err" class="btn ghost" :disabled="S.simWait === cur.id" @click="askSimilar(cur)"><ic :n="S.simWait === cur.id ? 'hourglass' : 'puzzle'"></ic>{{ S.simWait === cur.id ? 'AIが 似た問題を 作っています…' : 'AIに 似た問題を 作ってもらう（理解の 確かめ）' }}</button>
+        <div v-if="simFor(cur.id) && simFor(cur.id).err" class="small" style="color:#b91c1c;margin-top:4px">{{ simFor(cur.id).err }}</div>
+        <div v-else-if="simFor(cur.id)" class="aians simq">
+          <div class="ai-h"><ic n="puzzle"></ic>似た問題（AIが 作成・記録には 入りません）</div>
+          <div v-html="aiHtml(simFor(cur.id).q)"></div>
+          <button v-for="(c, k) in simFor(cur.id).choices" :key="k" class="simc" :class="{ ok: simFor(cur.id).pick != null && k === simFor(cur.id).answer, ng: simFor(cur.id).pick === k && k !== simFor(cur.id).answer }" @click="simPick(cur.id, k)"><span class="kana">{{ KANA[k] }}</span><span v-html="aiHtml(c)"></span></button>
+          <div v-if="simFor(cur.id).pick != null" class="simexp"><b>{{ simFor(cur.id).pick === simFor(cur.id).answer ? '正解！ 理解できています' : '不正解。正解は ' + KANA[simFor(cur.id).answer] }}</b><div v-html="aiHtml(simFor(cur.id).exp)"></div>
+            <button class="btn ghost small" :disabled="S.simWait === cur.id" @click="askSimilar(cur)">もう1問 作ってもらう</button></div>
+        </div>
       </div>
       <div class="btns"><button class="btn" @click="go(S.run.i - 1)" :disabled="S.run.i === 0">‹ 前</button>
         <button v-if="S.view === 'run'" class="btn pri" @click="next">{{ S.run.i < S.run.ids.length - 1 ? '次の問題 ›' : '結果を見る' }}</button>

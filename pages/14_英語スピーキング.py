@@ -171,16 +171,18 @@ def review_prompt(level, items):
 - heard：あなたに聞こえた英語。
 - comment：日本語で1〜2文。よかった所と、直すとよい音を具体的に（例：「three」の th が s になっているよ。舌を前歯に軽く当ててみよう）。
 - advice：全体を通した アドバイスを日本語で2〜3文（いちばん大事な練習ポイント）。
+- good：よく言えていた 音を 1〜3個。{{"sound": 音（例：「r」「th」「ア の音（cat の a）」）, "word": その音が よく言えていた 単語, "note": 日本語で ひとこと}}
+- practice：つぎに 練習すると よい 音を 1〜3個（実際に 音声で 気になった ものだけ。なければ 空）。{{"sound": 音, "word": まちがえた 単語, "heard_as": どう 聞こえたか（例：「s に 聞こえた」）, "tip": 口・舌・くちびるの 動かし方を 日本語で 1文}}
 {"日本語は ひらがな中心にしてください。" if LEVELS.get(level, ("", False))[1] else ""}
 
 必ず次のJSONのみで出力してください（items は {len(items)} 個、番号の順）。
-{{"items": [{{"score": 80, "heard": "...", "comment": "..."}}], "advice": "..."}}
+{{"items": [{{"score": 80, "heard": "...", "comment": "..."}}], "advice": "...", "good": [{{"sound": "", "word": "", "note": ""}}], "practice": [{{"sound": "", "word": "", "heard_as": "", "tip": ""}}]}}
 """
 
 
 def review(level, items):
     if not any(it.get("audio") for it in items):        # 1問も話していない：AIに送らない（回数がもったいない）
-        return [{"score": 0, "heard": "", "comment": ""} for _ in items], ""
+        return [{"score": 0, "heard": "", "comment": ""} for _ in items], "", {}
     parts = [review_prompt(level, items)]
     for k, it in enumerate(items):
         if it.get("audio"):
@@ -199,7 +201,9 @@ def review(level, items):
             out.append({"score": 0, "heard": "", "comment": "この問題は 話していないよ。つぎは チャレンジしてみよう！"})
             continue
         out.append({"score": sc, "heard": str(g.get("heard") or ""), "comment": str(g.get("comment") or "")})
-    return out, str(data.get("advice") or "")
+    sounds = {k: [{kk: str(x.get(kk) or "")[:80] for kk in keys} for x in (data.get(k) or [])[:3] if isinstance(x, dict) and x.get("sound")]
+              for k, keys in (("good", ("sound", "word", "note")), ("practice", ("sound", "word", "heard_as", "tip")))}
+    return out, str(data.get("advice") or ""), sounds
 
 
 def info_text(mode, course, level, topic):
@@ -231,8 +235,8 @@ def handle(v):
             items = [{"en": str(x.get("en") or "")[:200], "said": str(x.get("said") or "")[:300], "audio": x.get("audio") or "",
                       "local": int(x.get("local") or 0)} for x in (v.get("items") or [])][:TOTAL_Q]
             try:
-                scores, advice = review(level, items)
-                out = {"scores": scores, "advice": advice}
+                scores, advice, sounds = review(level, items)
+                out = {"scores": scores, "advice": advice, **sounds}
             except RuntimeError as e:          # AIがだめでも、ブラウザの判定で記録はする
                 scores, advice = [{"score": it["local"], "heard": it["said"], "comment": ""} for it in items], ""
                 out = {"aiError": str(e)}

@@ -79,3 +79,14 @@
 /* 単語コース：AIの声か ふつうの声か */
 .voicetag{display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:11px;color:var(--sub,#6b7280);margin:4px 2px 0}
 .voicetag.ai{color:#7c3aed;font-weight:700}
+
+/* AI先生の 音の アドバイス */
+.sounds{display:grid;gap:8px;margin-top:8px}
+.snd{border-radius:12px;padding:10px 12px;font-size:14px;border:1px solid}
+.snd.good{background:#f0fdf4;border-color:#bbf7d0}.snd.good>b{color:#15803d}
+.snd.prac{background:#fff7ed;border-color:#fed7aa}.snd.prac>b{color:#c2410c}
+.snd>b{display:flex;align-items:center;gap:4px;margin-bottom:4px}
+.snd .sl{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:1px dashed rgba(0,0,0,.08)}
+.snd .sb{flex:none;min-width:44px;text-align:center;font-weight:800;background:#fff;border-radius:8px;padding:1px 6px;border:1px solid rgba(0,0,0,.1)}
+.snd .sl i{display:block;font-style:normal;font-weight:700;color:#374151}
+.snd .mini{flex:none;border:none;background:#fff;border-radius:8px;padding:4px 6px}

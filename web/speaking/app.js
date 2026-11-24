@@ -326,6 +326,13 @@ createApp({
         </div>
         <div v-if="S.result.aiError" class="errbox"><ic n="warn" :s="17"></ic> {{ S.result.aiError }}（ブラウザの判定で 記録したよ）</div>
         <div v-if="S.result.advice" class="aibox"><b><ic n="spark" :s="16"></ic>AI先生から</b>{{ S.result.advice }}</div>
+        <div v-if="(S.result.good || []).length || (S.result.practice || []).length" class="sounds">
+          <div v-if="(S.result.good || []).length" class="snd good"><b><ic n="thumb" :s="15"></ic>よく 言えた 音</b>
+            <div v-for="(g, k) in S.result.good" :key="'g' + k" class="sl"><span class="sb">{{ g.sound }}</span><span class="grow"><i v-if="g.word">{{ g.word }}</i>{{ g.note }}</span></div></div>
+          <div v-if="(S.result.practice || []).length" class="snd prac"><b><ic n="target" :s="15"></ic>つぎに 練習する 音</b>
+            <div v-for="(p, k) in S.result.practice" :key="'p' + k" class="sl"><span class="sb">{{ p.sound }}</span><span class="grow"><i v-if="p.word">{{ p.word }}<template v-if="p.heard_as">（{{ p.heard_as }}）</template></i>{{ p.tip }}</span>
+              <button v-if="p.word" class="mini" @click="say(p.word, true)"><ic n="speaker" :s="14"></ic></button></div></div>
+        </div>
         <div v-if="S.result.saved" class="small muted center" style="margin:8px 0 4px"><ic n="headphones" :s="14"></ic> 録音は「せいせきの履歴」で 聞けるよ（新しい10回と、鍵をかけた回が残ります）</div>
       </template>
     </template>

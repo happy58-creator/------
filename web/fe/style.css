@@ -150,3 +150,11 @@ h2{margin:2px 0 6px;font-size:21px}h3{margin:0 0 8px;font-size:16px}
 /* アイコン（icons.js）。文字の大きさに合わせる */
 .ic{width:1.15em;height:1.15em;vertical-align:-.2em;flex:none;margin-right:.3em;display:inline-block}
 .ic:last-child{margin-right:0}
+
+/* AIの 似た問題 */
+.ai.sim{margin-top:8px}
+.simq .simc{display:flex;gap:8px;align-items:flex-start;width:100%;text-align:left;margin-top:6px;padding:9px 10px;border-radius:10px;border:1px solid #ddd5fb;background:#fff;font-size:14px;line-height:1.5}
+.simq .simc .kana{font-weight:800;color:#5b3fc4;flex:none}
+.simq .simc.ok{border-color:#16a34a;background:#f0fdf4}
+.simq .simc.ng{border-color:#dc2626;background:#fef2f2}
+.simq .simexp{margin-top:8px;font-size:14px;line-height:1.6}

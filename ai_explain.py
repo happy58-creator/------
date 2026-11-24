@@ -62,3 +62,41 @@ def cached_explanations(key, subject, grade_name, items):
         with st.spinner("AI先生が、まちがえた問題の解説を書いているよ..."):
             store[key] = explain_mistakes(subject, grade_name, items)
     return store[key]
+
+
+def similar_question(v, exam):
+    """まちがえた問題と 同じ考え方の 問題を 1問 作る（2.5 → 3.5 Lite）。
+    返り値 {"q": 問題, "choices": [4つ], "answer": 0〜3, "exp": 解説}"""
+    import json
+    from google.genai import types
+    import common
+    kana = ["ア", "イ", "ウ", "エ", "オ", "カ", "キ", "ク", "ケ", "コ", "サ", "シ"]
+    choices = "\n".join(f"{kana[i]}：{c}" for i, c in enumerate(v.get("choices") or []))
+    prompt = f"""あなたは{exam}の 問題作成者です。次の 問題と 同じ 知識・考え方で 解ける「似た問題」を 1問 作ってください。
+
+【もとの問題】
+{v.get('q', '')}
+【選択肢】
+{choices}
+正解：{kana[int(v.get('answer') or 0)]}
+解説：{v.get('exp', '')}
+
+作りかた：
+- 問われている 知識・考え方は 同じにする。場面・数値・用語の 組み合わせを 変えて、もとの問題を 覚えているだけでは 解けないようにする
+- 計算問題なら 数値を 変え、正解を 自分で 計算して 確かめる
+- 選択肢は 4つ。正解は 1つだけ。まちがいの 選択肢は、よくある 勘違いに する
+- 本番の {exam}と 同じくらいの 難しさ・書き方（です・ます調）
+- exp は、正解の 理由と、ほかの 選択肢が ちがう 理由を 200字くらいで
+
+次の JSON だけで 答えてください：
+{{"q": "問題文", "choices": ["ア の内容", "イ の内容", "ウ の内容", "エ の内容"], "answer": 0, "exp": "解説"}}"""
+    client = common.get_gemini_client()
+    res = client.models.generate_content(model=getattr(common, "GEMINI_CHEAP", common.GEMINI_MODEL), contents=prompt,
+                                         config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.6))
+    d = json.loads(res.text)
+    import re
+    ch = [re.sub(r"^[アイウエ]\s*[：:．.]\s*", "", str(c).strip()) for c in (d.get("choices") or [])]
+    ans = int(d.get("answer", -1))
+    if not d.get("q") or len(ch) != 4 or not 0 <= ans < 4:
+        raise RuntimeError("AIが うまく 問題を 作れませんでした。もう一度 ためしてください")
+    return {"q": str(d["q"]).strip(), "choices": ch, "answer": ans, "exp": str(d.get("exp") or "").strip()}

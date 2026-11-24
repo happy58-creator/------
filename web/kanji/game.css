@@ -24,3 +24,7 @@ canvas.good { border-color: #2ecc71; }
 .kj-btns button:disabled { opacity: .45; cursor: default; }
 .kj-final { text-align: center; padding: 30px 10px; }
 .kj-final .big { font-size: 56px; }
+/* AIが 作った 文（苦手を使った 問題）。【 】の ところを 漢字で 書く */
+.kj-info .sent { display:flex; gap:6px; align-items:flex-start; justify-content:center; font-size:17px; font-weight:700; line-height:1.6; margin:2px 0 6px; color:#1f2937; }
+.kj-info .sent svg { width:18px; height:18px; flex:none; margin-top:4px; color:#b45309; }
+.kj-info .sent b { color:#b45309; border-bottom:3px solid #fbbf24; padding:0 2px; }

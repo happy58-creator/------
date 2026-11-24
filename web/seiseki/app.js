@@ -12,7 +12,7 @@ createApp({
   methods: { I(n, c) { return Icon.svg(n, c); }, iO: e => Icon.of(e), iL: s => Icon.lead(s), iX: s => Icon.strip(s) },
   setup() {
     const L = Kit.load("hist_v1", {});
-    const S = reactive({ ready: false, args: {}, sheet: L.sheet || "", who: "みんな", data: {}, busy: "", pdfBusy: -1, toast: "", more: PAGE, open: -1, voice: {}, vbusy: "", playing: "" });
+    const S = reactive({ rep: { open: false, name: "", offset: 1, busy: false, err: "", data: null }, ready: false, args: {}, sheet: L.sheet || "", who: "みんな", data: {}, busy: "", pdfBusy: -1, toast: "", more: PAGE, open: -1, voice: {}, vbusy: "", playing: "" });
     function onArgs(a) {
       const first = !S.ready;
       S.args = a; S.ready = true; Kit.takeReply(a);
@@ -97,12 +97,46 @@ createApp({
         if (x.ok) { r._lock = x.lock; const d = S.data[S.sheet]; if (d && d.locks != null) d.locks = x.locks; }
       });
     }
-    return { S, ICON, openVoice, play, lock, load, cur, names, rows, newest, scoreCol, best, avg, chart, sideCols, openPdf, csv, when };
+    // ---- 週の レポート（おうちの人向け。1人ずつ）
+    function report(remake) {
+      const R = S.rep;
+      R.busy = true; R.err = "";
+      Kit.ask({ type: "report", name: R.name || S.args.me, offset: R.offset, remake: !!remake }, x => {
+        R.busy = false;
+        if (x.error) { R.err = x.error; return; }
+        R.data = x;
+      });
+    }
+    function repOpen() { S.rep.open = !S.rep.open; if (S.rep.open && !S.rep.data) report(false); }
+    function repSet(k, v) { S.rep[k] = v; S.rep.data = null; report(false); }
+    return { report, repOpen, repSet, S, ICON, openVoice, play, lock, load, cur, names, rows, newest, scoreCol, best, avg, chart, sideCols, openPdf, csv, when };
   },
   template: `
 <div class="wrap" v-if="S.ready">
   <div v-if="S.toast" class="toast"><ic v-if="iL(S.toast)[0]" :n="iL(S.toast)[0]"></ic>{{ iX(iL(S.toast)[1]) }}</div>
   <div class="hero"><div class="hero-t"><div class="logo"><ic n="clip"></ic></div><div><b>せいせきの履歴</b><small>これまでの記録を 見よう！</small></div></div></div>
+  <div class="card rep">
+    <button class="rep-h" @click="repOpen"><ic n="chart"></ic><b>週の レポート</b><small>1週間の がんばりを まとめるよ（おうちの人向け）</small><ic :n="S.rep.open ? 'up' : 'down'"></ic></button>
+    <template v-if="S.rep.open">
+      <div v-if="(S.args.people || []).length > 1" class="chips"><button v-for="p in S.args.people" :key="p" class="chip" :class="{ on: (S.rep.name || S.args.me) === p }" @click="repSet('name', p)">{{ p }}</button></div>
+      <div class="chips"><button class="chip" :class="{ on: S.rep.offset === 1 }" @click="repSet('offset', 1)">先週</button><button class="chip" :class="{ on: S.rep.offset === 0 }" @click="repSet('offset', 0)">今週（ここまで）</button></div>
+      <div v-if="S.rep.busy" class="center wait"><div class="spin"></div>まとめています…</div>
+      <div v-else-if="S.rep.err" class="small" style="color:#b91c1c">{{ S.rep.err }}</div>
+      <template v-else-if="S.rep.data">
+        <div class="rep-w"><b>{{ S.rep.data.week }}</b>　学習した日：{{ S.rep.data.days }}日</div>
+        <div v-if="!S.rep.data.facts.length" class="small muted">この週の 記録は ないよ</div>
+        <div v-else class="rep-f"><span v-for="f in S.rep.data.facts" :key="f['教科']" class="rf"><ic :n="ICON[f['教科']] || 'file'"></ic>{{ f['教科'] }} {{ f['回数'] }}回<template v-if="f['平均点'] != null">・平均{{ f['平均点'] }}点</template><template v-if="f['正答率']">・正答率{{ f['正答率'] }}</template></span></div>
+        <div v-if="S.rep.data.report" class="rep-ai">
+          <p>{{ S.rep.data.report.summary }}</p>
+          <div v-if="S.rep.data.report.good.length" class="rg"><b><ic n="thumb"></ic>よかった点</b><ul><li v-for="(g, k) in S.rep.data.report.good" :key="k">{{ g }}</li></ul></div>
+          <div v-if="S.rep.data.report.next.length" class="rn"><b><ic n="target"></ic>来週の おすすめ</b><ul><li v-for="(g, k) in S.rep.data.report.next" :key="k">{{ g }}</li></ul></div>
+          <div v-if="S.rep.data.report.praise" class="rp"><ic n="star"></ic>{{ S.rep.data.report.praise }}</div>
+          <div class="small muted">AIが 作成（{{ when(S.rep.data.made) }}）　<button class="linkb" @click="report(true)">作りなおす（AIを1回）</button></div>
+        </div>
+        <button v-else-if="S.rep.data.facts.length" class="btn pri" @click="report(true)"><ic n="spark"></ic>AIに レポートを 書いてもらう（1回）</button>
+      </template>
+    </template>
+  </div>
   <div class="tabs"><button v-for="s in S.args.sheets" :key="s" :class="{ on: S.sheet === s }" @click="load(s)"><span><ic :n="ICON[s] || 'file'"></ic></span>{{ s }}</button></div>
 
   <div v-if="S.busy === S.sheet && !cur" class="card center wait"><div class="spin"></div>読みこみ中…</div>

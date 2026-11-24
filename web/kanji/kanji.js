@@ -322,6 +322,7 @@ class KanjiGame {
     this.stat = { misses: 0, hints: 0, firstTry: 0, tries: 0, shape: 0, accepted: 0, skipped: false, wrongOrder: 0, endMiss: 0 };
     this.info = [];     // 書けた画ごとの記録（AI先生に わたす「測ったデータ」用）
     this.endTries = 0;  // いまの画で とめ・はねを まちがえた回数
+    this.endFail = new Set(); this.endPass = new Set();   // とめ・はねを まちがえた画・1回で できた画（記録して、次に 先に 教える）
     this.finished = false;
     this.hintIdx = -1;
     this.hintUsedForStroke = false;
@@ -344,6 +345,7 @@ class KanjiGame {
     const showKanji = this.mode !== "reading" || this.finished;
     this.$("info").innerHTML =
       (this.mode === "recall" || (this.mode === "reading" && this.finished) ? `<div class="big">${showKanji ? k.c : ""}</div>` : "") +
+      (k.sent ? `<div class="sent">${Icon.svg("book")}${k.sent.replace(/【(.+?)】/g, '<b>$1</b>')}</div>` : "") +
       `<div class="read">${parts || "（よみ なし）"}</div>` +
       `<div class="sub">${k.s.length}画　${meaning ? "／ " + meaning : ""}</div>`;
   }
@@ -351,8 +353,10 @@ class KanjiGame {
   /** とめ・はね判定がオンのとき：つぎの画の 終わりの形を 教える */
   endHint(i) {
     const e = this.th && this.refs[i] && this.refs[i].end;
+    if (e && this.warned(i)) return `（注意！ 前に まちがえた画だよ。${i + 1}画目の さいごは「${END_NAME[e]}」）`;
     return e ? `（${i + 1}画目の さいごは「${END_NAME[e]}」）` : "";
   }
+  warned(i) { return (this.k.warn || []).includes(i + 1); }
 
   say(kind, text) {
     const m = this.$("msg");
@@ -393,7 +397,7 @@ class KanjiGame {
       });
       // 次に書く画の 終わりの形を 小さな札で
       const nx = this.refs[this.idx];
-      if (this.th && nx && nx.end) this.endTag(ctx, nx.dense, END_NAME[nx.end]);
+      if (this.th && nx && nx.end) this.endTag(ctx, nx.dense, (this.warned(this.idx) ? "注意 " : "") + END_NAME[nx.end], this.warned(this.idx) ? "rgba(220,38,38,.95)" : null);
       // 次に書く画の はじまり（●）
       if (this.idx < this.refs.length) {
         const s = this.refs[this.idx].pts[0];
@@ -461,14 +465,14 @@ class KanjiGame {
   }
 
   /** 線の 終わりの そばに 小さな札（「はね」など） */
-  endTag(ctx, pts, text) {
+  endTag(ctx, pts, text, color) {
     ctx.save();
     ctx.font = "bold 5.5px sans-serif";
     // 線の 終わりの 先（線が 進んでいた向きの その先）に 置いて、線に かさならないように
     const e = pts[pts.length - 1], a = pts[Math.max(0, pts.length - 6)], v = unitV([e[0] - a[0], e[1] - a[1]]);
     const w = ctx.measureText(text).width + 4, cx = e[0] + v[0] * (w / 2 + 4), cy = e[1] + v[1] * 8;
     const x = Math.min(BOX - w - 1, Math.max(1, cx - w / 2)), y = Math.min(BOX - 8.5, Math.max(1, cy - 3.75));
-    ctx.fillStyle = "rgba(255,140,0,.92)";
+    ctx.fillStyle = color || "rgba(255,140,0,.92)";
     ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, 7.5, 2) : ctx.rect(x, y, w, 7.5); ctx.fill();
     ctx.fillStyle = "#fff"; ctx.fillText(text, x + 2, y + 5.8);
     ctx.restore();
@@ -547,6 +551,7 @@ class KanjiGame {
     this.ghostTimer = setTimeout(() => { this.ghost = null; this.draw(); }, 1800);
     this.endTries++;
     this.stat.endMiss++;
+    this.endFail.add(this.idx + 1);
     this.stat.failedThisStroke = true;
     const did = { tome: "止まっていたよ", hane: "はねていたよ", harai: "はらっていたよ" }[st];
     this.say("ng", `❌ 形は いいね！ でも ${this.idx + 1}画目は「${END_NAME[want]}」。${did ? "赤い丸の所で " + did + "。" : ""}${END_TIP[want]}。`);
@@ -566,6 +571,7 @@ class KanjiGame {
     const ref = this.refs[this.idx];
     this.info.push({ i: this.idx, user: user || resample(pts), len: len || polyLength(pts), end: this.th ? ref.end : "",
                      endOk: !(this.th && ref.end) || r.endOk !== false });
+    if (this.th && ref.end && this.endTries === 0 && r.endOk !== false) this.endPass.add(this.idx + 1);
     const endMsg = this.th && ref.end ? (r.endOk === false ? `（「${END_NAME[ref.end]}」は つぎ がんばろう）` : `「${END_NAME[ref.end]}」も できたね。`) : "";
     this.endTries = 0;
     this.done.push(pts);
@@ -651,6 +657,7 @@ class KanjiGame {
     this.results.push({
       ch: this.k.c, strokes: this.refs.length, misses: this.stat.misses, hints: this.stat.hints,
       wrongOrder: this.stat.wrongOrder, skipped: this.stat.skipped, points, endMiss: this.stat.endMiss,
+      endFail: [...this.endFail], endPass: [...this.endPass],
       img: this.stat.skipped ? "" : this.inkImage(),       // 書いた字（けっかの画面に出す）
       cmp: this.stat.skipped ? "" : this.cmpImage(),       // お手本と ならべた画像（AI先生用）
       facts: this.stat.skipped ? [] : this.facts(),        // アプリが 測った データ（AI先生用）

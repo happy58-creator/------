@@ -110,6 +110,14 @@ if isinstance(val, dict) and val.get("nonce") and val["nonce"] not in done:
         history.log_once(SHEET, val.get("key") or val["nonce"], **fields)
         # 読みなおさずに、手元の記録にも足しておく（スプレッドシートへの問い合わせをへらす）
         ss.fe_rows = rows + [{"日時": __import__("time").strftime("%Y-%m-%d %H:%M:%S"), "名前": me, **fields}]
+    elif val.get("type") == "ask" and val.get("mode") == "similar":
+        try:
+            ss.fe_ai = {"nonce": val["nonce"], "id": val.get("id"), "sim": ai_explain.similar_question(val, "基本情報技術者試験")}
+        except Exception as e:
+            print(f"[似た問題] {type(e).__name__}: {e}", flush=True)
+            ss.fe_ai = {"nonce": val["nonce"], "id": val.get("id"),
+                         "simErr": common.ai_error_text(e) if hasattr(common, "ai_error_text") else "似た問題を 作れませんでした"}
+        st.rerun()
     elif val.get("type") == "ask":
         ss.fe_ai = {"nonce": val["nonce"], "id": val.get("id"), "text": ask_ai(val)}
         st.rerun()

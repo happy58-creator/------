@@ -25,12 +25,12 @@ createApp({
     const tolOf = id => ((S.args.levels || []).find(l => l.id === id) || {}).tol || 20;
 
     let game = null;
-    function start(again) {
-      if (!again) S.play = { grade: S.grade, mode: S.mode, level: S.level, th: S.th };
-      S.busy = true; keep();
-      Kit.ask({ type: "start", grade: S.play.grade }, r => {
+    function start(again, kind) {
+      if (!again) S.play = { grade: S.grade, mode: S.mode, level: S.level, th: S.th, kind: kind || "new" };
+      S.busy = true; S.err = ""; keep();
+      Kit.ask({ type: "start", grade: S.play.grade, kind: S.play.kind, level: S.play.level }, r => {
         S.busy = false;
-        if (r.error || !r.kanjis) { toast(r.error || "うまくいかなかったよ"); return; }
+        if (r.error || !r.kanjis) { S.err = r.error || "うまくいかなかったよ"; toast(S.err); return; }
         S.run = Kit.uid(); S.result = null; S.cmt = null; S.view = "play"; Kit.top();
         nextTick(() => {        // 書き取りの本体（kanji.js）を、この画面の中に出す
           const box = document.getElementById("game"); box.innerHTML = "";
@@ -99,12 +99,21 @@ createApp({
       </div>
       <div class="small" style="margin-top:8px;line-height:1.6;color:#b45309"><ic n="pen"></ic><b>タッチペンが おすすめ</b>：指より 線の さいごの 動きが 正しく つたわるので、とめ・はね・はらい が 判定されやすく、字も きれいに なるよ。</div>
     </div>
+    <div v-if="S.args.weak" class="card weakc">
+      <div class="h3"><ic n="target"></ic>苦手の 練習<span class="small muted">前に うまく 書けなかった字が {{ S.args.weak }}字 あるよ（学年は 関係なく 出るよ）</span></div>
+      <div class="row2">
+        <button class="btn" :disabled="S.busy" @click="start(false, 'weak')"><ic n="again"></ic>苦手だけ もう一回</button>
+        <button class="btn" :disabled="S.busy" @click="start(false, 'weakai')"><ic n="spark"></ic>苦手な字を 使った文で（AI）</button>
+      </div>
+      <div class="small muted" style="margin-top:6px">「文で」は、AIが 苦手な字を 使った 文を 作るよ（AIを 1回 使う）。③で「読みから書く」を えらぶと、文だけを 見て 書く 練習に なるよ</div>
+    </div>
+    <div v-if="S.err" class="small" style="color:#b91c1c;margin:6px 4px">{{ S.err }}</div>
     <button class="big" :disabled="S.busy" @click="start(false)"><ic v-if="iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[0]" :n="iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[0]"></ic>{{ iX(iL(S.busy ? 'じゅんび中…' : '🚀 スタート！')[1]) }}</button>
     <div class="small muted" style="margin:12px 4px 0;line-height:1.6">書き順データ：KanjiVG（CC BY-SA 3.0, kanjivg.tagaini.net）　学年・読み：KANJIDIC2（kanjiapi.dev 経由）。書き順・画数・形を 大まかに チェックするよ。④を オンにすると、線の さいごが「とめ・はね・はらい」に なっているかも 見るよ（タッチペン おすすめ。はっきりしない画は 判定しないよ）。</div>
   </template>
 
   <div v-show="S.view === 'play'">
-    <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ S.play.grade }}年生・<template v-if="S.play.th">とめはね・</template><ic v-if="iL(modeOf(S.play.mode).name)[0]" :n="iL(modeOf(S.play.mode).name)[0]"></ic>{{ iX(iL(modeOf(S.play.mode).name)[1]) }}</b><span></span></div>
+    <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ S.play.kind && S.play.kind !== 'new' ? '苦手' : S.play.grade + '年生' }}・<template v-if="S.play.th">とめはね・</template><ic v-if="iL(modeOf(S.play.mode).name)[0]" :n="iL(modeOf(S.play.mode).name)[0]"></ic>{{ iX(iL(modeOf(S.play.mode).name)[1]) }}</b><span></span></div>
     <div id="game"></div>
   </div>
 
@@ -141,7 +150,7 @@ createApp({
           </div>
         </template>
       </template>
-      <div class="row2" style="margin-top:12px"><button class="btn pri" :disabled="S.busy" @click="start(true)"><ic n="again"></ic>おなじ学年で もう一度</button><button class="btn" @click="S.view = 'menu'; Kit.top()"><ic n="refresh"></ic>学年や書きかたを かえる</button></div>
+      <div class="row2" style="margin-top:12px"><button class="btn pri" :disabled="S.busy" @click="start(true)"><ic n="again"></ic>{{ S.play.kind === 'new' ? 'おなじ学年で もう一度' : '苦手で もう一度' }}</button><button class="btn" @click="S.view = 'menu'; Kit.top()"><ic n="refresh"></ic>学年や書きかたを かえる</button></div>
     </template>
   </template>
 </div>

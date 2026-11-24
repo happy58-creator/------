@@ -20,6 +20,7 @@ if "明細" not in getattr(store, "TABLES", {}).get("記録", []) or not hasattr
 from kb_ui import ui  # noqa: E402
 import kb_auth as auth  # noqa: E402       # ログイン（買い物リストと共通）
 import kb_ocr as ocr  # noqa: E402         # レシートの読み取り（Gemini）
+import kb_ai  # noqa: E402                 # 月の ふりかえり（AI）
 from kb_calc import EXPENSE, INCOME  # noqa: E402
 
 try:
@@ -154,10 +155,16 @@ data = {
                for r in store.load("店舗") if r.get("店名")],
     "branches": store.load("支店"),
     "rmemo": store.load("レシートの記憶"), "units": last_units(), "ocr": ocr.available(),
+    "reviews": store.load("ふりかえり"),
 }
-val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", ocr=ss.get("kb_ocr"), key="kb_ui", default=None)
+val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", ocr=ss.get("kb_ocr"), ai=ss.get("kb_ai"), key="kb_ui", default=None)
 if isinstance(val, dict):
     changed = False
+    req = val.get("ai")
+    if isinstance(req, dict) and req.get("id") and req["id"] not in done:      # AI のたのみごと（月の ふりかえり）
+        done.append(req["id"])
+        ss["kb_ai"] = kb_ai.handle(req)
+        changed = True
     req = val.get("ocr")
     if isinstance(req, dict) and req.get("id") and req["id"] not in done:     # レシートの写真が来た（同じ写真は2回読まない）
         done.append(req["id"])

@@ -44,8 +44,27 @@ def rec_key(r):
         return ""
 
 
+def people():
+    """管理者が レポートを 見られる人（ユーザーの 一覧）"""
+    if not admin:
+        return [me]
+    try:
+        names = [str(u.get("名前")) for u in (auth._load_users() or []) if str(u.get("名前") or "").strip() and not auth.is_guest_row(u)]
+    except Exception:
+        names = []
+    return sorted(set(names) | {me}) if names else [me]
+
+
 def handle(v):
     t, sheet = v.get("type"), v.get("sheet")
+    if t == "report":                                # 週の レポート（自分の分。管理者は えらんだ人）
+        import weekly_report
+        name = str(v.get("name") or me) if admin else me
+        try:
+            return weekly_report.make(name, int(v.get("offset") or 0), bool(v.get("remake")))
+        except Exception as e:
+            print(f"[週レポート] {type(e).__name__}: {e}", flush=True)
+            return {"error": common.ai_error_text(e) if hasattr(common, "ai_error_text") else f"レポートを 作れなかったよ（{e}）"}
     if sheet not in sheets:
         return {"error": "そのシートは見られないよ"}
     if t == "load":
@@ -87,4 +106,5 @@ def handle(v):
     return {}
 
 
-js_page.serve(web_games.history_view, "hist", handle, sheets=sheets, admin=admin, me=me, storage=history.storage_label())
+js_page.serve(web_games.history_view, "hist", handle, sheets=sheets, admin=admin, me=me, storage=history.storage_label(),
+              people=people() if admin else [me])

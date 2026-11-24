@@ -16,3 +16,9 @@
 .pk.on .cic{background:var(--pri);color:#fff}.cic .ic{margin:0}
 .marks{display:flex;justify-content:center;gap:2px;flex-wrap:wrap}.marks .ic{width:22px;height:22px;stroke-width:2.6;margin:0}.mok{color:var(--ok)}.mng{color:var(--ng)}
 .h3 .ic{color:var(--pri)}
+
+/* 苦手の練習・問題の出どころ */
+.weakc{border:2px solid #fde68a;background:#fffbeb}
+.weakc .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.weakc .btn{display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;padding:10px 6px}
+.srctag{display:flex;align-items:center;justify-content:flex-end;gap:4px;font-size:11px;color:var(--sub,#6b7280);margin:4px 2px 0}

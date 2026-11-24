@@ -16,6 +16,7 @@ if "規模" not in getattr(store, "TABLES", {}).get("支店", []) or not hasattr
     store = importlib.reload(store)
 import kb_auth as auth  # noqa: E402
 from km_ui import ui  # noqa: E402
+import kb_ai  # noqa: E402       # 月の ふりかえり・品名を そろえる・献立から 材料（AI）
 
 try:
     st.set_page_config(page_title="買い物リスト", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
@@ -26,7 +27,7 @@ except Exception:
 DEFAULT_GENRES = [("肉", "meat"), ("野菜", "carrot"), ("魚", "fish"), ("果物", "apple"), ("卵・乳製品", "egg"), ("豆腐・納豆", "tofu"), ("米・麺", "rice"),
                   ("パン", "bread"), ("ラーメン", "bowl"), ("調味料", "bottle"), ("冷凍", "snow"), ("お菓子", "candy"), ("ジュース", "juice"),
                   ("お酒", "beer"), ("日用品", "daily"), ("その他", "box")]
-TABLES = ("買い物", "店舗", "支店", "価格記録", "買い物ジャンル", "買い物の記憶", "購入記録")
+TABLES = ("買い物", "店舗", "支店", "価格記録", "買い物ジャンル", "買い物の記憶", "購入記録", "ふりかえり")
 
 
 def genres():
@@ -42,9 +43,15 @@ ss = st.session_state
 done = ss.setdefault("kb_done", [])
 data = {"items": store.load("買い物"), "stores": store.load("店舗"), "branches": store.load("支店"), "prices": store.load("価格記録"), "genres": genres(), "memory": store.load("買い物の記憶"), "history": store.load("購入記録"),
         "sheets": store.using_sheets(), "password": bool(auth.secret("KAKEIBO_PASSWORD"))}
-val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", key="km_ui", default=None)
+data["reviews"] = store.load("ふりかえり")
+val = ui(data=data, done=done[-200:], token=ss.get("kb_token") or "", ai=ss.get("km_ai"), key="km_ui", default=None)
 if isinstance(val, dict):
     changed = False
+    req = val.get("ai")
+    if isinstance(req, dict) and req.get("id") and req["id"] not in done:      # AI のたのみごと
+        done.append(req["id"])
+        ss["km_ai"] = kb_ai.handle(req, [g["名前"] for g in data["genres"]])
+        changed = True
     for a in val.get("queue") or []:
         if a.get("id") in done:
             continue

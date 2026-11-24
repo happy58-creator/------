@@ -14,7 +14,7 @@ createApp({
       ready: false, args: {}, view: "menu",
       level: L.level || "", course: L.course || "単語", dir: L.dir === "和→英" ? "和→英" : "英→和", assist: L.assist ?? true, topic: "",
       qs: [], i: 0, pick: null, decided: null, hint: false, log: [], rows: [], run: "",
-      busy: false, sec: 0, err: "", pdf: "", toast: "",
+      busy: false, sec: 0, err: "", pdf: "", toast: "", kind: "new", source: "",
     });
     const keep = () => Kit.save("en_v1", { level: S.level, course: S.course, dir: S.dir, assist: S.assist });
     function onArgs(a) {
@@ -35,18 +35,22 @@ createApp({
 
     // AIに10問たのむ：待っている秒数を見せる。90秒たっても返事がなければ、ボタンをもどして知らせる（あとから返事が来たら、そのまま始める）
     let waitT = 0;
-    function start() {
+    // kind："new"（保存した問題 か AI）・"weak"（苦手だけ）・"weakai"（苦手を使って AIが 新しく）
+    const weakN = computed(() => ((S.args.weak || {})[`${S.level}|${S.course}|${dirOf(S.course)}`]) || 0);
+    function start(kind) {
+      kind = typeof kind === "string" ? kind : "new";
+      S.kind = kind;
       S.busy = true; S.err = ""; S.sec = 0; keep();
       clearInterval(waitT);
       waitT = setInterval(() => {
         S.sec++;
         if (S.sec >= 90) { clearInterval(waitT); S.busy = false; S.err = "AIの返事が 来ないみたい…。通信を たしかめて、もう一度 押してみてね"; }
       }, 1000);
-      Kit.ask({ type: "gen", course: S.course, dir: dirOf(S.course), level: S.level, topic: S.topic.trim() }, r => {
+      Kit.ask({ type: "gen", kind, course: S.course, dir: dirOf(S.course), level: S.level, topic: kind === "weak" ? "" : S.topic.trim() }, r => {
         clearInterval(waitT); S.busy = false;
         if (r.error || !r.questions) { if (S.view === "menu") S.err = r.error || "うまく作れなかったよ。もう一度ためしてね"; return; }
         if (S.view !== "menu") return;
-        S.err = ""; begin(r.questions, S.topic.trim());
+        S.err = ""; S.source = r.source || ""; begin(r.questions, kind === "weak" ? "苦手" : S.topic.trim());
       });
     }
     function begin(qs, topic) {
@@ -79,7 +83,9 @@ createApp({
     }
     const optClass = c => S.decided == null ? { on: S.pick === c } : { right: c === q.value.answer, wrong: c === S.decided && c !== q.value.answer };
     Streamlit.ready(onArgs);
-    return { S, TOTAL, TOPICS, courses, courseOf, dirOf, infoOf, label, setDir, keep, start, q, score, decide, next, again, wrong, quit, optClass, Kit };
+    const SRC = { pool: ["folder", "保存してある問題から（AIの回数を 使わない）"], pool_noai: ["folder", "AIの回数切れなので、保存してある問題から"],
+                  ai: ["spark", "AIが 新しく 作った問題"], weak: ["target", "苦手だけ もう一回"], weakai: ["spark", "苦手を使って AIが 作った問題"] };
+    return { SRC, weakN, S, TOTAL, TOPICS, courses, courseOf, dirOf, infoOf, label, setDir, keep, start, q, score, decide, next, again, wrong, quit, optClass, Kit };
   },
   template: `
 <div class="wrap" v-if="S.ready">
@@ -110,13 +116,23 @@ createApp({
       <div class="sugg"><button v-for="t in TOPICS" :key="t" @click="S.topic = t">{{ t }}</button></div>
     </div>
     <div v-if="S.err" class="errbox"><ic n="warn"></ic>{{ S.err }}</div>
-    <button class="big" :disabled="S.busy" @click="start"><ic :n="S.busy ? 'hourglass' : S.err ? 'refresh' : 'rocket'"></ic>{{ S.busy ? 'AI先生が 10問を 作っているよ…（' + S.sec + '秒）' : (S.err ? 'もう一度 つくってもらう' : 'AIに10問 つくってもらう！') }}</button>
-    <div v-if="S.busy" class="small muted center" style="margin-top:6px">ふつうは 10〜30秒ほどで できあがるよ</div>
+    <div v-if="weakN" class="card weakc">
+      <div class="h3"><ic n="target"></ic>苦手の 練習<span class="small muted">{{ S.course }}コースで 前に まちがえた問題が {{ weakN }}問 あるよ</span></div>
+      <div class="row2">
+        <button class="btn" :disabled="S.busy" @click="start('weak')"><ic n="again"></ic>苦手だけ もう一回</button>
+        <button class="btn" :disabled="S.busy" @click="start('weakai')"><ic n="spark"></ic>苦手を使って AIが 新しい問題</button>
+      </div>
+      <div class="small muted" style="margin-top:6px">「苦手だけ」は AIの回数を 使わないよ。正解すると 苦手から 外れるよ</div>
+    </div>
+    <button class="big" :disabled="S.busy" @click="start('new')"><ic :n="S.busy ? 'hourglass' : S.err ? 'refresh' : 'rocket'"></ic>{{ S.busy ? '10問を じゅんびしているよ…（' + S.sec + '秒）' : (S.err ? 'もう一度 つくってもらう' : '10問 はじめる！') }}</button>
+    <div v-if="S.busy" class="small muted center" style="margin-top:6px">保存してある問題なら すぐ、AIが 作るときは 10〜30秒ほど</div>
+    <div v-else class="small muted center" style="margin-top:6px">前に AIが 作った問題が たまると、まだ 見ていない問題を そこから 出すよ（AIの回数の 節約）</div>
   </template>
 
   <template v-else-if="S.view === 'play'">
     <div class="bar-top"><button class="back" @click="quit">‹ やめる</button><b>{{ label(S.playCourse, S.playDir) }}・{{ S.i + 1 }} / {{ S.qs.length }}問目</b><span class="cnt"><ic n="o"></ic>{{ score }}</span></div>
     <div class="prog"><i :style="{ width: (S.i / S.qs.length * 100) + '%' }"></i></div>
+    <div v-if="SRC[S.source]" class="srctag"><ic :n="SRC[S.source][0]" :s="13"></ic>{{ SRC[S.source][1] }}</div>
     <div class="card center qbox">
       <div v-if="S.playAssist && q.emoji" class="emoji">{{ q.emoji }}</div>
       <div class="prompt">{{ q.prompt }}</div>

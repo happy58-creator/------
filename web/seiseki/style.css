@@ -34,3 +34,18 @@
 .vplay{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--priL,#eef2ff);color:var(--priD,#3346a8);flex:none}
 .vplay .ic{margin:0}.vplay:disabled{opacity:.4}
 .vplay.live{background:var(--pri,#4f6bed);color:#fff}
+
+/* 週の レポート */
+.rep{padding:0;overflow:hidden}
+.rep-h{display:flex;align-items:center;gap:8px;width:100%;border:none;background:#f5f3ff;padding:12px 14px;text-align:left;font-size:15px}
+.rep-h b{white-space:nowrap}.rep-h small{flex:1;color:var(--sub,#6b7280);font-size:11px}
+.rep>.chips,.rep>.center,.rep>.small,.rep>.rep-w,.rep>.rep-f,.rep>.rep-ai,.rep>.btn{margin:10px 14px}
+.rep-w{font-size:14px}
+.rep-f{display:flex;flex-wrap:wrap;gap:6px}
+.rf{display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border-radius:999px;padding:4px 10px;font-size:12px}
+.rep-ai p{margin:0 0 8px;line-height:1.7;font-size:14px}
+.rep-ai ul{margin:4px 0 8px;padding-left:20px;line-height:1.7;font-size:14px}
+.rep-ai b{display:flex;align-items:center;gap:4px;font-size:13px}
+.rg b{color:#15803d}.rn b{color:#c2410c}
+.rp{display:flex;gap:6px;align-items:center;background:#fffbeb;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:14px}
+.linkb{border:none;background:none;color:#6d28d9;text-decoration:underline;font-size:12px;padding:0}

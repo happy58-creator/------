@@ -4,6 +4,41 @@ from pathlib import Path
 import streamlit.components.v1 as components
 
 _WEB = Path(__file__).parent / "web"
+
+
+# ---------------------------------------------------------------- 共通ファイル
+# アイコン・部品・Vue などは web/_shared/ に 1つだけ置く。Streamlit の部品は 自分のフォルダの中しか 読めないので、
+# 起動したときに 各フォルダへ コピーする（コピーは git に入れない：.gitignore）。直すのは web/_shared/ だけ
+_APPS = ["calc", "english", "fe", "itpass", "kanji", "kokugo", "programming", "seiseki", "speaking", "typing"]
+_KIT = ["english", "kanji", "kokugo", "programming", "seiseki", "speaking", "typing"]
+SHARED = {
+    "icons.js": _APPS,
+    "vendor/vue.global.prod.js": _APPS,
+    "streamlit.js": _APPS + ["home"],
+    "kit.js": _KIT,
+    "base.css": _KIT,
+}
+
+
+def _sync_shared():
+    src = _WEB / "_shared"
+    for name, apps in SHARED.items():
+        try:
+            data = (src / name).read_bytes()
+        except OSError as e:
+            print(f"[共通ファイル] {name} が 読めない: {e}", flush=True)
+            continue
+        for app in apps:
+            dst = _WEB / app / name
+            try:
+                if not dst.exists() or dst.read_bytes() != data:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_bytes(data)
+            except OSError as e:
+                print(f"[共通ファイル] {app}/{name} に コピーできない: {e}", flush=True)
+
+
+_sync_shared()
 _chess = components.declare_component("chess_game", path=str(_WEB / "chess"))
 _typing = components.declare_component("typing_game", path=str(_WEB / "typing"))
 _tap = components.declare_component("tap_game", path=str(_WEB / "tap"))

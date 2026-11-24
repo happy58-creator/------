@@ -8,6 +8,7 @@ import streamlit as st
 from google.genai import types
 
 import common
+import datastore
 import history
 import js_page
 import pdfgen
@@ -45,9 +46,12 @@ def course_label(course, d):
     return f"{course}（{d}）" if d else course
 
 
-def build_prompt(course, d, level, topic, kana_only):
+def build_prompt(course, d, level, topic, kana_only, focus=None):
     guide = LEVELS[level][0]
     topic_line = f"- テーマは「{topic}」に関連づけてください。" if topic else "- テーマはおまかせ（いろいろな分野から出す）。"
+    if focus:
+        topic_line = ("- この生徒が 前に まちがえた 単語・文です。これらを できるだけ 多く 使って、ちがう形の 問題に してください"
+                      "（同じ問題を そのまま 出さない。単語は 意味や 使い方を 変えて、文は 単語を 入れかえて）：\n  " + " ／ ".join(focus[:12]))
     ja_rule = (
         "日本語の説明（reading以外）は、漢字をなるべく使わず ひらがな中心にしてください。"
         if kana_only
@@ -122,8 +126,8 @@ def valid_question(q):
     )
 
 
-def generate_questions(course, d, level, topic):
-    prompt = build_prompt(course, d, level, topic, LEVELS[level][1])
+def generate_questions(course, d, level, topic, focus=None):
+    prompt = build_prompt(course, d, level, topic, LEVELS[level][1], focus)
     last_error = None
     for model in (common.GEMINI_MODEL, getattr(common, "GEMINI_FALLBACK_MODEL", common.GEMINI_MODEL)):   # 失敗したら予備のモデルで1回だけ
         try:
@@ -147,6 +151,149 @@ def generate_questions(course, d, level, topic):
     raise RuntimeError(common.ai_error_text(last_error) if hasattr(common, "ai_error_text") else f"AIでエラーが起きちゃった：{last_error}")
 
 
+# ---------------------------------------------------------------- 問題の保存（使い回し）と 苦手
+POOL_TAB, POOL_COLS = "問題プール", ["キー", "日時", "問題"]
+POOL_MIN = 30          # 保存した問題が これだけ たまったら、まだ見ていない問題から 出す（AIの回数を 使わない）
+
+
+def pool_key(course, d, level, topic):
+    return f"英語|{course}|{d}|{level}|{topic}"
+
+
+def pool_of(key):
+    out = []
+    for r in datastore.read(POOL_TAB, POOL_COLS):
+        if r.get("キー") == key:
+            try:
+                q = json.loads(r.get("問題") or "")
+                if valid_question(q):
+                    out.append(q)
+            except ValueError:
+                pass
+    return list({q["prompt"]: q for q in out}.values())
+
+
+def pool_add(key, qs):
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    datastore.append(POOL_TAB, POOL_COLS, [{"キー": key, "日時": now, "問題": json.dumps(q, ensure_ascii=False)} for q in qs])
+
+
+def my_rows(course_lbl, level, days=None):
+    """その人の この コース・年齢層の 記録の 1問ずつ：[(日時, 問題文, 自分の答え, 正しい答え, 正解か)]（古い順）"""
+    out = []
+    for r in reversed(datastore.my_history("英語", days=days)):
+        if r.get("コース") != course_lbl or r.get("年齢層") != level:
+            continue
+        try:
+            rec = json.loads(r.get("詳細") or "{}")
+        except ValueError:
+            continue
+        for x in rec.get("r") or []:
+            if len(x) >= 4:
+                out.append((str(r.get("日時")), str(x[0]).split("\n")[0], str(x[1]), str(x[2]), bool(x[3])))
+    return out
+
+
+def weak_list(course_lbl, level):
+    """苦手：さいごに 答えたとき まちがえていた 問題（新しい順）。[(問題文, 自分の答え, 正しい答え)]"""
+    last = {}
+    for when, q, a, c, ok in my_rows(course_lbl, level):
+        last[q] = (ok, a, c, when)
+    return [(q, a, c) for q, (ok, a, c, when) in sorted(last.items(), key=lambda kv: kv[1][3], reverse=True) if not ok]
+
+
+def weak_questions(course, d, level):
+    """苦手だけで 問題を つくる。保存した問題が あれば それを、なければ 記録から（正しい答え＋自分の答え＋ほかの答え）"""
+    lbl = course_label(course, d)
+    weak = weak_list(lbl, level)[:TOTAL_Q]
+    if not weak:
+        return []
+    pool = {q["prompt"]: q for q in pool_of(pool_key(course, d, level, ""))}
+    for r in datastore.read(POOL_TAB, POOL_COLS):           # テーマつきで 作った問題も さがす
+        if r.get("キー", "").startswith(f"英語|{course}|{d}|{level}|"):
+            try:
+                q = json.loads(r.get("問題") or "")
+                pool.setdefault(q.get("prompt"), q)
+            except ValueError:
+                pass
+    others = list({c for _, _, c in weak_list(lbl, level)} | {c for *_, c, ok in my_rows(lbl, level) if ok})
+    out = []
+    for prompt, mine, right in weak:
+        q = pool.get(prompt)
+        if q and valid_question(q):
+            q = dict(q)
+        else:
+            ch = [right] + ([mine] if mine and mine != right else [])
+            ch += random.sample([o for o in others if o not in ch], min(max(0, 3 - len(ch)), len([o for o in others if o not in ch])))
+            if len(ch) < 2:
+                continue
+            q = {"prompt": prompt, "choices": ch, "answer": right, "emoji": "", "reading": "", "translation": "",
+                 "hint": "前に まちがえた 問題だよ。よく 思い出してね", "explanation": f"正しい答えは「{right}」"}
+        random.shuffle(q["choices"])
+        out.append(q)
+    return out
+
+
+def weak_counts():
+    """メニューに出す：年齢層・コースごとの 苦手の数 {"年齢層|単語|英→和": 3, ...}（記録は 1回だけ 読む。少しのあいだ 覚えておく）"""
+    hit = ss.get("en_weak")
+    if hit and time.time() - hit[0] < 120:
+        return hit[1]
+    last = {}
+    for r in reversed(datastore.my_history("英語")):
+        try:
+            rec = json.loads(r.get("詳細") or "{}")
+        except ValueError:
+            continue
+        for x in rec.get("r") or []:
+            if len(x) >= 4:
+                last[(r.get("年齢層"), r.get("コース"), str(x[0]).split("\n")[0])] = bool(x[3])
+    out = {}
+    for c, v in COURSES.items():
+        for d in v["dirs"]:
+            lbl = course_label(c, d)
+            for lv in LEVELS:
+                n = sum(1 for (l2, c2, _), ok in last.items() if l2 == lv and c2 == lbl and not ok)
+                if n:
+                    out[f"{lv}|{c}|{d}"] = n
+    ss["en_weak"] = (time.time(), out)
+    return out
+
+
+def get_questions(course, d, level, topic, kind):
+    """kind："new"（保存した問題 か AI）・"weak"（苦手だけ）・"weakai"（苦手を使って AI が 新しく）。(問題, どこから)"""
+    if kind == "weak":
+        qs = weak_questions(course, d, level)
+        if not qs:
+            raise RuntimeError("このコースの 苦手は まだ ないよ。ふつうの問題で 練習しよう")
+        return qs, "weak"
+    key = pool_key(course, d, level, topic)
+    if kind == "weakai":
+        focus = [f"{q}（{c}）" for q, _, c in weak_list(course_label(course, d), level)]
+        if not focus:
+            raise RuntimeError("このコースの 苦手は まだ ないよ。ふつうの問題で 練習しよう")
+        qs = generate_questions(course, d, level, topic, focus)
+        pool_add(key, qs)
+        return qs, "weakai"
+    pool = pool_of(key)
+    seen = {q for _, q, *_ in my_rows(course_label(course, d), level, days=7)}
+    fresh = [q for q in pool if q["prompt"] not in seen]
+    if len(pool) >= POOL_MIN and len(fresh) >= TOTAL_Q:
+        qs = [dict(q) for q in random.sample(fresh, TOTAL_Q)]
+        for q in qs:
+            random.shuffle(q["choices"])
+        return qs, "pool"
+    try:
+        qs = generate_questions(course, d, level, topic)
+    except RuntimeError:
+        if len(pool) >= TOTAL_Q:                                # AI が 使えない：保存した問題で 続ける
+            qs = [dict(q) for q in random.sample(fresh if len(fresh) >= TOTAL_Q else pool, TOTAL_Q)]
+            return qs, "pool_noai"
+        raise
+    pool_add(key, qs)
+    return qs, "ai"
+
+
 def pdf_info(course, level, topic):
     return f"{course}コース ／ {level} ／ テーマ：{topic or 'おまかせ'}"
 
@@ -157,13 +304,16 @@ def handle(v):
         course, d, level, topic = v.get("course"), v.get("dir") or "", v.get("level"), str(v.get("topic") or "").strip()[:40]
         if course not in COURSES or d not in COURSES[course]["dirs"] or level not in LEVELS:
             return {"error": "えらび方がおかしいよ"}
-        return {"questions": generate_questions(course, d, level, topic)}
+        qs, src = get_questions(course, d, level, topic, v.get("kind") or "new")
+        ss.pop("en_weak", None)
+        return {"questions": qs, "source": src}
     if t == "log":                              # 10問おわった：記録して、表彰状をつくる
         course = course_label(str(v.get("course") or ""), str(v.get("dir") or ""))
         level, topic = v.get("level"), v.get("topic") or ""
         rows = [(str(r[0]), str(r[1]), str(r[2]), bool(r[3])) for r in v.get("rows") or []][:TOTAL_Q]
         score = sum(1 for r in rows if r[3])
         info = pdf_info(course, level, topic)
+        ss.pop("en_weak", None)
         history.log_once("英語", f"en-{v.get('run')}", コース=course, 年齢層=level, テーマ=topic or "おまかせ", 点数=score * 10, 正解数=score,
                          詳細=pdfgen.make_record("AI英語チャレンジ", info, rows))
         pdf = pdfgen.build_pdf("AI英語チャレンジ", info, ss.get("player_name", ""), time.strftime("%Y-%m-%d %H:%M:%S"), score * 10, rows)
@@ -174,4 +324,5 @@ def handle(v):
 levels = list(LEVELS)
 js_page.serve(web_games.english_study, "en", handle,
               levels=levels, level=levels[common.age_level_index(len(levels))], age=ss.get("auth_age"),
+              weak=weak_counts(),
               courses=[{"id": c, "icon": v["icon"], "dirs": [{"id": d, "desc": x[0], "ask": x[1]} for d, x in v["dirs"].items()]} for c, v in COURSES.items()])

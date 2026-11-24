@@ -11,6 +11,7 @@ from pathlib import Path
 import streamlit as st
 
 import common
+import datastore
 import history
 import js_page
 import pdfgen
@@ -115,14 +116,93 @@ def ai_comment(items, level, mode, th=False):
     return out, str(data.get("overall") or "").strip()
 
 
+# ---------------------------------------------------------------- 苦手・とめはねの記録
+TH_TAB, TH_COLS = "とめはね", ["キー", "名前", "字", "画", "日時"]     # 画：とめ・はねを まちがえた 画の番号（「3,5」）
+
+
+def th_marks(name):
+    """{字: [まちがえた画の番号]}（その人の分）"""
+    out = {}
+    for r in datastore.read(TH_TAB, TH_COLS):
+        if r.get("名前") == name and r.get("画"):
+            out[r.get("字")] = [int(x) for x in str(r.get("画")).split(",") if x.strip().isdigit()]
+    return out
+
+
+def th_update(name, results):
+    """まちがえた画を 足し、1回で できた画を 消す"""
+    old = th_marks(name)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    for r in results:
+        ch = str(r.get("ch") or "")
+        fail, ok = {int(x) for x in r.get("endFail") or []}, {int(x) for x in r.get("endPass") or []}
+        if not ch or not (fail or ok):
+            continue
+        before = set(old.get(ch, []))
+        after = (before - ok) | fail
+        if after != before:
+            datastore.put(TH_TAB, TH_COLS, "キー", {"キー": f"{name}|{ch}", "名前": name, "字": ch,
+                                                   "画": ",".join(str(x) for x in sorted(after)), "日時": now})
+
+
+def weak_kanji():
+    """苦手な字（さいごに 書いたとき 8点に とどかなかった 字。新しい順）"""
+    last = {}
+    for r in reversed(datastore.my_history("漢字")):
+        try:
+            rec = json.loads(r.get("詳細") or "{}")
+        except ValueError:
+            continue
+        for x in rec.get("r") or []:
+            if len(x) >= 4 and x[0]:
+                last[str(x[0])[0]] = (bool(x[3]), str(r.get("日時")))
+    return [ch for ch, (ok, when) in sorted(last.items(), key=lambda kv: kv[1][1], reverse=True) if not ok]
+
+
+def weak_sentences(chars, data, level):
+    """苦手な字を使った 短い文を AI で（1回）。{字: "あかい【はな】が さく"}"""
+    from google.genai import types
+    lines = [f"{ch}（よみ：{reading_of(data[ch])}／いみ：{', '.join((data[ch].get('m') or [])[:2])}）" for ch in chars if ch in data]
+    prompt = f"""あなたは 小学校の 国語の先生です。{level}の 生徒が、次の 漢字を 書くのが 苦手です。
+それぞれの 漢字を 使った、短い 日本語の文を 1つずつ 作ってください。
+- 文は ぜんぶ ひらがなで 書き、その漢字を 使う ことばだけを【 】で かこむ（例：花 → あかい【はな】が さいた。 / 校 → あさ【がっこう】に いく。）
+- 【 】の中は、その漢字の 読みを ふくむ ことば（熟語でも よい）。生活の中で よく使う 場面に する
+- 文は 20字くらいまで。{level}に わかる ことばで
+漢字：
+{chr(10).join(lines)}
+次の JSON だけで 答えてください：{{"items": [{{"c": "漢字", "s": "文"}}]}}"""
+    res = common.get_gemini_client().models.generate_content(
+        model=getattr(common, "GEMINI_CHEAP", common.GEMINI_MODEL), contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.5))
+    out = {}
+    for it in json.loads(res.text).get("items") or []:
+        c, sent = str(it.get("c") or ""), str(it.get("s") or "").strip()
+        if c in chars and "【" in sent and len(sent) <= 60:
+            out[c] = sent
+    return out
+
+
 def handle(v):
     data = load_kanji()
     t = v.get("type")
-    if t == "start":                              # 10字えらぶ
-        grade = int(v.get("grade") or 1)
-        pool = [ch for ch, e in data.items() if int(e["g"]) == grade]
-        chosen = random.sample(pool, min(QUESTIONS, len(pool)))
-        return {"kanjis": [{"c": ch, **data[ch]} for ch in chosen]}
+    if t == "start":                              # 10字えらぶ（kind：new・weak＝苦手だけ・weakai＝苦手を AIの文で）
+        grade, kind = int(v.get("grade") or 1), v.get("kind") or "new"
+        sents = {}
+        if kind in ("weak", "weakai"):
+            chosen = [ch for ch in weak_kanji() if ch in data][:QUESTIONS]
+            if not chosen:
+                return {"error": "苦手な字は まだ ないよ。ふつうの練習を してみよう"}
+            if kind == "weakai":
+                try:
+                    sents = weak_sentences(chosen, data, v.get("level") or "")
+                except Exception as e:
+                    print(f"[漢字] 苦手の文：{type(e).__name__}: {e}", flush=True)
+                    return {"error": common.ai_error_text(e) if hasattr(common, "ai_error_text") else "AIで 文を 作れなかったよ"}
+        else:
+            pool = [ch for ch, e in data.items() if int(e["g"]) == grade]
+            chosen = random.sample(pool, min(QUESTIONS, len(pool)))
+        marks = th_marks(ss.get("player_name", ""))
+        return {"kanjis": [{"c": ch, **data[ch], "warn": marks.get(ch, []), **({"sent": sents[ch]} if ch in sents else {})} for ch in chosen]}
     if t == "done":                               # 書きおわった：点数・記録・表彰状
         grade, mode, level, th = int(v.get("grade") or 1), v.get("mode"), v.get("level"), bool(v.get("th"))
         if mode not in MODES or level not in LEVEL_TOL:
@@ -138,6 +218,12 @@ def handle(v):
             pdf_rows.append((f"{r.get('ch')}（{reading_of(entry)}）", note, f"{r.get('strokes')}画 / {pts:g}点", pts >= POINTS_OK))
             rows.append({"ch": r.get("ch"), "reading": reading_of(entry)})
         info = pdf_info(grade, mode, level, th)
+        if th:
+            try:
+                th_update(ss.get("player_name", ""), items)
+            except Exception as e:
+                print(f"[漢字] とめはねの記録：{type(e).__name__}: {e}", flush=True)
+        ss.pop("kj_weak", None)
         history.log_once("漢字", f"kj-{v.get('run')}", 学年=f"{grade}年生", モード=MODES[mode][0], 年齢層=level, 点数=score, 正解数=good,
                          詳細=pdfgen.make_record("漢字のかきとり", info, pdf_rows))
         pdf = pdfgen.build_pdf("漢字のかきとり", info, ss.get("player_name", ""), time.strftime("%Y-%m-%d %H:%M:%S"), score, pdf_rows)
@@ -157,6 +243,18 @@ def handle(v):
     return {}
 
 
+def weak_count():
+    hit = ss.get("kj_weak")
+    if hit and time.time() - hit[0] < 120:
+        return hit[1]
+    try:
+        n = len(weak_kanji())
+    except Exception:
+        n = 0
+    ss["kj_weak"] = (time.time(), n)
+    return n
+
+
 try:
     counts = {}
     for e in load_kanji().values():
@@ -168,4 +266,4 @@ levels = list(LEVEL_TOL)
 js_page.serve(web_games.kanji_study, "kj", handle,
               counts=counts, modes=[{"id": k, "name": v[0], "desc": v[1]} for k, v in MODES.items()],
               levels=[{"id": k, "tol": v} for k, v in LEVEL_TOL.items()], level=levels[common.age_level_index(len(levels))],
-              n=QUESTIONS, okPoints=POINTS_OK)
+              n=QUESTIONS, okPoints=POINTS_OK, weak=weak_count())

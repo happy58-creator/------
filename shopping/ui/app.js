@@ -230,6 +230,7 @@ const App = {
     const S = reactive({
       phase: "loading", password: false,
       view: "input", items: [], stores: [], branches: [], prices: [], genres: [], memory: [], history: [], sheets: false, autoGenre: false,
+      ai: { pending: "", busy: "", err: "" }, mtext: "", mpeople: 2, mres: null, tidy: null, tidySure: false, rvMonth: (d => { d.setDate(1); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7); })(new Date()), rvGot: {},
       calMonth: "", calDay: "", hereAt: 0, branchDraft: null, suggest: [], dismissed: {},
       // 入力
       genre: "", name: "", memo: "", storeId: "", prio: "0",
@@ -299,6 +300,8 @@ const App = {
       }
       if (args.token) TOKEN.set(args.token);
       SERVER = args.data || SERVER;
+      const ai = args.ai;
+      if (ai && ai.id && ai.id === S.ai.pending) aiDone(ai);
       const done = new Set(args.done || []);
       QUEUE = QUEUE.filter(a => !done.has(a.id));
       S.saving = QUEUE.length;
@@ -976,6 +979,60 @@ const App = {
     }
     const footOn = k => S.view === k || (k === "menu" && !FOOT.some(f => f[2] === S.view));
     const footIcon = k => k === "home" ? `<svg class="li" viewBox="0 0 24 24" fill="none">${ICON_FOOT.home}</svg>` : svg(k);
+    // ---- AI（献立から 材料・品名を そろえる・月の ふりかえり）。1回ずつ Python に たのむ
+    function askAI(kind, extra) {
+      S.ai = { pending: uid(), busy: kind, err: "" };
+      clearTimeout(sendTimer);
+      SL.value({ queue: QUEUE, ai: { id: S.ai.pending, kind, ...extra } });
+      const id = S.ai.pending;
+      setTimeout(() => { if (S.ai.pending === id) S.ai = { pending: "", busy: "", err: "時間が かかりすぎました。もう一度 押してください" }; }, 90000);
+    }
+    function aiDone(r) {
+      S.ai = { pending: "", busy: "", err: r.error || "" };
+      if (r.error) return;
+      if (r.kind === "menu") {
+        const have = new Set(S.items.filter(i => !i["済"]).map(i => normName(i["品名"])));
+        S.mres = (r.items || []).map(x => ({ ...x, have: have.has(normName(x.name)), on: !x.staple && !have.has(normName(x.name)) }));
+      } else if (r.kind === "tidy") {
+        S.tidy = { merge: (r.merge || []).map(x => ({ ...x, on: true })), drop: (r.drop || []).map(x => ({ ...x, on: true })) }; S.tidySure = false;
+      } else if (r.kind === "review") {
+        S.rvGot = { ...S.rvGot, [r.month]: r.comment ? { comment: r.comment, made: r.made, facts: r.facts } : { none: true, facts: r.facts } };
+      }
+    }
+    // 献立から：チェックした材料を リストに 入れる
+    function menuAdd() {
+      const add = (S.mres || []).filter(x => x.on);
+      if (!add.length) { toast("入れる 材料を えらんでください"); return; }
+      const now = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const rows = add.map(x => ({ ID: uid(), 品名: x.name, ジャンル: x.genre || "その他", メモ: [x.amount, x.for && `（${x.for}）`].filter(Boolean).join(""), 店舗ID: "", 済: "", 優先: "", 登録日時: now }));
+      save("買い物", [...S.items, ...rows]);
+      toast(`${rows.length}個を リストに 入れました`);
+      S.mres = null; S.mtext = "";
+    }
+    // 品名を そろえる：チェックした 案だけ、確認してから 反映（値段の記録・買った記録の 品名を 書きかえ、えらんだ 値段を 消す）
+    const tidyCount = computed(() => S.tidy ? { m: S.tidy.merge.filter(x => x.on).length, d: S.tidy.drop.filter(x => x.on).length } : { m: 0, d: 0 });
+    function tidyApply() {
+      if (!S.tidySure) { S.tidySure = true; return; }
+      const ren = {};
+      S.tidy.merge.filter(x => x.on).forEach(x => x.from.forEach(n => { ren[n] = x.to; }));
+      const drop = new Set(S.tidy.drop.filter(x => x.on).map(x => String(x.id)));
+      const fix = r => ren[String(r["品名"]).trim()] ? { ...r, 品名: ren[String(r["品名"]).trim()] } : r;
+      save("価格記録", S.prices.filter(r => !drop.has(String(r.ID))).map(fix));
+      if (Object.keys(ren).length || drop.size) save("購入記録", S.history.map(r => { const x = fix(r); return drop.has(String(x["価格ID"])) ? { ...x, 価格ID: "" } : x; }));
+      toast(`品名を ${tidyCount.value.m}件 そろえ、値段を ${tidyCount.value.d}件 消しました`);
+      S.tidy = null; S.tidySure = false;
+    }
+    // 月の ふりかえり（家計簿と 共通）
+    const thisMonth = () => new Date().toISOString().slice(0, 7);
+    const rvMonths = computed(() => { const d = new Date(); const a = d.toISOString().slice(0, 7); d.setDate(1); d.setMonth(d.getMonth() - 1); return [d.toISOString().slice(0, 7), a]; });
+    function rvOf(m) {
+      if (S.rvGot[m]) return S.rvGot[m];
+      const r = ((SERVER && SERVER.reviews) || []).find(x => x["月"] === m);
+      if (!r) return null;
+      try { return { comment: JSON.parse(r["コメント"]), made: r["日時"] }; } catch (e) { return null; }
+    }
+    function openReview() { S.rvMonth = S.rvMonth || rvMonths.value[0]; go("review"); }
+
     function toKakeibo() { clearTimeout(sendTimer); SL.value({ queue: QUEUE, go: "kakeibo", gid: uid() }); }     // 家計簿のページへ（ログインはそのまま）
 
     keyboardHelper(() => document.getElementById("app"));
@@ -983,6 +1040,7 @@ const App = {
     return { S, svg, gIcon, yen, distText, NEAR, SIZES, SIZE_NEXT, sizeOf, radiusOf, FOOT, footOn, footIcon, sortedGenres, sortedStores, todo, recent, listGroups, storeGroups, nearStores,
       taxRate, calcTotal, storeName, calMonth, calShift, calCells, calList, dayLabel, removeHist, openHist, saveHist, histPrice, pickGenre, memOf, onDial, cands, onName, pickCand, MAYBE, maybeGroups, searchAddr, pickAddr, prio, cyclePrio, top2, PRIO_KEY, prioStore, UNIT_LIST, LETTERS, cmpResult, unitInfo, perText, addCmp, clearCmp, isCount, fmtPer, recInfo, priceBook, priceNames, rowHint, openSave, savePrice, removePrice, groupIds, openRecStore, setRecStore, recDetail, num, normName, genreFor, cmpCands, cmpFocus, cmpBlur, cmpName, pickCmpName, cancelBlur, saveBlur, compareFromRec, addRecToCmp, cmpLabel, cycleTax, taxLabel, taxCalc, iconKey, CAT_ICON,
       logout, addItem, toggle, removeItem, clearDone, setStoreMode, findHere, addLine, clearLines,
+      askAI, menuAdd, tidyApply, tidyCount, rvMonths, rvOf, openReview, thisMonth,
       editStore, useHere, clearPin, saveStore, editBranch, saveBranch, deleteBranch, backToStore, draftBranches, branchesOf, branchLabel, addSuggest, dismissSuggest, hasPos, storeOf, meters, deleteStore, editGenres, gMove, gAdd, gSave, go, keep, toKakeibo };
   },
   template: `
@@ -1277,9 +1335,67 @@ const App = {
       <button class="tile" @click="editGenres"><span v-html="svg('tag')"></span>ジャンル</button>
       <button class="tile" @click="toKakeibo"><span v-html="svg('wallet')"></span>家計簿へ</button>
       <button class="tile" @click="clearDone"><span v-html="svg('list')"></span>買ったものを消す</button>
+      <button class="tile" @click="go('mlist')"><span v-html="svg('bowl')"></span>献立から リスト</button>
+      <button class="tile" @click="go('tidy')"><span v-html="svg('tag')"></span>品名を そろえる</button>
+      <button class="tile" @click="openReview"><span v-html="svg('calendar')"></span>月の ふりかえり</button>
     </div>
     <div class="card small" style="margin-top:14px">{{ S.sheets ? '保存先：Google スプレッドシート（家計簿と同じファイル）' : '⚠️ いまは試し用の保存です（家計簿と同じく、Google スプレッドシートにつなぐと残ります）' }}</div>
     <button v-if="S.password" class="btn danger" @click="logout">ログアウト</button>
+  </template>
+
+  <!-- ===== 献立から 買い物リスト（AI） ===== -->
+  <template v-else-if="S.view === 'mlist'">
+    <div class="title">献立から リスト</div>
+    <div class="card">
+      <textarea class="ai-in" v-model="S.mtext" maxlength="300" rows="3" placeholder="例：カレーライスと 野菜いため、みそ汁"></textarea>
+      <div class="ai-row"><span>人数</span><button v-for="n in [1, 2, 3, 4, 5]" :key="n" class="chip" :class="{ on: S.mpeople === n }" @click="S.mpeople = n">{{ n }}人</button></div>
+      <button class="btn pri" :disabled="S.ai.busy === 'menu' || !S.mtext.trim()" @click="askAI('menu', { text: S.mtext, people: S.mpeople })">{{ S.ai.busy === 'menu' ? 'AIが 材料を 考えています…' : '材料を 出してもらう（AIを 1回）' }}</button>
+      <div v-if="S.ai.err && !S.ai.busy" class="ai-err">{{ S.ai.err }}</div>
+    </div>
+    <div v-if="S.mres" class="card">
+      <div class="small muted" style="margin-bottom:6px">家に あるものは チェックを 外してね（調味料・リストに ある物は はじめから 外してあります）</div>
+      <label v-for="(x, k) in S.mres" :key="k" class="ai-chk"><input type="checkbox" v-model="x.on"><span class="grow"><b>{{ x.name }}</b><small>{{ [x.amount, x.genre, x.for].filter(Boolean).join('・') }}<template v-if="x.have">・リストに あります</template><template v-if="x.staple">・家に ありがち</template></small></span></label>
+      <button class="btn pri" @click="menuAdd">チェックした {{ S.mres.filter(x => x.on).length }}個を リストに 入れる</button>
+    </div>
+  </template>
+
+  <!-- ===== 品名を そろえる（AI の案 → 確認 → 反映） ===== -->
+  <template v-else-if="S.view === 'tidy'">
+    <div class="title">品名を そろえる</div>
+    <div class="card small">値段の記録で、同じ品物なのに 書き方が ちがう 品名を まとめると、どの お店が 安いかを 正しく くらべられます。ケタちがいなど 参考に ならない 値段も 見つけます。<b>案を 見て、チェックした ものだけ 反映します。</b></div>
+    <button class="btn pri" :disabled="S.ai.busy === 'tidy' || !S.prices.length" @click="askAI('tidy')">{{ S.ai.busy === 'tidy' ? 'AIが 記録を 見ています…' : S.tidy ? 'もう一度 案を 出してもらう（AIを 1回）' : '整理の 案を 出してもらう（AIを 1回）' }}</button>
+    <div v-if="S.ai.err && !S.ai.busy" class="ai-err">{{ S.ai.err }}</div>
+    <template v-if="S.tidy">
+      <div class="sec">品名を まとめる（{{ S.tidy.merge.length }}件）</div>
+      <div v-if="!S.tidy.merge.length" class="card small muted">まとめる 品名は ありませんでした</div>
+      <label v-for="(x, k) in S.tidy.merge" :key="'m' + k" class="card ai-chk"><input type="checkbox" v-model="x.on"><span class="grow"><b>→ {{ x.to }}</b><small>{{ x.from.join('、') }}（{{ x.n }}件）</small><small v-if="x.why" class="muted">{{ x.why }}</small></span></label>
+      <div class="sec">消す 値段（{{ S.tidy.drop.length }}件）</div>
+      <div v-if="!S.tidy.drop.length" class="card small muted">おかしな 値段は ありませんでした</div>
+      <label v-for="(x, k) in S.tidy.drop" :key="'d' + k" class="card ai-chk"><input type="checkbox" v-model="x.on"><span class="grow"><b>{{ x.name }}　{{ yen(x.price) }}</b><small>{{ [x.shop, x.date].filter(Boolean).join('・') }}</small><small v-if="x.why" class="muted">{{ x.why }}</small></span></label>
+      <div v-if="S.tidySure" class="card ai-sure">品名を <b>{{ tidyCount.m }}件</b> そろえて、値段を <b>{{ tidyCount.d }}件</b> 消します。消した 値段は もどせません。よろしいですか？</div>
+      <div class="row2" v-if="tidyCount.m || tidyCount.d"><button v-if="S.tidySure" class="btn" @click="S.tidySure = false">やめる</button><button class="btn pri" @click="tidyApply">{{ S.tidySure ? 'はい、反映する' : 'チェックした ものを 反映する' }}</button></div>
+    </template>
+  </template>
+
+  <!-- ===== 月の ふりかえり（家計簿と 共通） ===== -->
+  <template v-else-if="S.view === 'review'">
+    <div class="title">月の ふりかえり</div>
+    <div class="ai-row"><button v-for="m in rvMonths" :key="m" class="chip" :class="{ on: S.rvMonth === m }" @click="S.rvMonth = m">{{ +m.slice(5, 7) }}月{{ m === thisMonth() ? '（今月）' : '' }}</button></div>
+    <div class="card">
+      <template v-if="rvOf(S.rvMonth) && rvOf(S.rvMonth).comment">
+        <div class="rv-hl">{{ rvOf(S.rvMonth).comment.headline }}</div>
+        <ul class="rv-l"><li v-for="(x, k) in rvOf(S.rvMonth).comment.points" :key="k">{{ x }}</li></ul>
+        <div v-if="(rvOf(S.rvMonth).comment.tips || []).length"><b class="rv-tb">来月 ためしたいこと</b><ul class="rv-l"><li v-for="(x, k) in rvOf(S.rvMonth).comment.tips" :key="k">{{ x }}</li></ul></div>
+        <div class="small muted">AIが 作成（{{ String(rvOf(S.rvMonth).made || '').slice(0, 16) }}）・家計簿の レポートにも 出ます</div>
+        <button class="btn" :disabled="!!S.ai.busy" @click="askAI('review', { month: S.rvMonth, make: true, remake: true })">{{ S.ai.busy === 'review' ? 'まとめています…' : '作りなおす（AIを 1回）' }}</button>
+      </template>
+      <template v-else>
+        <div v-if="rvOf(S.rvMonth) && rvOf(S.rvMonth).none" class="small muted">この月は まだ 記録が ありません</div>
+        <div class="small muted" style="margin-bottom:8px">家計簿と 買い物リストの 記録から、増えた・減った カテゴリや よく行く お店を まとめます</div>
+        <button class="btn pri" :disabled="!!S.ai.busy" @click="askAI('review', { month: S.rvMonth, make: true })">{{ S.ai.busy === 'review' ? 'AIが まとめています…' : 'AIに ふりかえりを 書いてもらう（1回）' }}</button>
+      </template>
+      <div v-if="S.ai.err && !S.ai.busy" class="ai-err">{{ S.ai.err }}</div>
+    </div>
   </template>
 
   <!-- ===== お店の一覧 ===== -->
